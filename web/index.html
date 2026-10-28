@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenDesk - High-Performance Remote Desktop</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body class="theme-dark">
+  <div id="app" class="app-container">
+    
+    <!-- Top Navigation Toolbar (shown when connected or minimal) -->
+    <header class="top-nav">
+      <div class="nav-brand">
+        <span class="brand-icon">⚡</span>
+        <span class="brand-title">Open<strong>Desk</strong></span>
+        <span id="connectionBadge" class="badge badge-offline">Offline</span>
+      </div>
+
+      <div class="nav-stats" id="sessionStats" style="display: none;">
+        <span class="stat-pill"><span class="stat-label">FPS:</span> <span id="statFps" class="stat-val">0</span></span>
+        <span class="stat-pill"><span class="stat-label">RTT:</span> <span id="statLatency" class="stat-val">0ms</span></span>
+        <span class="stat-pill"><span class="stat-label">Mode:</span> <span id="statMode" class="stat-val">P2P/Relay</span></span>
+      </div>
+
+      <div class="nav-actions" id="sessionActions" style="display: none;">
+        <button id="btnVoiceToggle" class="btn-icon" title="Voice Communication (WhatsApp Style)">🎙️ Voice: Off</button>
+        <button id="btnFiles" class="btn-icon" title="File Transfer">📁 Files</button>
+        <button id="btnClipboard" class="btn-icon" title="Clipboard Sync">📋 Clipboard</button>
+        
+        <div class="dropdown">
+          <button id="btnShortcuts" class="btn-icon" title="Send Shortcut">⌨️ Keys ▾</button>
+          <div class="dropdown-content">
+            <a href="#" data-shortcut="ctrl_alt_del">Task Manager (Ctrl+Shift+Esc)</a>
+            <a href="#" data-shortcut="win">Windows Key (Start)</a>
+            <a href="#" data-shortcut="alt_tab">Switch Window (Alt+Tab)</a>
+          </div>
+        </div>
+
+        <button id="btnFullscreen" class="btn-icon" title="Toggle Fullscreen">⛶ Fullscreen</button>
+        <button id="btnDisconnect" class="btn-icon btn-danger" title="Disconnect Session">Disconnect</button>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      
+      <!-- Connect Hero Screen (When not in session) -->
+      <section id="connectScreen" class="connect-screen">
+        <div class="desk-cards-container">
+          
+          <!-- This Desk Card -->
+          <div class="desk-card this-desk">
+            <div class="card-header">
+              <span class="card-icon">💻</span>
+              <h3>This Desk</h3>
+            </div>
+            <p class="card-desc">Your Client Session ID</p>
+            <div class="id-display" id="myClientIdDisplay">Connecting...</div>
+            <p class="card-footnote">Ready for outgoing remote desktop sessions.</p>
+          </div>
+
+          <!-- Remote Desk Card -->
+          <div class="desk-card remote-desk">
+            <div class="card-header">
+              <span class="card-icon">🚀</span>
+              <h3>Remote Desk</h3>
+            </div>
+            <p class="card-desc">Enter the 9-digit OpenDesk ID of the remote host</p>
+            
+            <div class="input-group">
+              <input type="text" id="targetIdInput" placeholder="e.g. 524 819 301" autocomplete="off" spellcheck="false">
+            </div>
+
+            <div class="input-group" style="margin-top: 10px;">
+              <input type="password" id="targetPasswordInput" placeholder="Password (if set by host)">
+            </div>
+
+            <div class="action-row">
+              <button id="btnConnect" class="btn btn-primary">Connect Session</button>
+            </div>
+            
+            <div id="connectError" class="alert-box alert-error" style="display: none;"></div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Remote Viewport (Active Session) -->
+      <section id="viewportScreen" class="viewport-screen" style="display: none;">
+        <div id="viewportContainer" class="viewport-container">
+          <canvas id="remoteCanvas" tabindex="0"></canvas>
+          <div id="touchVirtualCursor" class="virtual-cursor" style="display: none;"></div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- File Transfer Modal -->
+    <div id="fileModal" class="modal" style="display: none;">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>📁 Remote File Manager</h3>
+          <button class="modal-close" id="btnCloseFileModal">&times;</button>
+        </div>
+        
+        <div class="modal-body">
+          <div class="file-path-bar">
+            <button id="btnFileUp" class="btn btn-sm">⬆ Up</button>
+            <input type="text" id="currentPathInput" readonly>
+            <button id="btnFileRefresh" class="btn btn-sm">🔄 Refresh</button>
+          </div>
+
+          <div class="file-table-container">
+            <table class="file-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th style="width: 100px;">Size</th>
+                  <th style="width: 140px;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="fileListBody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+
+          <div class="file-upload-zone" id="fileUploadZone">
+            <p>Drag & drop files here to upload to remote folder, or</p>
+            <input type="file" id="filePickerInput" style="display: none;">
+            <button id="btnTriggerUpload" class="btn btn-sm btn-secondary">Choose File</button>
+          </div>
+
+          <div id="transferProgressContainer" style="display: none; margin-top: 15px;">
+            <div class="progress-label" id="progressLabel">Uploading...</div>
+            <div class="progress-bar-bg">
+              <div id="progressBarFill" class="progress-bar-fill" style="width: 0%;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Clipboard Sync Modal -->
+    <div id="clipboardModal" class="modal" style="display: none;">
+      <div class="modal-content modal-sm">
+        <div class="modal-header">
+          <h3>📋 Clipboard Synchronization</h3>
+          <button class="modal-close" id="btnCloseClipModal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <label class="form-label">Active Remote Clipboard Content:</label>
+          <textarea id="clipboardTextarea" rows="6" class="form-textarea" placeholder="Clipboard content will appear here..."></textarea>
+          
+          <div class="modal-footer" style="margin-top: 15px;">
+            <button id="btnSendClipboard" class="btn btn-primary">Push to Host Clipboard</button>
+            <button id="btnCopyLocal" class="btn btn-secondary">Copy to Local</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="js/renderer.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/file_transfer.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

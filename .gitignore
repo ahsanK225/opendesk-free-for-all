@@ -1,0 +1,27 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+
+# PyInstaller & Compiler build artifacts
+build/
+dist/
+installer_output/
+*.exe
+
+# Exclude large external binaries (use bin/download_cloudflared.bat)
+bin/*.exe
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE & Editor settings
+.vscode/
+.idea/
+*.swp
+*.swo
