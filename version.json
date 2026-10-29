@@ -1,17 +1,17 @@
 {
-  "version": "1.1.5",
-  "release_date": "2026-10-29",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.5/OpenDesk_v1.1.5_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.5/OpenDesk_Setup_v1.1.5_Installer.exe",
+  "version": "1.1.6",
+  "release_date": "2026-10-30",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.6/OpenDesk_v1.1.6_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.6/OpenDesk_Setup_v1.1.6_Installer.exe",
   "changelog": [
+    "Dynamic Display Modes: Fit Screen (Aspect Ratio), Stretch to Fill (No Black Bars), and 1:1 Original Resolution",
+    "Multi-Level Viewport Zoom Controls: Zoom In (+), Zoom Out (-), 100% Reset, and Ctrl+MouseWheel centered zooming",
+    "Interactive Middle-Click and Shift+Drag Pan Navigation when zoomed into high-resolution remote desktops",
+    "100% Backward Compatibility: Mathematical coordinate normalization mapping all zoom levels & aspect modes to older host agents",
+    "Smart Incremental Auto-Updater with SHA-256 Differential Delta Verification and atomic rollback protection",
     "Dual-Redundant Cloudflare Edge + KeyValue 9-digit ID Discovery for instant cross-network connection",
     "Zero-Delay Real-Time VoIP Engine with 40ms blocks and adaptive jitter buffer purging (<100ms latency)",
-    "Fixed GUI freeze / 'Not Responding' via canvas frame debouncing and non-blocking background workers",
-    "Prominent 'Download & Update Now' button layout fix with scrollable changelog",
     "DeskRT 60 FPS Canvas with normalized Win32 mouse/keyboard input and voice call audio",
-    "In-App Automatic Software Updates with 1-click background self-replacement",
-    "Smart PortAudio Microphone Detection (Auto-selects physical gaming headset)",
-    "64-bit Safe Bidirectional Windows Clipboard Synchronization",
     "Digitally Signed Binaries with Authenticode SHA-256 and DigiCert RFC 3161 Timestamps"
   ]
 }

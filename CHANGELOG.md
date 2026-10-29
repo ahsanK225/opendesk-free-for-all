@@ -1,6 +1,54 @@
 # Changelog
 All notable project changes are documented here.
 
+## [2026-10-30] — Release v1.1.6: Dynamic Display Modes, Multi-Level Zooming & Backward-Compatible Coordinate Normalization
+### Added
+- **Dynamic Display Aspect Ratio Modes** (`client/viewer.py`):
+  - **Best Fit (Auto-Adapt Aspect Ratio)** (Default): Scales remote screen to fit client viewport while preserving native aspect ratio, with subtle letterboxing/pillarboxing.
+  - **Stretch to Fill (No Black Bars)**: Stretches remote desktop image to fill 100% of the canvas window width and height, completely eliminating black borders.
+  - **1:1 Original Size (100% Native Resolution)**: Renders remote screen at exact pixel-for-pixel dimensions with zero scaling blur or interpolation artifacts.
+  - Added dedicated toolbar dropdown `[ 📐 Fit ▾ ]` / `[ ↔ Stretch ▾ ]` / `[ 1:1 Orig ▾ ]` allowing 1-click switching with visual checkmark indicators.
+- **Multi-Level Viewport Zoom Controls** (`client/viewer.py`):
+  - Added toolbar zoom controls: `[ 🔍 - ]`, `[ 100% ]` (click-to-reset), and `[ 🔍 + ]`.
+  - Supports continuous scaling from **0.5x (50%) to 3.0x (300%)** in 25% increments.
+  - Added `Ctrl + MouseWheel` centered zoom: smoothly zooms in/out centered around the mouse cursor position, keeping the remote workspace element under the cursor stationary.
+- **Interactive Viewport Pan Navigation** (`client/viewer.py`):
+  - Added middle-click drag pan (`<Button-2>`, `<B2-Motion>`) for intuitive panning across zoomed-in or high-resolution remote desktops.
+  - Quick middle-click (<4px motion) passes standard middle click event through to the remote host.
+  - Added Shift + Left Click drag (`<Shift-Button-1>`, `<Shift-B1-Motion>`) for touchpad and laptop users.
+  - Added pan boundary clamping (`_clamp_pan`): prevents viewport from drifting off-screen.
+- **100% Host Backward Compatibility**:
+  - Implemented mathematical coordinate normalization in `_normalize_coords(event_x, event_y)`:
+    - Calculates `local_x = event_x - (offset_x + pan_x)` and `local_y = event_y - (offset_y + pan_y)`.
+    - Normalizes by `display_width` and `display_height` to output standard `[0.0, 1.0]` coordinates.
+    - Drops out-of-bounds clicks in letterbox borders (returns `None, None`).
+  - **Older hosts (v1.0.0, v1.1.0, v1.1.2, v1.1.5)** continue to receive standard normalized coordinates, converting them via `abs_x = int(norm_x * host_width)`.
+  - Client zoom, aspect stretch, and panning require zero host protocol changes.
+- **Unit Test Suite Expansion** (`tests/test_native_viewer.py`):
+  - Added 6 comprehensive tests:
+    - `test_display_modes_and_switching`
+    - `test_zoom_controls_and_clamping`
+    - `test_coordinate_normalization_fit_mode`
+    - `test_coordinate_normalization_stretch_mode`
+    - `test_coordinate_normalization_zoomed_and_panned`
+    - `test_host_backward_compatibility_coordinate_invariance`
+  - Total test suite expanded to **38 unit tests**, all running clean and passing in 2.624s.
+
+### Changed
+- Standardized version `1.1.6` across all components:
+  - `common/updater.py`: Synchronized `APP_VERSION = "1.1.6"`.
+  - `version.json`: Updated manifest to `1.1.6` targeting `OpenDesk_v1.1.6_Portable.exe` and `OpenDesk_Setup_v1.1.6_Installer.exe`.
+  - `opendesk_installer.iss`: Synchronized `#define MyAppVersion "1.1.6"` and `OutputBaseFilename=OpenDesk_Setup_v1.1.6`.
+  - `build_installer.bat`: Configured compilation and Authenticode signing targets for `v1.1.6`.
+- Safe render debouncing cancellation:
+  - Cancelled pending `after_idle` canvas redraws in `close()` to eliminate harmless Tkinter destroy warnings.
+
+### Tests and Verification
+- Executed unit test suite `python -m unittest discover tests`: **38/38 tests passed in 2.624s**.
+- Compiled and digitally signed all four binaries with Authenticode SHA-256 + DigiCert RFC 3161 timestamps.
+
+---
+
 ## [2026-10-29] — Smart Incremental Auto-Update System & Differential SHA-256 Verification
 ### Added
 - **Smart Incremental Auto-Updater Engine** (`common/incremental_updater.py`):

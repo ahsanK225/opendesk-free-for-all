@@ -26,8 +26,10 @@ opendesk/
 ├── opendesk.ico                    # High-resolution application icon
 ├── opendesk.spec                   # PyInstaller bundle specification with all hidden imports
 ├── opendesk_app.py                 # AnyDesk 8 multi-tab GUI, sidebar, quick-connect & embedded session viewer
-├── opendesk_installer.iss          # Inno Setup 6 wizard installation script (v1.1.5)
+├── opendesk_installer.iss          # Inno Setup 6 wizard installation script (v1.1.6)
 ├── OpenDesk_Setup.exe              # Compiled Inno Setup installer wizard (Digitally Signed)
+├── OpenDesk_Setup_v1.1.6_Installer.exe # Versioned installer wizard binary (v1.1.6)
+├── OpenDesk_v1.1.6_Portable.exe    # Versioned standalone portable binary (v1.1.6)
 ├── PROJECT_STRUCTURE.md            # Detailed structural and module specification
 ├── push_to_github.bat              # 1-Click Git push synchronization script
 ├── README.md                       # Public documentation, quickstart, and downloads
@@ -49,7 +51,7 @@ opendesk/
 │   └── OpenDesk_CodeSigning.pfx    # PKCS#12 certificate and private key bundle
 │
 ├── client/
-│   ├── viewer.py                   # In-tab EmbeddedSessionView & NativeSessionViewer with Canvas render debouncing (Tkinter + PIL DeskRT)
+│   ├── viewer.py                   # In-tab EmbeddedSessionView & NativeSessionViewer: Aspect ratio modes (Fit/Stretch/1:1), Zoom (50%-300%), Pan, render debouncing, backward-compatible coordinate normalization
 │   └── __init__.py
 │
 ├── common/

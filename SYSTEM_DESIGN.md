@@ -218,3 +218,39 @@ OpenDesk employs a lightweight, decoupled update manifest stored at the root of 
 - **Manifest Generation & Release Server Tools**:
   - `tools/manifest_generator.py`: Recursively scans release folders and generates versioned `manifest.json` files with SHA-256 hashes.
   - `tools/update_server.py`: Lightweight HTTP server supporting byte-range streaming, CORS headers, and delta delivery for local testing and CDN deployment.
+
+## 9. Dynamic Display Modes, Multi-Level Zooming & Backward Compatibility
+
+### 9.1 Display Modes Architecture
+In remote desktop sessions, display dimensions and aspect ratios frequently differ between client and host workstations (e.g. 16:9 1080p client connecting to 16:10 or 21:9 host, or client viewing in a windowed frame). OpenDesk provides three display modes selectable via the session toolbar `[ 📐 Mode: Fit ▾ ]`:
+1. **Best Fit (`fit`)**:
+   - Preserves host screen aspect ratio: `canvas_scale = min(cw / rw, ch / rh) * zoom_level`.
+   - Centers image within canvas with letterboxing/pillarboxing.
+   - Out-of-bounds canvas clicks inside black bars are dropped (`None, None`).
+2. **Stretch to Fill (`stretch`)**:
+   - Stretches remote desktop frame across entire canvas width and height: `dw = cw * zoom_level`, `dh = ch * zoom_level`.
+   - Eliminates black bars completely, maximizing visible screen area on compact laptops and windowed layouts.
+3. **1:1 Original Resolution (`original`)**:
+   - Renders remote desktop at exact native pixel dimensions: `dw = rw * zoom_level`, `dh = rh * zoom_level`.
+   - Provides zero interpolation blur and pixel-to-pixel fidelity for fine typography and IDE code editing.
+
+### 9.2 Zoom and Pan Navigation
+- **Zoom Range**: 0.5x (50%) to 3.0x (300%) with continuous 25% increments via `[ 🔍 - ]`, `[ 100% ]` (reset), and `[ 🔍 + ]`.
+- **Cursor-Centered Zoom (`Ctrl + MouseWheel`)**: Dynamically computes normalized anchor under mouse cursor before scaling, adjusting pan offsets so the point directly beneath the cursor remains anchored in place.
+- **Interactive Panning**:
+  - **Middle-Click Drag (`<Button-2>`, `<B2-Motion>`)**: Smoothly pans viewport when remote dimensions exceed client canvas bounds.
+  - Quick middle-clicks (<4px drag) pass through as native middle-click events to the remote desktop.
+  - **Shift + Left-Click Drag (`<Shift-Button-1>`, `<Shift-B1-Motion>`)**: Dedicated pan alternative for trackpad and laptop users without physical middle buttons.
+  - **Pan Bounds Clamping (`_clamp_pan`)**: Restricts pan offsets to `±(dw - cw) / 2 + 60px`, preventing the remote display from drifting off-screen.
+
+### 9.3 100% Backward Compatibility Principle
+All scaling, aspect ratio conversion, zoom transformation, and panning occur strictly in the client viewport canvas (`client/viewer.py`).
+When transmitting mouse coordinates to the remote host:
+$$\text{local\_x} = \text{event\_x} - (\text{offset\_x} + \text{pan\_x})$$
+$$\text{local\_y} = \text{event\_y} - (\text{offset\_y} + \text{pan\_y})$$
+$$\text{norm\_x} = \frac{\text{local\_x}}{\text{display\_width}}, \quad \text{norm\_y} = \frac{\text{local\_y}}{\text{display\_height}}$$
+
+The resulting `norm_x, norm_y` are clamped to $[0.0, 1.0]$ and transmitted over standard WebSocket packets (`MessageType.INPUT_MOUSE_MOVE` / `INPUT_MOUSE_DOWN`).
+Older host versions (v1.0.0, v1.1.0, v1.1.2, v1.1.5) consume these standard normalized coordinates without any modification:
+$$\text{host\_x} = \text{int}(\text{norm\_x} \times \text{host\_width}), \quad \text{host\_y} = \text{int}(\text{norm\_y} \times \text{host\_height})$$
+Thus, older hosts hit the exact target pixel regardless of whether the connecting client is zoomed in 200%, stretched, or in native 1:1 mode. Older clients connecting to newer hosts also remain 100% functional, preserving complete bidirectional backward compatibility.
