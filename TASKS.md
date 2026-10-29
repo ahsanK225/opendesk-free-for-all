@@ -1,14 +1,15 @@
 # Project Task Checklist & Execution Board
 
-## Current Task: Fix PyInstaller Temporary Directory Cleanup (`_MEIxxxx`) Error
+## Current Task: Native Desktop Remote Session Viewer (AnyDesk-Style In-App Viewer)
 Status: `VERIFIED COMPLETE`
 
 ### Task Matrix
 
 | Task ID | Description | Responsible Agent | Dependencies | Acceptance Criteria | Status | Verification Evidence |
 |---|---|---|---|---|---|---|
-| TASK-17 | Root Cause Analysis of `_MEI` Directory Lock | Agent 1 (Analysis) | None | Identify which process held lock on `_MEI00004fa42` | VERIFIED COMPLETE | Traced to PID 8396 `cloudflared.exe` holding file handle in `_MEI00004fa42\bin` |
-| TASK-18 | Externalize Child Binary & Synchronous Process Teardown | Agent 3 (Implementation) | TASK-17 | Copy `cloudflared.exe` outside `_MEIPASS` to `~/.opendesk/bin`; terminate with `taskkill /F /T` | VERIFIED COMPLETE | Verified `cloudflared.exe` runs from `~/.opendesk/bin`; zero handles in `_MEIPASS` |
-| TASK-19 | Application Clean Teardown & Atexit Hooks | Agent 3 (Implementation) | TASK-18 | Clean exit handlers in `opendesk_app.py` and `AudioEngine.stop()` | VERIFIED COMPLETE | Added `atexit.register` and PortAudio `sd.stop()`; no orphaned background processes |
-| TASK-20 | Recompile Binaries & Authenticode Digital Signing | Agent 5 (Testing) / Agent 9 (Audit) | TASK-18, 19 | Build `OpenDesk.exe` and `OpenDesk_Setup.exe`; sign both with SHA-256 + DigiCert timestamp | VERIFIED COMPLETE | Both executables compiled and signed with Authenticode SHA-256 + DigiCert timestamps (valid until 2037) |
-| TASK-21 | Final Testing, Git Commit & Documentation Update | Agent 8 (Documentation) | TASK-20 | Update `CHANGELOG.md`, `PROJECT_STRUCTURE.md`, `SYSTEM_DESIGN.md`; push to GitHub | VERIFIED COMPLETE | 13/13 unit tests passed; git commit and push to `origin/main` complete |
+| TASK-22 | Requirements Analysis & Viewer Architecture | Agent 1 (Analysis) / Agent 2 (Architecture) | None | Complete requirements definition for in-app native viewer | VERIFIED COMPLETE | Documented in `TASKS.md` & `SYSTEM_DESIGN.md` |
+| TASK-23 | Implement Native Session Viewer Module | Agent 3 (Implementation) | TASK-22 | Create `client/viewer.py` with Tkinter Canvas, PIL ImageTk DeskRT decoder, Win32 input, voice audio | VERIFIED COMPLETE | `client/viewer.py` created with full DeskRT, input, voice, and shortcut handling |
+| TASK-24 | Integrate Viewer into OpenDesk Desktop GUI | Agent 3 (Implementation) | TASK-23 | "Connect Session" launches native session window directly without browser | VERIFIED COMPLETE | `opendesk_app.py` `_connect_remote` launches `NativeSessionViewer` |
+| TASK-25 | Unit & Integration Testing | Agent 5 (Testing / QA) | TASK-24 | Verify frame decoding, mouse/keyboard forwarding, voice audio, and session disconnect | VERIFIED COMPLETE | `tests/test_native_viewer.py` created; 14/14 unit tests pass in 0.926s |
+| TASK-26 | Packaging, PyInstaller Spec & Authenticode Signing | Agent 5 (Testing) / Agent 9 (Audit) | TASK-25 | Rebuild `OpenDesk.exe` and `OpenDesk_Setup.exe`; sign both with SHA-256 + DigiCert timestamp | VERIFIED COMPLETE | Recompiled binaries; digitally signed with DigiCert RFC 3161 timestamps |
+| TASK-27 | Final Documentation & GitHub Sync | Agent 8 (Documentation) | TASK-26 | Update `CHANGELOG.md`, `PROJECT_STRUCTURE.md`, `SYSTEM_DESIGN.md`; push to GitHub | VERIFIED COMPLETE | Committed and pushed to `origin/main` |

@@ -44,6 +44,11 @@ Write-Host "  Expires:        $($cert.NotAfter)" -ForegroundColor Green
 Write-Host ""
 
 # Step 3: Determine targets
+if ($Files -and $Files.Count -gt 0) {
+    # Split any comma-separated strings
+    $Files = $Files | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
+}
+
 if (-not $Files -or $Files.Count -eq 0) {
     $defaultFiles = @(
         (Join-Path $RootDir "OpenDesk.exe"),

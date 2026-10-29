@@ -46,6 +46,10 @@ opendesk/
 │   ├── OpenDesk_CodeSigning.cer    # Public X.509 certificate for client trust
 │   └── OpenDesk_CodeSigning.pfx    # PKCS#12 certificate and private key bundle
 │
+├── client/
+│   ├── viewer.py                   # AnyDesk-style Native Desktop Remote Session Viewer (Tkinter + PIL)
+│   └── __init__.py
+│
 ├── common/
 │   ├── codec.py                    # DeskRT 64x64 grid tile & delta frame encoder
 │   ├── config.py                   # Persistent host ID and user settings manager

@@ -43,17 +43,20 @@ OpenDesk is designed to offer a lightweight, zero-configuration, ultra-fast remo
                                            |
                               Secure Edge / Internet (WSS)
                                            |
-                                           v
-+-----------------------------------------------------------------------------------+
-|                            REMOTE CLIENT (WEB BROWSER)                            |
-|                                                                                   |
-|  +-----------------------------------------------------------------------------+  |
-|  |  HTML5 Web Application (web/index.html & web/js/)                           |  |
-|  |  - HTML5 Canvas Tile Redraw (renderer.js)     - Input Scaling (input.js)    |  |
-|  |  - Web Audio API AEC Voice (audio.js)         - File Assembly (file_tran...) | |
-|  |  - Connection Manager (app.js)                                              |  |
-|  +-----------------------------------------------------------------------------+  |
-+-----------------------------------------------------------------------------------+
+                    +----------------------+----------------------+
+                    |                                             |
+                    v                                             v
++-----------------------------------------+   +-----------------------------------------+
+|     NATIVE ANYDESK CLIENT (WINDOWS)     |   |      REMOTE CLIENT (WEB BROWSER)        |
+|                                         |   |                                         |
+| +-------------------------------------+ |   | +-------------------------------------+ |
+| | NativeSessionViewer (client/viewer) | |   | | HTML5 Web App (web/index.html & js) | |
+| | - Tkinter Canvas + PIL ImageTk      | |   | | - HTML5 Canvas Tile Redraw          | |
+| | - Win32 Mouse & Keyboard Injection  | |   | | - Web Audio API AEC Voice           | |
+| | - Integrated Native AudioEngine     | |   | | - Browser Clipboard Sync            | |
+| | - Direct Windows Clipboard Sync     | |   | | - Zero-Install Remote Control       | |
+| +-------------------------------------+ |   | +-------------------------------------+ |
++-----------------------------------------+   +-----------------------------------------+
 ```
 
 ## 3. Code Signing & Authenticode Architecture

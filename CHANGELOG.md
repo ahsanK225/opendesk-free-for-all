@@ -1,6 +1,27 @@
 # Changelog
 All notable project changes are documented here.
 
+## [2026-10-29] — AnyDesk-Style Native In-App Remote Session Viewer
+### Added
+- Added `opendesk/client/viewer.py` implementing `NativeSessionViewer` (standalone native desktop session window using `Tkinter` and `PIL.ImageTk`).
+- Connecting to a remote Desk ID now opens directly inside a dedicated native desktop window, matching AnyDesk's native application UX without opening external web browsers.
+- Embedded high-performance canvas renderer supporting full DeskRT keyframe and tile delta stream reconstruction.
+- Added native mouse movement normalization, multi-button clicks, and wheel scrolling.
+- Added native keyboard capture with automatic `Ctrl+V` clipboard push and `Ctrl+C` sync.
+- Added native top toolbar featuring live latency (RTT ms), FPS counter, real-time voice call toggle (`AudioEngine`), system shortcuts menu (Task Manager, Windows Key, Alt+Tab), fullscreen toggle, and clean disconnect button.
+- Added unit test suite `tests/test_native_viewer.py`.
+
+### Changed
+- Updated `opendesk_app.py` `_connect_remote` action to launch `NativeSessionViewer` natively instead of invoking `webbrowser.open()`.
+- Updated `opendesk.spec` PyInstaller configuration to bundle `opendesk.client` and `PIL.ImageTk`.
+
+### Tests and Verification
+- Executed `python -m unittest discover tests`: 14/14 unit tests passed (0.926s).
+- Recompiled `OpenDesk.exe` and `OpenDesk_Setup.exe`.
+- Digitally signed all executables with Authenticode SHA-256 and DigiCert RFC 3161 timestamps.
+
+---
+
 ## [2026-10-29] — Fix PyInstaller Temporary Directory Cleanup Lock (_MEIxxxx)
 ### Fixed
 - Fixed `Failed to remove temporary directory: ...\_MEIxxxx` warning dialog on application exit.

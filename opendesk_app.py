@@ -27,6 +27,7 @@ from opendesk.relay.server import RelayServer
 from opendesk.host.agent import HostAgent
 from opendesk.common.tunnel import CloudflareTunnel
 from opendesk.common.config import get_persistent_host_id
+from opendesk.client.viewer import NativeSessionViewer
 
 def find_free_port(start_port=8080):
     """Find an available TCP port, attempting to reuse standard 8080 first."""
@@ -190,9 +191,9 @@ class OpenDeskGUI:
         if not target:
             messagebox.showwarning("Input Required", "Please enter a valid remote 9-digit OpenDesk ID.")
             return
-        clean = target.replace(" ", "")
-        url = f"http://localhost:{self.port}/?connect={clean}"
-        webbrowser.open(url)
+        clean = target.replace(" ", "").replace("-", "")
+        # Launch Native In-App Remote Session Viewer (AnyDesk Style)
+        NativeSessionViewer(parent=self.root, relay_url=self.relay_url, target_id=clean)
 
     def _open_web(self):
         webbrowser.open(f"http://localhost:{self.port}")
