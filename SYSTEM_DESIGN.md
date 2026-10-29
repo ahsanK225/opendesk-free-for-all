@@ -59,7 +59,42 @@ OpenDesk is designed to offer a lightweight, zero-configuration, ultra-fast remo
 +-----------------------------------------+   +-----------------------------------------+
 ```
 
-## 3. Code Signing & Authenticode Architecture
+## 3. Global Rendezvous & Cross-Network Discovery Architecture
+OpenDesk implements an AnyDesk-style zero-configuration discovery system enabling two users on completely different LANs, cellular networks, or firewalls to establish a remote desktop session using only a 9-digit numerical ID (e.g., `732 364 935`).
+
+### 3.1 Architecture Overview
+```
+[Host PC (ID: 732 364 935)]
+        │
+        ├── 1. Initializes Local Relay & Cloudflare Tunnel
+        │      Tunnel URL generated: https://alpha-beta.trycloudflare.com
+        │
+        ├── 2. Publishes to Global Rendezvous (common/rendezvous.py)
+        │      HTTP POST -> keyvalue.immanuel.co/api/KeyVal/UpdateValue/s460x9wm/732364935/<Base64 URL>
+        │
+        └── 3. Runs Background RendezvousHeartbeat every 40s
+               Maintains fresh endpoint registration in registry
+
+                                     ▲
+                                     │ (Lookup: <0.3s)
+                                     ▼
+
+[Client PC (Any Network)]
+        │
+        ├── 1. User enters 9-digit ID: "732 364 935"
+        │
+        ├── 2. EmbeddedSessionView Worker Queries Global Rendezvous
+        │      HTTP GET -> keyvalue.immanuel.co/api/KeyVal/GetValue/s460x9wm/732364935
+        │      Decodes Base64 -> https://alpha-beta.trycloudflare.com
+        │
+        └── 3. Connects directly: wss://alpha-beta.trycloudflare.com/ws
+               Host relay accepts client and connects session!
+```
+
+### 3.2 Dynamic Fallback Routing
+If a client connects directly to a host's tunnel URL (e.g. from an invite link or browser bookmark), `relay/server.py` performs active peer fallback matching: if the specified target ID is not directly indexed, the relay automatically routes the session to the currently registered host peer on that instance.
+
+## 4. Code Signing & Authenticode Architecture
 Windows enforces digital signatures on Executable (`.exe`) and Dynamic Link Library (`.dll`) binaries through Microsoft Authenticode.
 Unsigned binaries trigger Windows SmartScreen warnings ("Windows protected your PC / Unknown Publisher") and strict enterprise anti-malware inspection.
 

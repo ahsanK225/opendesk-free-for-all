@@ -56,6 +56,12 @@ try:
         download_update_file,
         apply_update_and_restart
     )
+    from opendesk.common.rendezvous import (
+        publish_host_rendezvous,
+        resolve_host_rendezvous,
+        parse_connect_target,
+        RendezvousHeartbeat
+    )
     from opendesk.client.viewer import EmbeddedSessionView, NativeSessionViewer
 except ImportError:
     from relay.server import RelayServer
@@ -76,6 +82,12 @@ except ImportError:
         check_for_updates,
         download_update_file,
         apply_update_and_restart
+    )
+    from common.rendezvous import (
+        publish_host_rendezvous,
+        resolve_host_rendezvous,
+        parse_connect_target,
+        RendezvousHeartbeat
     )
     from client.viewer import EmbeddedSessionView, NativeSessionViewer
 
@@ -109,6 +121,7 @@ class OpenDeskGUI:
         self.public_url: Optional[str] = None
         self.host_agent: Optional[HostAgent] = None
         self.tunnel: Optional[CloudflareTunnel] = None
+        self.rendezvous_heartbeat: Optional[RendezvousHeartbeat] = None
 
         # Tab & View State
         # Structure: list of dicts: {"id": str, "title": str, "type": "home" | "session", "frame": Frame, "viewer": view_or_none, "btn_frame": Frame}
@@ -754,20 +767,29 @@ class OpenDeskGUI:
         self._launch_session(raw_target, pw)
 
     def _launch_session(self, raw_target: str, password: str = ""):
-        clean = raw_target.replace(" ", "").replace("-", "").strip()
-        if not clean:
+        parsed_id, direct_ws_url = parse_connect_target(raw_target)
+        if not parsed_id:
             return
 
         # Record in recent sessions
-        add_recent_session(clean)
+        add_recent_session(parsed_id)
 
         # Check if tab already open for this session
-        existing = next((t for t in self.tabs if t["id"] == clean), None)
+        existing = next((t for t in self.tabs if t["id"] == parsed_id), None)
         if existing:
-            self.switch_tab(clean)
+            self.switch_tab(parsed_id)
             return
 
-        formatted = self._format_id(clean)
+        formatted = self._format_id(parsed_id)
+
+        # Determine effective relay URL
+        my_clean_id = self.assigned_id.replace(" ", "").replace("-", "").strip()
+        if direct_ws_url:
+            effective_relay = direct_ws_url
+        elif parsed_id == my_clean_id:
+            effective_relay = self.relay_url
+        else:
+            effective_relay = "auto"
 
         # Create new session tab container frame
         session_frame = tk.Frame(self.viewport_container, bg="#000000")
@@ -775,15 +797,15 @@ class OpenDeskGUI:
         # Instantiate EmbeddedSessionView directly inside the tab frame
         viewer = EmbeddedSessionView(
             parent=session_frame,
-            relay_url=self.relay_url,
-            target_id=clean,
+            relay_url=effective_relay,
+            target_id=parsed_id,
             password=password,
-            on_close=lambda: self.close_tab(clean)
+            on_close=lambda: self.close_tab(parsed_id)
         )
         viewer.pack(fill="both", expand=True)
 
         tab_data = {
-            "id": clean,
+            "id": parsed_id,
             "title": formatted,
             "type": "session",
             "frame": session_frame,
@@ -793,7 +815,7 @@ class OpenDeskGUI:
 
         self.tabs.append(tab_data)
         self._render_tab_button(tab_data)
-        self.switch_tab(clean)
+        self.switch_tab(parsed_id)
 
     # =========================================================================
     # ACTIONS, DIALOGS & CLIPBOARD
@@ -962,10 +984,21 @@ class OpenDeskGUI:
         self.id_label.config(text=formatted)
         if not self.public_url:
             self.status_badge.config(text="● LOCAL READY", bg="#1f382a", fg="#9ece6a")
+        else:
+            publish_host_rendezvous(self.assigned_id, self.public_url)
 
     def _on_tunnel_url_ready(self, url: str):
         self.public_url = url
         self.root.after(0, self._update_tunnel_ui)
+        if self.assigned_id and url:
+            publish_host_rendezvous(self.assigned_id, url)
+            if self.rendezvous_heartbeat is None:
+                self.rendezvous_heartbeat = RendezvousHeartbeat(
+                    host_id_getter=lambda: self.assigned_id,
+                    tunnel_url_getter=lambda: self.public_url,
+                    interval=40.0
+                )
+                self.rendezvous_heartbeat.start()
 
     def _update_tunnel_ui(self):
         if self.public_url:
@@ -974,6 +1007,12 @@ class OpenDeskGUI:
             self.bottom_status_label.config(text=f"Global: {self.public_url}")
 
     def _on_close(self):
+        if hasattr(self, "rendezvous_heartbeat") and self.rendezvous_heartbeat:
+            try:
+                self.rendezvous_heartbeat.stop()
+            except Exception:
+                pass
+
         # Stop all embedded session viewers
         for t in self.tabs:
             if t.get("viewer"):

@@ -28,10 +28,12 @@ import aiohttp
 
 try:
     from opendesk.common.protocol import MessageType, create_packet, parse_packet
+    from opendesk.common.rendezvous import resolve_host_rendezvous, parse_connect_target
     from opendesk.host.audio import AudioEngine
     from opendesk.host.clipboard import WindowsClipboard
 except ImportError:
     from common.protocol import MessageType, create_packet, parse_packet
+    from common.rendezvous import resolve_host_rendezvous, parse_connect_target
     from host.audio import AudioEngine
     from host.clipboard import WindowsClipboard
 
@@ -339,10 +341,40 @@ class EmbeddedSessionView(tk.Frame):
                         await self.ws.send_str(pkt)
 
             async def main_ws():
+                # 0. Automatically resolve remote host ID if relay is set to auto or not explicitly provided
+                effective_relay = self.relay_url
+                if not effective_relay or effective_relay == "auto":
+                    if self.winfo_exists():
+                        self.after(0, lambda: self.status_badge.config(
+                            text=f"● Resolving [{self.target_id}]...", bg="#252a38", fg="#e0af68"
+                        ))
+                    resolved_url = None
+                    try:
+                        resolved_url = resolve_host_rendezvous(self.target_id)
+                    except Exception as e:
+                        print(f"[Viewer] Rendezvous resolution notice: {e}")
+
+                    if resolved_url:
+                        clean_host = resolved_url.replace("https://", "").replace("http://", "").rstrip("/")
+                        scheme = "ws" if "127.0.0.1" in clean_host or "localhost" in clean_host else "wss"
+                        effective_relay = f"{scheme}://{clean_host}/ws"
+                    else:
+                        if self.winfo_exists():
+                            self.after(0, lambda: self._on_connection_error(
+                                f"Host [{self.target_id}] is offline or ID not found in global registry.\n\n"
+                                f"Ensure the remote OpenDesk app is running on the host machine and connected to the internet."
+                            ))
+                        return
+
+                if self.winfo_exists():
+                    self.after(0, lambda: self.status_badge.config(
+                        text=f"● Connecting [{self.target_id}]...", bg="#252a38", fg="#e0af68"
+                    ))
+
                 async with aiohttp.ClientSession() as session:
                     self.session = session
                     try:
-                        async with session.ws_connect(self.relay_url, max_msg_size=16*1024*1024) as ws:
+                        async with session.ws_connect(effective_relay, max_msg_size=16*1024*1024) as ws:
                             self.ws = ws
                             # 1. Register as client
                             await ws.send_str(create_packet(MessageType.REGISTER, {"role": "client"}))

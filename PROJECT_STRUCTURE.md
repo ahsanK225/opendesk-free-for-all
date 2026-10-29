@@ -55,6 +55,7 @@ opendesk/
 │   ├── codec.py                    # DeskRT 64x64 grid tile & delta frame encoder
 │   ├── config.py                   # Persistent host ID, recent sessions, favorites, unattended access
 │   ├── protocol.py                 # JSON message schema & message type definitions
+│   ├── rendezvous.py               # Global rendezvous directory (9-digit ID to Cloudflare tunnel mapping)
 │   ├── tunnel.py                   # Externalized cloudflared runner & process killer
 │   ├── updater.py                  # In-app auto-update engine, progress downloader & self-restart
 │   └── __init__.py
@@ -85,6 +86,7 @@ opendesk/
 │   ├── test_file_manager.py        # Unit tests for file chunking and hash integrity
 │   ├── test_integration.py         # End-to-end integration tests for relay and host
 │   ├── test_native_viewer.py       # Unit tests for native desktop session viewer
+│   ├── test_rendezvous.py          # Unit tests for 9-digit rendezvous publish, resolve, and heartbeat
 │   ├── test_tabbed_gui.py          # Unit tests for AnyDesk tab lifecycle & recent session config
 │   ├── test_updater.py             # Unit tests for auto-update version check & download
 │   └── __init__.py
@@ -106,4 +108,5 @@ opendesk/
 - **`client/viewer.py`**: Contains `EmbeddedSessionView(tk.Frame)` and `NativeSessionViewer(tk.Toplevel)`. Renders real-time DeskRT video frames onto Tkinter canvas, scales coordinates, forwards mouse/keyboard input, synchronizes clipboard, handles 16kHz audio, and manages fullscreen and shortcuts.
 - **`host/agent.py`**: Core host engine. Captures screens, encodes delta frames, streams audio, injects input, synchronizes clipboard, and coordinates file transfers.
 - **`common/config.py`**: Persistent configuration store for 9-digit host ID, recent sessions history, aliases, favorite devices, unattended password access, and automatic update preferences.
+- **`common/rendezvous.py`**: Global rendezvous directory client and heartbeat service. Maps 9-digit OpenDesk IDs to live Cloudflare Tunnel endpoints worldwide, enabling instant AnyDesk-style cross-network discovery.
 - **`common/updater.py`**: In-app software updater. Queries remote `version.json` or GitHub releases, parses semantic versions, downloads update packages with progress monitoring, and handles seamless Windows batch self-replacement and relaunch.

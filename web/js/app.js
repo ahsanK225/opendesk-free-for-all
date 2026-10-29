@@ -263,7 +263,7 @@ document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("touchstart", unlockAudio, { passive: true });
 
   // --- Event Listeners ---
-  btnConnect.addEventListener("click", () => {
+  btnConnect.addEventListener("click", async () => {
     unlockAudio();
     const rawTarget = targetIdInput.value.replace(/[\s-]/g, "").trim();
     if (!rawTarget) {
@@ -271,6 +271,30 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     hideError();
+
+    // If target is a 9-digit remote ID, verify if it belongs to a remote tunnel
+    if (/^\d{9}$/.test(rawTarget)) {
+      try {
+        const resp = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/s460x9wm/${rawTarget}`);
+        if (resp.ok) {
+          let val = await resp.text();
+          val = val.replace(/^"|"$/g, "").trim();
+          if (val && val !== "null") {
+            const padded = val.replace(/-/g, "/") + "=".repeat((4 - (val.length % 4)) % 4);
+            const decoded = atob(padded);
+            if (decoded.startsWith("http://") || decoded.startsWith("https://")) {
+              if (!decoded.includes(window.location.host)) {
+                window.location.href = `${decoded.replace(/\/$/, "")}/?connect=${rawTarget}`;
+                return;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Rendezvous web check notice:", e);
+      }
+    }
+
     sendPacket({
       type: "connect",
       payload: {

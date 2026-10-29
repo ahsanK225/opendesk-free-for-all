@@ -99,6 +99,18 @@ class RelayServer:
                         target_ws = self.peers.get(target_id)
                         target_meta = self.peer_meta.get(target_id)
                         
+                        # Fallback: If client connected directly to a host's tunnel endpoint,
+                        # automatically pair with the active host peer on this relay
+                        if not target_ws or target_ws.closed or not target_meta:
+                            for pid, pmeta in self.peer_meta.items():
+                                if pmeta.get("role") == "host":
+                                    cand_ws = self.peers.get(pid)
+                                    if cand_ws and not cand_ws.closed:
+                                        target_id = pid
+                                        target_ws = cand_ws
+                                        target_meta = pmeta
+                                        break
+
                         if not target_ws or target_ws.closed or not target_meta:
                             print(f"[Relay] Connect failed: target '{target_id}' not found. Active peers: {list(self.peers.keys())}")
                             await ws.send_str(json.dumps({

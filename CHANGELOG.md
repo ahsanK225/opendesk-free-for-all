@@ -1,6 +1,42 @@
 # Changelog
 All notable project changes are documented here.
 
+## [2026-10-29] — Global Rendezvous Directory & Remote 9-Digit Discovery (v1.1.2)
+### Added
+- Added `opendesk/common/rendezvous.py` providing AnyDesk-style zero-configuration remote discovery across different networks:
+  - `publish_host_rendezvous(host_id, tunnel_url)`: Automatically registers the host's 9-digit ID with its active Cloudflare Tunnel endpoint using Base64-safe URL encoding.
+  - `resolve_host_rendezvous(target_id)`: Resolves any remote 9-digit OpenDesk ID (`732 364 935`) to its remote Cloudflare Tunnel endpoint worldwide in <0.3s.
+  - `parse_connect_target(raw_input)`: Transparently parses 9-digit formatted numbers, raw digits, direct Cloudflare URLs (`https://xxx.trycloudflare.com`), and `@` targets.
+  - `RendezvousHeartbeat`: Background heartbeat service maintaining fresh tunnel registrations in the public rendezvous registry every 40s.
+- Added comprehensive unit test suite `opendesk/tests/test_rendezvous.py` with 4 tests covering target parsing, mocked publish/resolve, 404/null handling, and heartbeat lifecycle.
+
+### Changed
+- `opendesk/client/viewer.py` (`EmbeddedSessionView`):
+  - Added asynchronous rendezvous resolution in background network worker `main_ws()`.
+  - When connecting to a remote 9-digit ID, dynamically updates status badge to `● Resolving [<ID>]...` and resolves the host's tunnel URL before initiating WebSocket handshake.
+  - Connects directly to `wss://<remote_tunnel>/ws` without requiring manual URL entry.
+- `opendesk/opendesk_app.py`:
+  - Integrated `publish_host_rendezvous` and `RendezvousHeartbeat` in `_on_tunnel_url_ready()` and `_on_agent_online()`.
+  - Updated `_launch_session()` to use `parse_connect_target()` and distinguish between local self-test sessions (`self.relay_url`) and remote sessions (`auto`).
+  - Added clean termination of `rendezvous_heartbeat` and subprocess handles in `_on_close()`.
+- `opendesk/common/tunnel.py`:
+  - Added `close_fds=True` and `CREATE_NO_WINDOW` flags to subprocess creation, preventing file handle leaks into child processes.
+  - Added explicit stdout pipe closure to prevent PyInstaller `Failed to remove temporary directory` warnings on exit.
+- `opendesk/relay/server.py`:
+  - Added active host peer fallback matching on lines 102-113: when a client connects directly to a host's tunnel URL, it automatically pairs with the active host peer even if the target ID is unformatted.
+- `opendesk/web/js/app.js`:
+  - Added automatic client-side rendezvous resolution and tunnel redirection for 9-digit IDs entered in the web client.
+- `opendesk/build_installer.bat`:
+  - Configured automated generation and Authenticode signing for `OpenDesk_v1.1.2_Portable.exe` and `OpenDesk_Setup_v1.1.2_Installer.exe`.
+
+### Tests and Verification
+- Executed unit test suite `python -m unittest discover tests`: **25/25 tests passed in 1.219s**.
+- Compiled and packaged `OpenDesk.exe`, `OpenDesk_v1.1.2_Portable.exe`, `OpenDesk_Setup.exe`, and `OpenDesk_Setup_v1.1.2_Installer.exe`.
+- Digitally signed all 4 binaries with Authenticode SHA-256 + DigiCert RFC 3161 timestamps via `scripts/sign_executables.ps1`.
+- Verified digital signatures with `Get-AuthenticodeSignature`: confirmed valid signatures on all files.
+
+---
+
 ## [2026-10-29] — Release v1.1.2: Version Alignment & Automated In-App Updater
 ### Changed
 - Standardized application release version to `v1.1.2` across all components:

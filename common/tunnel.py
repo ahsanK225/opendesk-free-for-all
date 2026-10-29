@@ -70,19 +70,24 @@ class CloudflareTunnel:
             cmd = [binary, "tunnel", "--url", f"http://127.0.0.1:{self.local_port}"]
             # Hide console window on Windows
             startupinfo = None
+            creationflags = 0
             if sys.platform == "win32":
                 startupinfo = subprocess.STARTUPINFO()
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 startupinfo.wShowWindow = 0
+                creationflags = subprocess.CREATE_NO_WINDOW
 
             try:
                 self.process = subprocess.Popen(
                     cmd,
+                    stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
                     bufsize=1,
-                    startupinfo=startupinfo
+                    startupinfo=startupinfo,
+                    creationflags=creationflags,
+                    close_fds=True
                 )
 
                 pattern = re.compile(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com")
@@ -106,6 +111,11 @@ class CloudflareTunnel:
     def stop(self):
         self.running = False
         if self.process:
+            try:
+                if self.process.stdout:
+                    self.process.stdout.close()
+            except Exception:
+                pass
             try:
                 pid = self.process.pid
                 # On Windows, taskkill /F /T terminates process and all child processes synchronously
