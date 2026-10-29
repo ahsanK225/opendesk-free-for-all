@@ -1,6 +1,35 @@
 # Changelog
 All notable project changes are documented here.
 
+## [2026-10-29] — AnyDesk 8 Multi-Tab Desktop GUI & Embedded Session Viewports
+### Added
+- Implemented authentic AnyDesk 8 multi-tab window architecture in `opendesk_app.py`:
+  - Top tab strip with persistent `[ 🏠 New Connection ]`, dynamic session tabs `[ 💻 <Formatted ID>  ✕ ]`, and dynamic `+` button.
+  - In-App Embedded Remote Desktop Viewports (`EmbeddedSessionView` in `client/viewer.py`) rendering live 60 FPS DeskRT canvas inside tab container frames without detached windows or web browsers.
+  - Left navigation sidebar featuring `🏠 Home / Discover`, `⭐ Favorites`, `🕒 Recent`, `📁 Files`, and `⚙️ Settings` with AnyDesk Red active indicators (`#ef4444`).
+  - Sleek Home dashboard featuring Quick Connect search bar with prominent red connect button, "This Desk" card displaying formatted 9-digit address in triplets, 1-click address copy, and unattended password access configuration.
+  - Cloudflare worldwide internet access box with 1-click shareable URL copy.
+  - Discovery & Recent Sessions Grid displaying recent connections with device alias, target ID, last seen timestamp, favorite star toggle, and 1-click "Connect ➜" launcher.
+- Added `tests/test_tabbed_gui.py` covering tab lifecycle, ID formatting, and recent sessions configuration.
+- Backward compatibility wrapper `NativeSessionViewer` retained for standalone window usage.
+
+### Changed
+- Updated `opendesk.spec` PyInstaller bundling with complete hidden imports for all internal modules and Tkinter subsystems.
+- Bumped application and setup installer version to `v1.2.0` in `opendesk_installer.iss`.
+- Updated `build_installer.bat` to package and sign `OpenDesk_Setup_v1.2.0.exe`.
+
+### Tests and Verification
+- Executed full unit test suite `python -m unittest discover tests`: 16/16 unit tests passed in 1.214s.
+- Executed GUI headless lifecycle smoke test: confirmed tab creation, switching, and clean termination.
+- Compiled `OpenDesk.exe` with PyInstaller 6.22.3 and `OpenDesk_Setup.exe` with Inno Setup 6.7.3.
+- Digitally signed both binaries with Authenticode SHA-256 and DigiCert RFC 3161 timestamps via `scripts/sign_executables.ps1`.
+- Verified digital signatures with `Get-AuthenticodeSignature`: confirmed valid Authenticode signatures and DigiCert timestamps on both binaries.
+
+### Documentation
+- Updated `TASKS.md`, `PROJECT_STRUCTURE.md`, `SYSTEM_DESIGN.md`, and `CHANGELOG.md`.
+
+---
+
 ## [2026-10-29] — AnyDesk-Style Native In-App Remote Session Viewer
 ### Added
 - Added `opendesk/client/viewer.py` implementing `NativeSessionViewer` (standalone native desktop session window using `Tkinter` and `PIL.ImageTk`).

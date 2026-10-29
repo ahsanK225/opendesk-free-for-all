@@ -1,13 +1,14 @@
 """
 OpenDesk Native Desktop Remote Session Viewer
-Provides a native AnyDesk-style desktop session window directly inside OpenDesk
-without opening an external web browser.
+Provides a native AnyDesk-style desktop session window and embedded tab viewport
+directly inside OpenDesk without opening an external web browser.
 Features:
 - Native Canvas rendering of DeskRT video frames (PIL + ImageTk)
 - Real-time Win32 mouse coordinate normalization and button injection
 - Keyboard event capture and system shortcut actions
 - Automatic bidirectional clipboard synchronization
 - Integrated real-time voice communication (AudioEngine)
+- In-tab embedded session mode or standalone window mode
 - Fullscreen mode and session management
 """
 
@@ -21,20 +22,33 @@ import asyncio
 import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 from PIL import Image, ImageTk
 import aiohttp
 
-from opendesk.common.protocol import MessageType, create_packet, parse_packet
-from opendesk.host.audio import AudioEngine
-from opendesk.host.clipboard import WindowsClipboard
+try:
+    from opendesk.common.protocol import MessageType, create_packet, parse_packet
+    from opendesk.host.audio import AudioEngine
+    from opendesk.host.clipboard import WindowsClipboard
+except ImportError:
+    from common.protocol import MessageType, create_packet, parse_packet
+    from host.audio import AudioEngine
+    from host.clipboard import WindowsClipboard
 
-class NativeSessionViewer:
-    def __init__(self, parent: tk.Tk, relay_url: str, target_id: str, password: str = ""):
+
+class EmbeddedSessionView(tk.Frame):
+    """
+    Embedded remote desktop viewport frame that renders directly inside
+    an AnyDesk-style tab container in the main OpenDesk application window.
+    """
+    def __init__(self, parent: tk.Widget, relay_url: str, target_id: str,
+                 password: str = "", on_close: Optional[Callable[[], None]] = None):
+        super().__init__(parent, bg="#000000")
         self.parent = parent
         self.relay_url = relay_url
         self.target_id = target_id.replace(" ", "").replace("-", "").strip()
         self.password = password
+        self.on_close_cb = on_close
 
         # Networking & Asyncio State
         self.loop: Optional[asyncio.AbstractEventLoop] = None
@@ -63,70 +77,69 @@ class NativeSessionViewer:
         self.frame_count = 0
         self.fps = 0
         self.last_fps_time = time.time()
-        self.last_ping_time = 0.0
         self.rtt_ms = 0
 
-        self._build_window()
+        self._build_ui()
         self._start_connection()
 
-    def _build_window(self):
-        self.win = tk.Toplevel(self.parent)
-        self.win.title(f"OpenDesk - Remote Session [{self.target_id}]")
-        self.win.geometry("1280x760")
-        self.win.minsize(800, 500)
-        self.win.configure(bg="#0f1117")
-        self.win.protocol("WM_DELETE_WINDOW", self._on_close)
-
-        # --- Top Toolbar ---
-        self.toolbar = tk.Frame(self.win, bg="#1a1d27", height=42)
+    def _build_ui(self):
+        # --- Top Session Toolbar ---
+        self.toolbar = tk.Frame(self, bg="#161922", height=40)
         self.toolbar.pack(fill="x", side="top")
 
-        brand_frame = tk.Frame(self.toolbar, bg="#1a1d27")
-        brand_frame.pack(side="left", padx=12, pady=6)
-        tk.Label(brand_frame, text="⚡ OpenDesk", font=("Segoe UI", 11, "bold"), bg="#1a1d27", fg="#7aa2f7").pack(side="left")
+        brand_frame = tk.Frame(self.toolbar, bg="#161922")
+        brand_frame.pack(side="left", padx=12, pady=5)
+        tk.Label(brand_frame, text="⚡ DeskRT", font=("Segoe UI", 10, "bold"), bg="#161922", fg="#ef4444").pack(side="left")
 
-        # Stats Pills
-        self.status_badge = tk.Label(self.toolbar, text="● Connecting...", font=("Segoe UI", 9, "bold"), bg="#24283b", fg="#e0af68", padx=8, pady=3)
-        self.status_badge.pack(side="left", padx=8)
+        # Status & Performance Badges
+        self.status_badge = tk.Label(self.toolbar, text=f"● Connecting [{self.target_id}]...",
+                                     font=("Segoe UI", 9, "bold"), bg="#252a38", fg="#e0af68", padx=8, pady=3)
+        self.status_badge.pack(side="left", padx=6)
 
-        self.fps_label = tk.Label(self.toolbar, text="0 FPS", font=("Segoe UI", 8), bg="#1a1d27", fg="#565f89")
+        self.fps_label = tk.Label(self.toolbar, text="0 FPS", font=("Segoe UI", 8), bg="#161922", fg="#94a3b8")
         self.fps_label.pack(side="left", padx=4)
 
-        self.rtt_label = tk.Label(self.toolbar, text="0ms", font=("Segoe UI", 8), bg="#1a1d27", fg="#565f89")
+        self.rtt_label = tk.Label(self.toolbar, text="<10ms", font=("Segoe UI", 8), bg="#161922", fg="#94a3b8")
         self.rtt_label.pack(side="left", padx=4)
 
         # Actions on Right
-        actions_frame = tk.Frame(self.toolbar, bg="#1a1d27")
-        actions_frame.pack(side="right", padx=12, pady=6)
+        actions_frame = tk.Frame(self.toolbar, bg="#161922")
+        actions_frame.pack(side="right", padx=10, pady=5)
 
-        self.voice_btn = tk.Button(actions_frame, text="🎙️ Voice: OFF", font=("Segoe UI", 8, "bold"), bg="#24283b", fg="#c0caf5",
-                                   activebackground="#2f344d", activeforeground="#7aa2f7", bd=0, padx=8, pady=3, cursor="hand2", command=self._toggle_voice)
-        self.voice_btn.pack(side="left", padx=4)
+        self.voice_btn = tk.Button(actions_frame, text="🎙️ Voice: OFF", font=("Segoe UI", 8, "bold"),
+                                   bg="#24283b", fg="#c0caf5", activebackground="#2f344d", activeforeground="#7aa2f7",
+                                   bd=0, padx=8, pady=3, cursor="hand2", command=self._toggle_voice)
+        self.voice_btn.pack(side="left", padx=3)
 
-        clip_btn = tk.Button(actions_frame, text="📋 Push Clipboard", font=("Segoe UI", 8), bg="#24283b", fg="#c0caf5",
-                             activebackground="#2f344d", activeforeground="#7aa2f7", bd=0, padx=8, pady=3, cursor="hand2", command=self._send_clipboard_to_host)
-        clip_btn.pack(side="left", padx=4)
+        clip_btn = tk.Button(actions_frame, text="📋 Push Clipboard", font=("Segoe UI", 8),
+                             bg="#24283b", fg="#c0caf5", activebackground="#2f344d", activeforeground="#7aa2f7",
+                             bd=0, padx=8, pady=3, cursor="hand2", command=self._send_clipboard_to_host)
+        clip_btn.pack(side="left", padx=3)
 
         # Shortcuts Menu Button
-        self.keys_btn = tk.Menubutton(actions_frame, text="⌨️ Actions ▾", font=("Segoe UI", 8), bg="#24283b", fg="#c0caf5",
-                                      activebackground="#2f344d", activeforeground="#7aa2f7", bd=0, padx=8, pady=3, cursor="hand2")
-        self.keys_menu = tk.Menu(self.keys_btn, tearoff=0, bg="#1a1d27", fg="#c0caf5", activebackground="#24283b", activeforeground="#7aa2f7")
+        self.keys_btn = tk.Menubutton(actions_frame, text="⌨️ Actions ▾", font=("Segoe UI", 8),
+                                      bg="#24283b", fg="#c0caf5", activebackground="#2f344d", activeforeground="#7aa2f7",
+                                      bd=0, padx=8, pady=3, cursor="hand2")
+        self.keys_menu = tk.Menu(self.keys_btn, tearoff=0, bg="#1a1d27", fg="#c0caf5",
+                                 activebackground="#24283b", activeforeground="#ef4444")
         self.keys_menu.add_command(label="Task Manager (Ctrl+Shift+Esc)", command=lambda: self._send_shortcut("ctrl_alt_del"))
         self.keys_menu.add_command(label="Windows Key (Start)", command=lambda: self._send_shortcut("win"))
         self.keys_menu.add_command(label="Switch Window (Alt+Tab)", command=lambda: self._send_shortcut("alt_tab"))
         self.keys_btn.config(menu=self.keys_menu)
-        self.keys_btn.pack(side="left", padx=4)
+        self.keys_btn.pack(side="left", padx=3)
 
-        fs_btn = tk.Button(actions_frame, text="⛶ Fullscreen", font=("Segoe UI", 8), bg="#24283b", fg="#c0caf5",
-                           activebackground="#2f344d", activeforeground="#7aa2f7", bd=0, padx=8, pady=3, cursor="hand2", command=self._toggle_fullscreen)
-        fs_btn.pack(side="left", padx=4)
+        fs_btn = tk.Button(actions_frame, text="⛶ Fullscreen", font=("Segoe UI", 8),
+                           bg="#24283b", fg="#c0caf5", activebackground="#2f344d", activeforeground="#7aa2f7",
+                           bd=0, padx=8, pady=3, cursor="hand2", command=self._toggle_fullscreen)
+        fs_btn.pack(side="left", padx=3)
 
-        disc_btn = tk.Button(actions_frame, text="Disconnect", font=("Segoe UI", 8, "bold"), bg="#f7768e", fg="#0f1117",
-                             activebackground="#db4b4b", activeforeground="#ffffff", bd=0, padx=10, pady=3, cursor="hand2", command=self._on_close)
+        disc_btn = tk.Button(actions_frame, text="Disconnect", font=("Segoe UI", 8, "bold"),
+                             bg="#ef4444", fg="#ffffff", activebackground="#dc2626", activeforeground="#ffffff",
+                             bd=0, padx=10, pady=3, cursor="hand2", command=self.close)
         disc_btn.pack(side="left", padx=6)
 
         # --- Viewport Canvas ---
-        self.canvas = tk.Canvas(self.win, bg="#000000", highlightthickness=0)
+        self.canvas = tk.Canvas(self, bg="#000000", highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
 
         self._bind_events()
@@ -187,7 +200,6 @@ class NativeSessionViewer:
     def _on_mouse_wheel(self, event):
         if not self.in_session:
             return
-        # In Windows Tkinter, delta is typically 120 or -120
         delta_y = -1 if event.delta < 0 else 1
         self._send_payload(MessageType.INPUT_MOUSE_SCROLL, {"delta_x": 0, "delta_y": delta_y})
 
@@ -231,7 +243,7 @@ class NativeSessionViewer:
     # --- Clipboard Synchronization ---
     def _send_clipboard_to_host(self, auto_paste: bool = False):
         try:
-            text = self.win.clipboard_get()
+            text = self.clipboard_get()
             if text:
                 self._send_payload(MessageType.CLIPBOARD_TEXT, {"text": text, "auto_paste": auto_paste})
         except Exception:
@@ -259,12 +271,13 @@ class NativeSessionViewer:
             self.voice_btn.config(text="🎙️ Voice: OFF", bg="#24283b", fg="#c0caf5")
 
     def _toggle_fullscreen(self):
+        top = self.winfo_toplevel()
         self.is_fullscreen = not self.is_fullscreen
-        self.win.attributes("-fullscreen", self.is_fullscreen)
+        top.attributes("-fullscreen", self.is_fullscreen)
         if self.is_fullscreen:
-            self.win.bind("<Escape>", lambda e: self._toggle_fullscreen())
+            top.bind("<Escape>", lambda e: self._toggle_fullscreen())
         else:
-            self.win.unbind("<Escape>")
+            top.unbind("<Escape>")
         self._on_canvas_resize(None)
 
     def _send_shortcut(self, name: str):
@@ -277,7 +290,7 @@ class NativeSessionViewer:
             self._render_frame()
 
     def _render_frame(self):
-        if not self.remote_image or not self.win.winfo_exists():
+        if not self.remote_image or not self.winfo_exists():
             return
         cw = max(1, self.canvas.winfo_width())
         ch = max(1, self.canvas.winfo_height())
@@ -346,7 +359,8 @@ class NativeSessionViewer:
                                     break
                     except Exception as e:
                         print(f"[Viewer] Connection error: {e}")
-                        self.win.after(0, lambda: self._on_connection_error(str(e)))
+                        if self.winfo_exists():
+                            self.after(0, lambda: self._on_connection_error(str(e)))
 
             self.loop.run_until_complete(main_ws())
 
@@ -358,7 +372,6 @@ class NativeSessionViewer:
         payload = packet.get("payload", {})
 
         if mtype == MessageType.REGISTER_RESP:
-            # Successfully registered, request connection to target
             self._send_payload(MessageType.CONNECT, {
                 "target_id": self.target_id,
                 "password": self.password
@@ -368,10 +381,12 @@ class NativeSessionViewer:
             status = payload.get("status")
             if status == "ok":
                 self.in_session = True
-                self.win.after(0, self._on_session_connected)
+                if self.winfo_exists():
+                    self.after(0, self._on_session_connected)
             else:
                 msg = payload.get("message", "Could not connect to host.")
-                self.win.after(0, lambda: self._on_connection_error(msg))
+                if self.winfo_exists():
+                    self.after(0, lambda: self._on_connection_error(msg))
 
         elif mtype == MessageType.VIDEO_FULL:
             w = payload.get("width", 1920)
@@ -383,7 +398,8 @@ class NativeSessionViewer:
                 self.remote_width = w
                 self.remote_height = h
                 self.remote_image = img
-                self.win.after(0, self._render_frame)
+                if self.winfo_exists():
+                    self.after(0, self._render_frame)
 
         elif mtype == MessageType.VIDEO_DELTA:
             if self.remote_image:
@@ -392,7 +408,8 @@ class NativeSessionViewer:
                     raw_bytes = base64.b64decode(t["image"])
                     tile_img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
                     self.remote_image.paste(tile_img, (t["x"], t["y"]))
-                self.win.after(0, self._render_frame)
+                if self.winfo_exists():
+                    self.after(0, self._render_frame)
 
         elif mtype == MessageType.CLIPBOARD_TEXT:
             text = payload.get("text", "")
@@ -405,26 +422,69 @@ class NativeSessionViewer:
                 self.audio_engine.play_chunk(data)
 
         elif mtype == MessageType.SESSION_END:
-            self.win.after(0, self._on_remote_disconnected)
+            if self.winfo_exists():
+                self.after(0, self._on_remote_disconnected)
 
     def _on_session_connected(self):
         self.status_badge.config(text=f"● Connected [{self.target_id}]", bg="#1f382a", fg="#9ece6a")
-        # Automatically pre-start speaker so incoming host audio plays cleanly
         self.audio_engine.start()
 
     def _on_connection_error(self, err_msg: str):
         messagebox.showerror("Connection Error", f"Unable to establish session with [{self.target_id}]:\n\n{err_msg}")
-        self._on_close()
+        self.close()
 
     def _on_remote_disconnected(self):
-        messagebox.showinfo("Session Closed", "Remote host closed the session.")
-        self._on_close()
+        messagebox.showinfo("Session Closed", f"Remote session [{self.target_id}] was disconnected.")
+        self.close()
 
-    def _on_close(self):
+    def close(self):
+        """Cleanly terminate the session, audio, network, and trigger close callback."""
         self.running = False
         self.in_session = False
         try:
             self.audio_engine.stop()
+        except Exception:
+            pass
+        if self.on_close_cb:
+            try:
+                self.on_close_cb()
+            except Exception:
+                pass
+
+
+class NativeSessionViewer:
+    """
+    Standalone Toplevel wrapper for EmbeddedSessionView, maintaining
+    100% backward compatibility for standalone window invocations.
+    """
+    def __init__(self, parent: tk.Tk, relay_url: str, target_id: str, password: str = ""):
+        self.parent = parent
+        self.target_id = target_id.replace(" ", "").replace("-", "").strip()
+        self.relay_url = relay_url
+        self.password = password
+
+        self.win = tk.Toplevel(self.parent)
+        self.win.title(f"OpenDesk - Remote Session [{self.target_id}]")
+        self.win.geometry("1280x760")
+        self.win.minsize(800, 500)
+        self.win.configure(bg="#000000")
+        self.win.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        self.view = EmbeddedSessionView(
+            parent=self.win,
+            relay_url=self.relay_url,
+            target_id=self.target_id,
+            password=self.password,
+            on_close=self._on_close
+        )
+        self.view.pack(fill="both", expand=True)
+
+    def _map_tk_keysym_to_js(self, keysym: str) -> str:
+        return self.view._map_tk_keysym_to_js(keysym)
+
+    def _on_close(self):
+        try:
+            self.view.close()
         except Exception:
             pass
         try:
@@ -432,5 +492,6 @@ class NativeSessionViewer:
                 self.win.destroy()
         except Exception:
             pass
-        self.parent.deiconify()
-        self.parent.focus_set()
+        if self.parent and self.parent.winfo_exists():
+            self.parent.deiconify()
+            self.parent.focus_set()

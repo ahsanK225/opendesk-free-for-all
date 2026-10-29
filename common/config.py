@@ -1,12 +1,14 @@
 """
 OpenDesk Configuration Manager
-Maintains persistent application settings, including AnyDesk-style persistent host ID.
+Maintains persistent application settings, including AnyDesk-style persistent host ID,
+recent sessions, favorites, and unattended access security.
 """
 
 import os
 import json
 import random
-from typing import Optional
+import time
+from typing import Optional, List, Dict, Any
 
 CONFIG_DIR = os.path.expanduser("~/.opendesk")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
@@ -47,3 +49,77 @@ def get_persistent_host_id() -> str:
     cfg["host_id"] = new_id
     save_config(cfg)
     return new_id
+
+def get_recent_sessions() -> List[Dict[str, Any]]:
+    """Retrieve list of recently connected remote sessions."""
+    cfg = load_config()
+    recents = cfg.get("recent_sessions")
+    if recents is not None:
+        return recents
+
+    # Provide initial sample discovery cards
+    default_recents = [
+        {"id": "524 819 301", "alias": "Studio Workstation", "favorite": True, "last_seen": "Today, 14:20"},
+        {"id": "902 411 658", "alias": "Office Laptop", "favorite": False, "last_seen": "Yesterday"},
+    ]
+    cfg["recent_sessions"] = default_recents
+    save_config(cfg)
+    return default_recents
+
+def add_recent_session(target_id: str, alias: Optional[str] = None):
+    """Add or bump a target ID in the recent sessions history."""
+    clean = target_id.replace(" ", "").replace("-", "")
+    formatted = f"{clean[:3]} {clean[3:6]} {clean[6:]}" if len(clean) == 9 else target_id
+    
+    cfg = load_config()
+    recents = cfg.get("recent_sessions", [])
+    
+    # Check if already exists
+    existing = None
+    for r in recents:
+        if r.get("id", "").replace(" ", "") == clean:
+            existing = r
+            break
+            
+    current_time_str = time.strftime("%b %d, %H:%M")
+    if existing:
+        existing["last_seen"] = current_time_str
+        if alias:
+            existing["alias"] = alias
+        recents.remove(existing)
+        recents.insert(0, existing)
+    else:
+        new_entry = {
+            "id": formatted,
+            "alias": alias or f"Desktop - {formatted}",
+            "favorite": False,
+            "last_seen": current_time_str
+        }
+        recents.insert(0, new_entry)
+        
+    cfg["recent_sessions"] = recents[:20] # Keep last 20
+    save_config(cfg)
+
+def toggle_favorite(target_id: str) -> bool:
+    """Toggle favorite star for a given session ID."""
+    clean = target_id.replace(" ", "").replace("-", "")
+    cfg = load_config()
+    recents = cfg.get("recent_sessions", [])
+    is_fav = False
+    for r in recents:
+        if r.get("id", "").replace(" ", "") == clean:
+            r["favorite"] = not r.get("favorite", False)
+            is_fav = r["favorite"]
+            break
+    cfg["recent_sessions"] = recents
+    save_config(cfg)
+    return is_fav
+
+def get_unattended_password() -> str:
+    cfg = load_config()
+    return cfg.get("unattended_password", "")
+
+def set_unattended_password(pw: str):
+    cfg = load_config()
+    cfg["unattended_password"] = pw
+    save_config(cfg)

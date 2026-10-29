@@ -109,3 +109,28 @@ Unsigned binaries trigger Windows SmartScreen warnings ("Windows protected your 
 2. **Data in Transit**: Tunneled across Cloudflare's TLS 1.3 encrypted infrastructure.
 3. **PE Binary Integrity**: Authenticode digital signature ensures that the binary cannot be tampered with or infected by malware post-compilation without invalidating the cryptographic checksum.
 4. **Input Control**: Input injection is bound strictly to the active session and host window constraints.
+
+## 7. AnyDesk 8 Multi-Tab GUI & Session Viewport Architecture
+
+### 7.1 Multi-Tab Workflow & Viewport Switching
+OpenDesk adheres to the signature AnyDesk 8 desktop experience:
+- **Top Window Tab Bar**: A horizontal tab strip featuring persistent `[ 🏠 New Connection ]`, active remote session tabs `[ 💻 <Formatted ID>  ✕ ]`, and a dynamic `+` button.
+- **In-App Embedded Session Viewport (`EmbeddedSessionView`)**: Remote desktop sessions are hosted directly within the tab container frame inside the main window, rendering 60 FPS DeskRT delta frames onto an interactive Tkinter `Canvas` with normalized Win32 input, voice audio, and bidirectional clipboard sync.
+- **Tab Lifecycle**:
+  1. User enters a 9-digit address in the Quick Connect bar or clicks a Recent Session card.
+  2. The tab manager verifies if a tab for that target ID already exists. If yes, it brings that tab to focus.
+  3. If not, it instantiates an `EmbeddedSessionView` inside a dedicated `tk.Frame`, registers the tab in `self.tabs`, and displays the tab button with close `✕`.
+  4. The user can switch freely between `New Connection` (Home) and active remote sessions without disconnecting the underlying WebSocket streams.
+  5. Clicking `✕` or "Disconnect" terminates the session, stops the `AudioEngine`, cancels the network tasks, destroys the tab frame, and returns focus to the Home dashboard.
+
+### 7.2 Left Navigation Sidebar & Dashboard
+- **Sidebar Strip**: Sleek vertical strip (`#12151e`) containing navigation items for `🏠 Home`, `⭐ Favorites`, `🕒 Recent`, `📁 Files`, and `⚙️ Settings` with an active AnyDesk red indicator bar (`#ef4444`).
+- **Quick Connect Search Bar**: Prominent address bar with monospace font, optional unattended password entry, and a primary AnyDesk Red action button (`#ef4444`).
+- **This Desk Card**: Displays persistent 9-digit address in bold triplets (`780 363 657`), 1-click address copy, unattended password management, and Cloudflare worldwide tunnel status with 1-click shareable link.
+- **Recent Sessions & Favorites Discovery Grid**: Responsive grid rendering recent target workstations with computer icon, device alias, 9-digit ID, last seen timestamp, favorite star toggle, and 1-click "Connect ➜" launcher.
+
+### 7.3 Design Tokens & Styling
+- **Backgrounds**: Main `#0c0e14`, Sidebar `#12151e`, Header/TabBar `#141822`, Cards `#161924`, Input/Address Box `#202534`.
+- **Accents**: Primary Brand Red `#ef4444` (hover `#dc2626`), Electric Blue `#3b82f6`, Success Green `#22c55e`, Warning Amber `#e0af68`.
+- **Borders & Dividers**: Subtle borders `#282e3f`, active tab highlight `#ef4444`.
+- **Typography**: Interface font `Segoe UI` (8pt to 12pt bold), Monospace address font `Consolas` (9pt to 20pt bold).
