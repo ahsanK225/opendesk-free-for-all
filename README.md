@@ -128,6 +128,17 @@ python run_host.py
 
 ---
 
+## 🔄 In-App Automatic Software Updates
+
+OpenDesk includes an autonomous, 1-click in-app software updater designed for seamless client and friend distribution:
+- **Automatic Startup Check**: Upon launch, OpenDesk silently checks GitHub for newer releases in the background without freezing the GUI.
+- **Top Notification Banner**: When a newer version is detected, a sleek notification banner alerts you (`⚡ Update Available: OpenDesk vx.x.x is ready to install!`).
+- **Interactive Update Modal**: Click `Update Now` to review the release notes, new features, and view real-time download progress.
+- **Zero-Friction Self-Relaunch**: Once downloaded, OpenDesk automatically closes, replaces the executable in 1-2 seconds, and relaunches into the updated version without requiring any manual installation steps!
+- **Settings Control**: Open `Settings (⚙️)` anytime to manually check for updates or toggle automatic background checks on startup.
+
+---
+
 ## 📦 Standalone Distribution & Installer
 
 ### 1. Ready-To-Share Installer

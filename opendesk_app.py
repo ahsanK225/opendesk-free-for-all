@@ -46,7 +46,15 @@ try:
         add_recent_session,
         toggle_favorite,
         get_unattended_password,
-        set_unattended_password
+        set_unattended_password,
+        get_auto_update_enabled,
+        set_auto_update_enabled
+    )
+    from opendesk.common.updater import (
+        APP_VERSION,
+        check_for_updates,
+        download_update_file,
+        apply_update_and_restart
     )
     from opendesk.client.viewer import EmbeddedSessionView, NativeSessionViewer
 except ImportError:
@@ -59,7 +67,15 @@ except ImportError:
         add_recent_session,
         toggle_favorite,
         get_unattended_password,
-        set_unattended_password
+        set_unattended_password,
+        get_auto_update_enabled,
+        set_auto_update_enabled
+    )
+    from common.updater import (
+        APP_VERSION,
+        check_for_updates,
+        download_update_file,
+        apply_update_and_restart
     )
     from client.viewer import EmbeddedSessionView, NativeSessionViewer
 
@@ -104,6 +120,7 @@ class OpenDeskGUI:
 
         self._setup_window()
         self._build_top_tab_bar()
+        self._build_update_banner()
         self._build_main_body()
         self._build_bottom_status_bar()
 
@@ -164,6 +181,174 @@ class OpenDeskGUI:
                                  bg="#141822", fg="#94a3b8", activebackground="#1e2230", activeforeground="#ef4444",
                                  bd=0, padx=6, pady=2, cursor="hand2", command=self._open_settings)
         settings_btn.pack(side="left", padx=4)
+
+    # =========================================================================
+    # IN-APP AUTO-UPDATE NOTIFICATION BANNER & MODAL DIALOG
+    # =========================================================================
+    def _build_update_banner(self):
+        self.banner_frame = tk.Frame(self.root, bg="#1e2433", height=38)
+        # Hidden by default until an update is detected
+
+    def _show_update_banner(self, update_info: Dict[str, Any]):
+        for child in self.banner_frame.winfo_children():
+            child.destroy()
+
+        remote_ver = update_info.get("version", "")
+        left_box = tk.Frame(self.banner_frame, bg="#1e2433")
+        left_box.pack(side="left", padx=14, pady=6)
+
+        tk.Label(left_box, text="⚡", font=("Segoe UI Emoji", 11), bg="#1e2433", fg="#ef4444").pack(side="left")
+        tk.Label(left_box, text=f"Update Available: OpenDesk v{remote_ver} is now ready to install!",
+                 font=("Segoe UI", 9, "bold"), bg="#1e2433", fg="#f1f5f9").pack(side="left", padx=6)
+
+        right_box = tk.Frame(self.banner_frame, bg="#1e2433")
+        right_box.pack(side="right", padx=14, pady=6)
+
+        upd_btn = tk.Button(right_box, text="🚀 Update Now", font=("Segoe UI", 8, "bold"),
+                            bg="#ef4444", fg="#ffffff", activebackground="#dc2626", activeforeground="#ffffff",
+                            bd=0, padx=12, pady=2, cursor="hand2", command=lambda: self._open_update_dialog(update_info))
+        upd_btn.pack(side="left", padx=4)
+
+        dismiss_btn = tk.Button(right_box, text="✕", font=("Segoe UI", 8),
+                                bg="#1e2433", fg="#64748b", activebackground="#1e2433", activeforeground="#f1f5f9",
+                                bd=0, padx=6, pady=2, cursor="hand2", command=self.banner_frame.pack_forget)
+        dismiss_btn.pack(side="left")
+
+        # Pack beneath top tab bar
+        self.banner_frame.pack(fill="x", side="top", after=self.tab_bar_frame)
+
+    def _open_update_dialog(self, update_info: Dict[str, Any]):
+        import tempfile
+        dialog = tk.Toplevel(self.root)
+        dialog.title("OpenDesk In-App Software Update")
+        dialog.geometry("560x430")
+        dialog.minsize(520, 390)
+        dialog.configure(bg="#141822")
+        dialog.grab_set()
+
+        # Header
+        h_frame = tk.Frame(dialog, bg="#141822")
+        h_frame.pack(fill="x", padx=20, pady=(16, 4))
+
+        tk.Label(h_frame, text="⚡ OpenDesk Software Update", font=("Segoe UI", 13, "bold"),
+                 bg="#141822", fg="#f1f5f9").pack(anchor="w")
+        sub_txt = f"A new version v{update_info.get('version', '')} is available! (Installed: v{APP_VERSION} • Released: {update_info.get('release_date', 'Recent')})"
+        tk.Label(h_frame, text=sub_txt, font=("Segoe UI", 9), bg="#141822", fg="#22c55e").pack(anchor="w")
+
+        # Changelog Frame
+        cl_frame = tk.Frame(dialog, bg="#181c28", bd=1, relief="solid", highlightbackground="#282e3f")
+        cl_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+        tk.Label(cl_frame, text="What's New in this Version:", font=("Segoe UI", 9, "bold"),
+                 bg="#181c28", fg="#ef4444").pack(anchor="w", padx=12, pady=(8, 4))
+
+        text_box = tk.Text(cl_frame, font=("Segoe UI", 9), bg="#141822", fg="#cbd5e1",
+                           wrap="word", bd=0, padx=10, pady=8)
+        text_box.pack(fill="both", expand=True, padx=12, pady=(0, 10))
+        text_box.insert("1.0", update_info.get("changelog", "Improvements and bug fixes."))
+        text_box.configure(state="disabled")
+
+        # Progress / Status Frame
+        prog_frame = tk.Frame(dialog, bg="#141822")
+        prog_frame.pack(fill="x", padx=20, pady=(0, 10))
+
+        status_lbl = tk.Label(prog_frame, text="Ready. Click 'Update & Restart' to download and automatically upgrade.",
+                              font=("Segoe UI", 8), bg="#141822", fg="#94a3b8")
+        status_lbl.pack(anchor="w", pady=(0, 4))
+
+        progress_bar = ttk.Progressbar(prog_frame, orient="horizontal", mode="determinate")
+        progress_bar.pack(fill="x")
+
+        # Buttons Row
+        btn_row = tk.Frame(dialog, bg="#141822")
+        btn_row.pack(fill="x", padx=20, pady=(0, 16))
+
+        cancel_flag = [False]
+
+        def on_cancel():
+            cancel_flag[0] = True
+            dialog.destroy()
+
+        def start_download():
+            apply_btn.configure(state="disabled", text="Downloading...")
+            cancel_btn.configure(text="Cancel")
+
+            download_url = update_info.get("download_url", "")
+            if not download_url:
+                messagebox.showerror("Error", "Download URL not found in update manifest.", parent=dialog)
+                return
+
+            def run_dl():
+                temp_dir = tempfile.gettempdir()
+                temp_exe = os.path.join(temp_dir, f"OpenDesk_v{update_info.get('version', '')}_new.exe")
+
+                def on_progress(downloaded, total):
+                    if total > 0:
+                        pct = int((downloaded / total) * 100)
+                        mb_dl = downloaded / (1024 * 1024)
+                        mb_tot = total / (1024 * 1024)
+                        txt = f"Downloading: {mb_dl:.1f} MB / {mb_tot:.1f} MB ({pct}%)"
+                        dialog.after(0, lambda: [
+                            progress_bar.configure(value=pct),
+                            status_lbl.configure(text=txt, fg="#f1f5f9")
+                        ])
+
+                success = download_update_file(download_url, temp_exe, on_progress, cancel_flag=lambda: cancel_flag[0])
+
+                if success and not cancel_flag[0]:
+                    dialog.after(0, lambda: [
+                        status_lbl.configure(text="Download complete! Restarting OpenDesk into new version...", fg="#22c55e"),
+                        dialog.after(800, lambda: apply_update_and_restart(temp_exe))
+                    ])
+                elif not cancel_flag[0]:
+                    dialog.after(0, lambda: [
+                        status_lbl.configure(text="Download failed. Please check internet connection.", fg="#ef4444"),
+                        apply_btn.configure(state="normal", text="Retry Download")
+                    ])
+
+            threading.Thread(target=run_dl, daemon=True).start()
+
+        apply_btn = tk.Button(btn_row, text="🚀 Update & Restart Now", font=("Segoe UI", 9, "bold"),
+                              bg="#ef4444", fg="#ffffff", activebackground="#dc2626", activeforeground="#ffffff",
+                              bd=0, padx=16, pady=6, cursor="hand2", command=start_download)
+        apply_btn.pack(side="left")
+
+        cancel_btn = tk.Button(btn_row, text="Later", font=("Segoe UI", 9),
+                               bg="#202534", fg="#cbd5e1", activebackground="#2a3144", activeforeground="#f1f5f9",
+                               bd=0, padx=14, pady=6, cursor="hand2", command=on_cancel)
+        cancel_btn.pack(side="right")
+
+    def _check_updates_interactive(self, parent_win):
+        check_win = tk.Toplevel(parent_win)
+        check_win.title("Checking for Updates...")
+        check_win.geometry("360x130")
+        check_win.configure(bg="#141822")
+        check_win.grab_set()
+
+        tk.Label(check_win, text="🔄 Checking for OpenDesk Updates...", font=("Segoe UI", 10, "bold"),
+                 bg="#141822", fg="#f1f5f9").pack(pady=(20, 8))
+
+        lbl_status = tk.Label(check_win, text="Contacting GitHub update server...", font=("Segoe UI", 8),
+                              bg="#141822", fg="#94a3b8")
+        lbl_status.pack()
+
+        def do_check():
+            info = check_for_updates(current_version=APP_VERSION)
+            def on_done():
+                try:
+                    check_win.destroy()
+                except Exception:
+                    pass
+                if info and info.get("available"):
+                    self._open_update_dialog(info)
+                elif info and not info.get("available"):
+                    messagebox.showinfo("Up to Date", f"You are running the latest version of OpenDesk (v{APP_VERSION}).\n\nNo updates are needed at this time.", parent=parent_win)
+                else:
+                    messagebox.showwarning("Update Check", "Unable to reach the update server. Please check your internet connection.", parent=parent_win)
+
+            check_win.after(0, on_done)
+
+        threading.Thread(target=do_check, daemon=True).start()
 
     # =========================================================================
     # MAIN BODY: SIDEBAR + CONTENT VIEWPORT
@@ -659,22 +844,50 @@ class OpenDeskGUI:
     def _open_settings(self):
         settings_win = tk.Toplevel(self.root)
         settings_win.title("OpenDesk Settings & Network Configuration")
-        settings_win.geometry("540x300")
+        settings_win.geometry("560x440")
+        settings_win.minsize(520, 400)
         settings_win.configure(bg="#141822")
         settings_win.grab_set()
 
         tk.Label(settings_win, text="⚙️ OpenDesk Settings", font=("Segoe UI", 12, "bold"),
                  bg="#141822", fg="#f1f5f9").pack(anchor="w", padx=20, pady=(16, 6))
 
-        tk.Label(settings_win, text="Relay WebSocket Server URL:", font=("Segoe UI", 9, "bold"),
-                 bg="#141822", fg="#ef4444").pack(anchor="w", padx=20, pady=(10, 2))
+        # --- Section 1: Relay WebSocket Configuration ---
+        tk.Label(settings_win, text="🌐 Relay WebSocket Server URL:", font=("Segoe UI", 9, "bold"),
+                 bg="#141822", fg="#ef4444").pack(anchor="w", padx=20, pady=(6, 2))
         tk.Label(settings_win, text="To connect across a custom VPS or private cloud network, enter the endpoint:",
-                 font=("Segoe UI", 8), bg="#141822", fg="#94a3b8").pack(anchor="w", padx=20, pady=(0, 6))
+                 font=("Segoe UI", 8), bg="#141822", fg="#94a3b8").pack(anchor="w", padx=20, pady=(0, 4))
 
         entry_box = tk.Entry(settings_win, font=("Consolas", 10), bg="#202534", fg="#f1f5f9",
                              insertbackground="#ef4444", bd=1, relief="solid")
         entry_box.pack(fill="x", padx=20, pady=4, ipady=4)
         entry_box.insert(0, self.relay_url)
+
+        # --- Section 2: Software Updates & Maintenance ---
+        tk.Label(settings_win, text="🔄 Software Updates & Maintenance:", font=("Segoe UI", 9, "bold"),
+                 bg="#141822", fg="#ef4444").pack(anchor="w", padx=20, pady=(14, 2))
+
+        upd_card = tk.Frame(settings_win, bg="#1a1e2b", bd=1, relief="solid", highlightbackground="#282e3f")
+        upd_card.pack(fill="x", padx=20, pady=4)
+
+        info_row = tk.Frame(upd_card, bg="#1a1e2b")
+        info_row.pack(fill="x", padx=12, pady=(10, 4))
+        tk.Label(info_row, text=f"Installed Version: v{APP_VERSION} (Authenticode Signed)", font=("Segoe UI", 9, "bold"),
+                 bg="#1a1e2b", fg="#f1f5f9").pack(side="left")
+
+        check_btn = tk.Button(info_row, text="🔄 Check for Updates Now", font=("Segoe UI", 8, "bold"),
+                              bg="#202534", fg="#f1f5f9", activebackground="#ef4444", activeforeground="#ffffff",
+                              bd=0, padx=10, pady=4, cursor="hand2", command=lambda: self._check_updates_interactive(settings_win))
+        check_btn.pack(side="right")
+
+        auto_upd_var = tk.BooleanVar(value=get_auto_update_enabled())
+        def on_toggle_auto():
+            set_auto_update_enabled(auto_upd_var.get())
+
+        chk = tk.Checkbutton(upd_card, text="Automatically check for updates on startup", variable=auto_upd_var,
+                             bg="#1a1e2b", fg="#94a3b8", selectcolor="#141822", activebackground="#1a1e2b",
+                             activeforeground="#f1f5f9", font=("Segoe UI", 8), command=on_toggle_auto)
+        chk.pack(anchor="w", padx=12, pady=(4, 10))
 
         def save_and_reconnect():
             new_url = entry_box.get().strip()
@@ -684,7 +897,7 @@ class OpenDeskGUI:
                 messagebox.showinfo("Saved", f"Relay URL updated to:\n{self.relay_url}\n\nPlease restart OpenDesk to apply.")
 
         btn_row = tk.Frame(settings_win, bg="#141822")
-        btn_row.pack(fill="x", padx=20, pady=20)
+        btn_row.pack(fill="x", padx=20, pady=16)
 
         tk.Button(btn_row, text="Save Settings", font=("Segoe UI", 9, "bold"), bg="#ef4444", fg="#ffffff",
                   bd=0, padx=14, pady=6, cursor="hand2", command=save_and_reconnect).pack(side="left")
@@ -729,6 +942,20 @@ class OpenDeskGUI:
         # 3. Start Automatic Worldwide Cloudflare Tunnel
         self.tunnel = CloudflareTunnel(local_port=self.port, on_url_ready=self._on_tunnel_url_ready)
         self.tunnel.start()
+
+        # 4. Background Automatic Update Check (if enabled)
+        def run_update_check():
+            time.sleep(2.5)
+            try:
+                if get_auto_update_enabled():
+                    info = check_for_updates(current_version=APP_VERSION)
+                    if info and info.get("available"):
+                        self.root.after(0, lambda: self._show_update_banner(info))
+            except Exception as e:
+                print(f"[OpenDesk] Background update check notice: {e}")
+
+        t_upd = threading.Thread(target=run_update_check, daemon=True)
+        t_upd.start()
 
     def _on_agent_online(self):
         formatted = self._format_id(self.assigned_id)

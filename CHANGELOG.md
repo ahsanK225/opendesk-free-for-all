@@ -1,6 +1,33 @@
 # Changelog
 All notable project changes are documented here.
 
+## [2026-10-29] — In-App Automatic Software Update System & Remote Self-Update
+### Added
+- Added `opendesk/common/updater.py` implementing the complete autonomous update engine:
+  - Remote release manifest query and parser for `version.json`.
+  - Robust semantic version comparator (`parse_version`, `is_newer_version`).
+  - Chunked background downloader with live byte and percentage progress callback (`download_update_file`).
+  - Atomic Windows batch self-replacement engine (`apply_update_and_restart`): replaces running executable via helper script `%TEMP%\opendesk_self_update.bat` and automatically relaunches into the updated version without requiring manual installation.
+- Added top in-app update notification banner in `opendesk_app.py`: alerts users when a newer release is detected on startup with `[ 🚀 Update Now ]` and `[ ✕ Dismiss ]` actions.
+- Added interactive modal update dialog (`_open_update_dialog`): displays release version, release date, scrollable changelog, live download progress bar, and 1-click update & restart trigger.
+- Added dedicated **Software Updates & Maintenance** section in Settings (`_open_settings`):
+  - Displays installed version and Authenticode digital signature status.
+  - Interactive "🔄 Check for Updates Now" button with modal checking indicator.
+  - "Automatically check for updates on startup" checkbox with persistent config storage.
+- Added `version.json` release manifest to repository root.
+- Added unit test suite `tests/test_updater.py` covering version parsing, version comparison, mock manifest querying, and chunked download progress.
+
+### Tests and Verification
+- Executed unit test suite `python -m unittest discover tests`: **21/21 tests passed in 1.296s**.
+- Executed headless GUI update banner and settings smoke test: verified banner rendering, dismissal, and settings toggle.
+- Compiled `OpenDesk.exe` and `OpenDesk_Setup.exe` with PyInstaller 6.22.3 and Inno Setup 6.7.3.
+- Digitally signed both binaries with Authenticode SHA-256 + DigiCert RFC 3161 timestamps.
+
+### Documentation
+- Updated `TASKS.md`, `PROJECT_STRUCTURE.md`, `SYSTEM_DESIGN.md`, `CHANGELOG.md`, and `README.md`.
+
+---
+
 ## [2026-10-29] — AnyDesk 8 Multi-Tab Desktop GUI & Embedded Session Viewports
 ### Added
 - Implemented authentic AnyDesk 8 multi-tab window architecture in `opendesk_app.py`:

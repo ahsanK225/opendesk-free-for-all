@@ -35,6 +35,7 @@ opendesk/
 ├── run_relay.py                    # Standalone relay server CLI
 ├── SYSTEM_DESIGN.md                # System design & architecture specification
 ├── TASKS.md                        # Persistent task tracking checklist
+├── version.json                    # Remote software update manifest and release metadata
 ├── __init__.py                     # Package marker
 │
 ├── bin/
@@ -55,6 +56,7 @@ opendesk/
 │   ├── config.py                   # Persistent host ID, recent sessions, favorites, unattended access
 │   ├── protocol.py                 # JSON message schema & message type definitions
 │   ├── tunnel.py                   # Externalized cloudflared runner & process killer
+│   ├── updater.py                  # In-app auto-update engine, progress downloader & self-restart
 │   └── __init__.py
 │
 ├── host/
@@ -84,6 +86,7 @@ opendesk/
 │   ├── test_integration.py         # End-to-end integration tests for relay and host
 │   ├── test_native_viewer.py       # Unit tests for native desktop session viewer
 │   ├── test_tabbed_gui.py          # Unit tests for AnyDesk tab lifecycle & recent session config
+│   ├── test_updater.py             # Unit tests for auto-update version check & download
 │   └── __init__.py
 │
 └── web/
@@ -102,4 +105,5 @@ opendesk/
 - **`opendesk_app.py`**: AnyDesk 8 multi-tab desktop application. Provides top tab strip (`[ 🏠 New Connection ]`, dynamic `[ 💻 <ID> ✕ ]` tabs, `+` button), left navigation sidebar, Home dashboard with This Desk card, quick connect search bar, unattended password setup, recent sessions & favorites discovery grid, and embedded in-tab session viewports.
 - **`client/viewer.py`**: Contains `EmbeddedSessionView(tk.Frame)` and `NativeSessionViewer(tk.Toplevel)`. Renders real-time DeskRT video frames onto Tkinter canvas, scales coordinates, forwards mouse/keyboard input, synchronizes clipboard, handles 16kHz audio, and manages fullscreen and shortcuts.
 - **`host/agent.py`**: Core host engine. Captures screens, encodes delta frames, streams audio, injects input, synchronizes clipboard, and coordinates file transfers.
-- **`common/config.py`**: Persistent configuration store for 9-digit host ID, recent sessions history, aliases, favorite devices, and unattended password access.
+- **`common/config.py`**: Persistent configuration store for 9-digit host ID, recent sessions history, aliases, favorite devices, unattended password access, and automatic update preferences.
+- **`common/updater.py`**: In-app software updater. Queries remote `version.json` or GitHub releases, parses semantic versions, downloads update packages with progress monitoring, and handles seamless Windows batch self-replacement and relaunch.

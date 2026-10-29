@@ -1,6 +1,6 @@
 # Project Task Checklist & Execution Board
 
-## Current Task: Complete AnyDesk-Style Tabbed GUI & Modern Dashboard Redesign
+## Current Task: In-App Automatic Software Update System & Remote Auto-Updater
 Status: `VERIFIED COMPLETE`
 
 ### Task Matrix
@@ -14,3 +14,9 @@ Status: `VERIFIED COMPLETE`
 | TASK-32 | Unit & Integration Testing | Agent 5 (Testing / QA) | TASK-31 | Verify tab lifecycle, config persistence, and video rendering | VERIFIED COMPLETE | `tests/test_tabbed_gui.py` added; 16/16 unit tests passing in 1.214s |
 | TASK-33 | Packaging, PyInstaller Build & Authenticode Signing | Agent 5 (Testing) / Agent 9 (Audit) | TASK-32 | Recompile `OpenDesk.exe` and `OpenDesk_Setup.exe`; sign both with SHA-256 + DigiCert timestamp | VERIFIED COMPLETE | Recompiled with PyInstaller 6.22.3 and Inno Setup 6.7.3; Authenticode SHA-256 + DigiCert timestamp verified |
 | TASK-34 | Final Documentation & GitHub Sync | Agent 8 (Documentation) | TASK-33 | Update `CHANGELOG.md`, `PROJECT_STRUCTURE.md`, `SYSTEM_DESIGN.md`; push to GitHub | VERIFIED COMPLETE | Mandatory docs updated and changes pushed to `origin/main` |
+| TASK-35 | Version Manifest & Update Configuration | Agent 1 (Analysis) / Agent 2 (Architecture) | None | Create `version.json` and update `common/config.py` with auto-update preferences | VERIFIED COMPLETE | `version.json` created in root; `get_auto_update_enabled()` & `set_auto_update_enabled()` implemented |
+| TASK-36 | Core Auto-Updater Engine Module | Agent 3 (Implementation) | TASK-35 | Create `common/updater.py` with version check, progress download, and Windows self-replacement | VERIFIED COMPLETE | `common/updater.py` provides semantic version comparison, chunked downloader, and batch self-update restart |
+| TASK-37 | In-App Update UI & Background Checker | Agent 3 (Implementation) / Agent 6 (Design) | TASK-36 | Add top update notification banner, Settings update section, and interactive UpdateDialog | VERIFIED COMPLETE | Top banner alerts user; interactive modal dialog displays changelog and progress; Settings includes check button |
+| TASK-38 | Unit Testing & Verification | Agent 5 (Testing / QA) | TASK-37 | Write `tests/test_updater.py` verifying version comparison, manifest parsing, and mock download | VERIFIED COMPLETE | `tests/test_updater.py` created; 21/21 tests passing in 1.296s |
+| TASK-39 | Recompile, Sign & Publish v1.2.0 | Agent 5 (Testing) / Agent 9 (Audit) | TASK-38 | Rebuild `OpenDesk.exe` and `OpenDesk_Setup.exe`, sign with Authenticode, push to GitHub | VERIFIED COMPLETE | Binaries recompiled and digitally signed with Authenticode SHA-256 and DigiCert RFC 3161 timestamps |
+| TASK-40 | Update Mandatory Documentation | Agent 8 (Documentation) | TASK-39 | Update `PROJECT_STRUCTURE.md`, `SYSTEM_DESIGN.md`, `CHANGELOG.md`, and report | VERIFIED COMPLETE | Documentation and README updated; commit pushed to GitHub |

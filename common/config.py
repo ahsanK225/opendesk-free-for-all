@@ -123,3 +123,14 @@ def set_unattended_password(pw: str):
     cfg = load_config()
     cfg["unattended_password"] = pw
     save_config(cfg)
+
+def get_auto_update_enabled() -> bool:
+    """Check if automatic update checks on startup are enabled (default True)."""
+    cfg = load_config()
+    return cfg.get("auto_update", True)
+
+def set_auto_update_enabled(enabled: bool):
+    """Enable or disable automatic update checks on startup."""
+    cfg = load_config()
+    cfg["auto_update"] = bool(enabled)
+    save_config(cfg)

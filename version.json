@@ -1,0 +1,16 @@
+{
+  "version": "1.2.0",
+  "release_date": "2026-10-29",
+  "download_url": "https://raw.githubusercontent.com/ahsanK225/opendesk-free-for-all/main/OpenDesk.exe",
+  "installer_url": "https://raw.githubusercontent.com/ahsanK225/opendesk-free-for-all/main/OpenDesk_Setup.exe",
+  "changelog": [
+    "AnyDesk 8 Multi-Tab Desktop GUI with top tabs and navigation sidebar",
+    "In-App Embedded Remote Desktop Viewports (Canvas, Win32 input, voice audio, clipboard)",
+    "Discovery & Recent Sessions Grid with 1-click connect cards and favorites",
+    "In-App Automatic Software Updates with 1-click background download & restart",
+    "Smart PortAudio Microphone Detection (Auto-selects physical gaming headset)",
+    "64-bit Safe Bidirectional Windows Clipboard Synchronization",
+    "Cloudflare Worldwide Zero-Config Internet Gateway",
+    "Digitally Signed Binaries with Authenticode SHA-256 and DigiCert RFC 3161 Timestamps"
+  ]
+}

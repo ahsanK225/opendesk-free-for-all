@@ -63,6 +63,11 @@ class TestTabbedGUI(unittest.TestCase):
             self.assertEqual(len(app.tabs), 1)
             self.assertEqual(app.active_tab_id, "home")
 
+            # 7. Test update banner display and dismissal
+            app._show_update_banner({"version": "1.3.0", "release_date": "2026-11-01", "changelog": "Test"})
+            self.assertTrue(app.banner_frame.winfo_ismapped() or len(app.banner_frame.winfo_children()) > 0)
+            app.banner_frame.pack_forget()
+
         finally:
             OpenDeskGUI._start_services = original_start
 

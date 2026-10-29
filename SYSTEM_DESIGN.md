@@ -134,3 +134,29 @@ OpenDesk adheres to the signature AnyDesk 8 desktop experience:
 - **Accents**: Primary Brand Red `#ef4444` (hover `#dc2626`), Electric Blue `#3b82f6`, Success Green `#22c55e`, Warning Amber `#e0af68`.
 - **Borders & Dividers**: Subtle borders `#282e3f`, active tab highlight `#ef4444`.
 - **Typography**: Interface font `Segoe UI` (8pt to 12pt bold), Monospace address font `Consolas` (9pt to 20pt bold).
+
+## 8. In-App Automatic Software Update Architecture
+
+### 8.1 Remote Release Manifest & Version Handshake
+OpenDesk employs a lightweight, decoupled update manifest stored at the root of the repository (`version.json`):
+- **Version Endpoint**: `https://raw.githubusercontent.com/ahsanK225/opendesk-free-for-all/main/version.json`
+- **Payload Schema**:
+  ```json
+  {
+    "version": "1.2.0",
+    "release_date": "2026-10-29",
+    "download_url": "https://raw.githubusercontent.com/ahsanK225/opendesk-free-for-all/main/OpenDesk.exe",
+    "installer_url": "https://raw.githubusercontent.com/ahsanK225/opendesk-free-for-all/main/OpenDesk_Setup.exe",
+    "changelog": ["Feature A", "Feature B"]
+  }
+  ```
+- **Semantic Versioning**: Evaluated via numeric tuple comparison (`parse_version`), distinguishing releases strictly newer than the active build (`APP_VERSION`).
+
+### 8.2 Client Lifecycle & Update UX
+1. **Background Discovery**: When enabled via config (`auto_update: true`), a non-blocking background daemon thread performs an update check 2.5 seconds after GUI initialization.
+2. **Notification Banner**: If a newer version exists, an AnyDesk-style notification banner animates beneath the top tab bar alerting the user with `[ 🚀 Update Now ]`.
+3. **Interactive Modal**: The user can review the formatted changelog, inspect the release version, and initiate a monitored chunked download (with live progress bar reporting download speed and percentage).
+4. **Windows Binary Self-Replacement**:
+   - Because Windows locks active running executables, OpenDesk writes an atomic batch updater helper script (`%TEMP%\opendesk_self_update.bat`).
+   - The batch script waits for the old OpenDesk process to cleanly exit (`timeout /t 2`), overwrites the target binary (`copy /y`), relaunches the new binary (`start "" "%TARGET_EXE%"`), and self-deletes (`del "%~f0"`).
+   - This ensures zero-friction, 1-click self-updates for all clients and remote workstations without requiring manual zip extraction or reinstallation.
