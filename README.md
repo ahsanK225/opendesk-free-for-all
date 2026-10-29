@@ -141,8 +141,40 @@ python run_host.py
 * **Clean Uninstaller**: Registered in Windows *Apps & Features* for clean removal anytime.
 * **Silent Install Support**: Supports automated/silent installations using `/SILENT` or `/VERYSILENT`.
 
-### 3. Recompiling the Installer (1-Click):
-To recompile both the portable executable and the installer wizard:
+### 3. Recompiling the Installer & Automatic Signing (1-Click):
+To recompile both the portable executable and the installer wizard with automated Authenticode signing:
 ```cmd
 build_installer.bat
+```
+
+---
+
+## 🛡️ Digital Signatures & Authenticode Code Signing
+
+All OpenDesk binaries (`OpenDesk.exe` and `OpenDesk_Setup.exe`) are digitally signed using **Windows Authenticode** with SHA-256 digests and RFC 3161 timestamps provided by DigiCert.
+
+### 1. Verifying Digital Signatures in Windows
+1. Right-click `OpenDesk.exe` or `OpenDesk_Setup.exe` in Windows File Explorer.
+2. Select **Properties**.
+3. Click the **Digital Signatures** tab.
+4. You will see:
+   - **Name of Signer**: `OpenDesk Software`
+   - **Digest Algorithm**: `sha256`
+   - **Timestamp**: Signed with DigiCert RFC 3161 timestamp authority (valid until 2037).
+
+### 2. Trusting the OpenDesk Publisher (1-Click)
+To ensure Windows SmartScreen and UAC recognize OpenDesk as a trusted, verified publisher:
+```cmd
+scripts\install_certificate.bat
+```
+*(Double-click `install_certificate.bat` and click "Yes" when prompted by Windows).*
+
+### 3. Manual Signing Script
+To sign any custom build or binary:
+```cmd
+sign_executables.bat
+```
+or via PowerShell:
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\sign_executables.ps1
 ```

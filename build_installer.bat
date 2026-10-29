@@ -5,7 +5,7 @@ echo   OpenDesk Professional Installer Compilation Script
 echo ========================================================
 
 echo.
-echo [1/3] Compiling OpenDesk.exe using PyInstaller...
+echo [1/4] Compiling OpenDesk.exe using PyInstaller...
 python -m PyInstaller opendesk.spec --clean
 if errorlevel 1 (
     echo [ERROR] PyInstaller compilation failed!
@@ -14,7 +14,11 @@ if errorlevel 1 (
 copy /y dist\OpenDesk.exe OpenDesk.exe >nul
 
 echo.
-echo [2/3] Locating Inno Setup Compiler...
+echo [2/4] Signing OpenDesk.exe with Authenticode Signature...
+powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\sign_executables.ps1" -Files "dist\OpenDesk.exe","OpenDesk.exe"
+
+echo.
+echo [3/4] Locating Inno Setup Compiler...
 set "ISCC=C:\Users\ahsan\AppData\Local\Programs\Inno Setup 6\ISCC.exe"
 if not exist "%ISCC%" (
     set "ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
@@ -25,7 +29,7 @@ if not exist "%ISCC%" (
 )
 
 echo.
-echo [3/3] Compiling OpenDesk_Setup.exe Wizard Installer...
+echo Compiling OpenDesk_Setup.exe Wizard Installer...
 "%ISCC%" opendesk_installer.iss
 if errorlevel 1 (
     echo [ERROR] Inno Setup packaging failed!
@@ -34,7 +38,12 @@ if errorlevel 1 (
 copy /y installer_output\OpenDesk_Setup_v1.1.0.exe OpenDesk_Setup.exe >nul
 
 echo.
+echo [4/4] Signing OpenDesk_Setup.exe with Authenticode Signature...
+powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\sign_executables.ps1" -Files "installer_output\OpenDesk_Setup_v1.1.0.exe","OpenDesk_Setup.exe"
+
+echo.
 echo ========================================================
-echo   BUILD COMPLETED SUCCESSFULLY!
-echo   Installer Output: OpenDesk_Setup.exe
+echo   BUILD & SIGNING COMPLETED SUCCESSFULLY!
+echo   Signed Portable:  OpenDesk.exe
+echo   Signed Installer: OpenDesk_Setup.exe
 echo ========================================================

@@ -25,3 +25,7 @@ ENV/
 .idea/
 *.swp
 *.swo
+
+# Sensitive certificates and private keys
+certs/*.pfx
+
