@@ -92,10 +92,16 @@ Unsigned binaries trigger Windows SmartScreen warnings ("Windows protected your 
 - **Format**: Uncompressed Linear PCM, 16,000 Hz, 16-bit signed integer, 1 channel (mono).
 - **Packet Size**: 100 ms chunks (1,600 samples / 3,200 bytes per frame).
 - **Transport**: JSON WebSocket frames with base64 encoded audio payloads (`{"type": "audio", "data": "<base64>"}`).
+- **Smart Device Selection**: Automatically scans PortAudio input devices and selects physical microphones (e.g., Bloody Gaming Audio, Realtek) over disconnected virtual devices (Virtual Desktop, VB-Audio, Steam Streaming).
+- **Thread-Safe Queueing**: Dispatches PortAudio background thread callbacks into asyncio event loop via `call_soon_threadsafe`.
 - **Browser Playback**: Decoded via `AudioContext` and scheduled smoothly into Web Audio buffer sources to prevent popping and underruns.
 - **Echo Cancellation**: Configured in Web Audio API with `echoCancellation: true`, `noiseSuppression: true`, `autoGainControl: true`.
 
-## 5. Security & Threat Model
+## 5. Bidirectional Clipboard Synchronization Architecture
+- **Host-to-Client**: `WindowsClipboard` monitors OS sequence numbers (`GetClipboardSequenceNumber`) with 64-bit safe ctypes pointers (`GlobalAlloc`, `GlobalLock`). Detected changes are relayed to the client and written automatically via `navigator.clipboard.writeText`.
+- **Client-to-Host**: Native browser `paste` events intercept `Ctrl+V` on the viewport canvas, transmitting the plain text payload to the host with `auto_paste: true`. The host commits the text to the Windows clipboard and injects `Ctrl+V` via `user32.keybd_event`.
+
+## 6. Security & Threat Model
 1. **Session Access**: Protected by random 9-digit alphanumeric session tokens.
 2. **Data in Transit**: Tunneled across Cloudflare's TLS 1.3 encrypted infrastructure.
 3. **PE Binary Integrity**: Authenticode digital signature ensures that the binary cannot be tampered with or infected by malware post-compilation without invalidating the cryptographic checksum.

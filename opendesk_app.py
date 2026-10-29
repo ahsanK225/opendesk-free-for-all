@@ -26,10 +26,19 @@ sys.path.insert(0, BASE_DIR)
 from opendesk.relay.server import RelayServer
 from opendesk.host.agent import HostAgent
 from opendesk.common.tunnel import CloudflareTunnel
+from opendesk.common.config import get_persistent_host_id
 
 def find_free_port(start_port=8080):
-    """Find an available TCP port."""
-    for port in range(start_port, start_port + 50):
+    """Find an available TCP port, attempting to reuse standard 8080 first."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(('127.0.0.1', start_port))
+            return start_port
+    except OSError:
+        pass
+
+    for port in range(start_port + 1, start_port + 50):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.bind(('127.0.0.1', port))
@@ -42,7 +51,7 @@ class OpenDeskGUI:
     def __init__(self, root, port):
         self.root = root
         self.port = port
-        self.assigned_id = "Connecting..."
+        self.assigned_id = get_persistent_host_id()
         self.relay_url = f"ws://127.0.0.1:{self.port}/ws"
         self.public_url = None
         self.host_agent = None
@@ -229,7 +238,7 @@ class OpenDeskGUI:
             time.sleep(0.5)
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            self.host_agent = HostAgent(relay_url=self.relay_url)
+            self.host_agent = HostAgent(relay_url=self.relay_url, host_id=self.assigned_id)
             
             async def monitor_id():
                 while True:

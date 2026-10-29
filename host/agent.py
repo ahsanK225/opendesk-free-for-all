@@ -45,6 +45,7 @@ class HostAgent:
         self.active_session = False
         self.ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self.session: Optional[aiohttp.ClientSession] = None
+        self.loop: Optional[asyncio.AbstractEventLoop] = None
         
         # Target FPS & throttle
         self.target_fps = 30
@@ -54,8 +55,13 @@ class HostAgent:
 
     def _on_mic_audio_chunk(self, b64_data: str):
         """Callback when local host microphone records an audio block."""
+        if not self.running or not self.active_session:
+            return
         try:
-            self._audio_queue.put_nowait(b64_data)
+            if self.loop and self.loop.is_running():
+                self.loop.call_soon_threadsafe(self._audio_queue.put_nowait, b64_data)
+            else:
+                self._audio_queue.put_nowait(b64_data)
         except Exception:
             pass
 
@@ -219,8 +225,14 @@ class HostAgent:
         # --- Clipboard Events ---
         elif mtype == MessageType.CLIPBOARD_TEXT:
             new_text = payload.get("text", "")
+            auto_paste = payload.get("auto_paste", False)
             if new_text:
                 self.clipboard.set_text(new_text)
+                if auto_paste:
+                    if self.loop and self.loop.is_running():
+                        self.loop.call_later(0.04, lambda: self.input_controller.execute_shortcut("paste"))
+                    else:
+                        self.input_controller.execute_shortcut("paste")
 
         # --- Real-Time Voice Audio Events ---
         elif mtype == MessageType.AUDIO_CHUNK:
@@ -265,6 +277,7 @@ class HostAgent:
 
     async def start(self):
         """Connect to relay and maintain session loop."""
+        self.loop = asyncio.get_running_loop()
         self.running = True
         asyncio.create_task(self._clipboard_sync_loop())
 

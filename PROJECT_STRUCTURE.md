@@ -48,6 +48,7 @@ opendesk/
 │
 ├── common/
 │   ├── codec.py                    # DeskRT 64x64 grid tile & delta frame encoder
+│   ├── config.py                   # Persistent host ID and user settings manager
 │   ├── protocol.py                 # JSON message schema & message type definitions
 │   ├── tunnel.py                   # Async process wrapper & regex parser for cloudflared
 │   └── __init__.py

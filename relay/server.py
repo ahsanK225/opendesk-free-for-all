@@ -92,22 +92,24 @@ class RelayServer:
 
                     # --- Connection Request (Client -> Relay -> Host) ---
                     elif mtype == "connect":
-                        target_id = payload.get("target_id", "").replace(" ", "")
+                        raw_target = str(payload.get("target_id", ""))
+                        target_id = raw_target.replace(" ", "").replace("-", "").strip()
                         password = payload.get("password", "")
                         
                         target_ws = self.peers.get(target_id)
                         target_meta = self.peer_meta.get(target_id)
                         
                         if not target_ws or target_ws.closed or not target_meta:
+                            print(f"[Relay] Connect failed: target '{target_id}' not found. Active peers: {list(self.peers.keys())}")
                             await ws.send_str(json.dumps({
                                 "type": "connect_resp",
-                                "payload": {"status": "error", "message": "Host is offline or ID not found."}
+                                "payload": {"status": "error", "message": f"Host [{raw_target}] is offline or ID not found. Ensure the desktop OpenDesk app is running."}
                             }))
                             continue
 
-                        # Verify password if host set one
+                        # Verify password if host explicitly configured one
                         expected_pw = target_meta.get("password")
-                        if expected_pw and expected_pw != password:
+                        if expected_pw and expected_pw.strip() and expected_pw != password:
                             await ws.send_str(json.dumps({
                                 "type": "connect_resp",
                                 "payload": {"status": "error", "message": "Invalid password."}

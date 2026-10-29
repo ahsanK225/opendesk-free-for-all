@@ -178,3 +178,21 @@ class WindowsInputController:
             time.sleep(0.05)
             self.user32.keybd_event(VK_TAB, 0, self.KEYEVENTF_KEYUP, 0)
             self.user32.keybd_event(VK_MENU, 0, self.KEYEVENTF_KEYUP, 0)
+        elif name == "paste":
+            # Simulate Ctrl+V to paste into active window
+            VK_CONTROL = 0x11
+            VK_V = 0x56
+            self.user32.keybd_event(VK_CONTROL, 0, 0, 0)
+            self.user32.keybd_event(VK_V, 0, 0, 0)
+            time.sleep(0.03)
+            self.user32.keybd_event(VK_V, 0, self.KEYEVENTF_KEYUP, 0)
+            self.user32.keybd_event(VK_CONTROL, 0, self.KEYEVENTF_KEYUP, 0)
+        elif name == "copy":
+            # Simulate Ctrl+C to copy from active window
+            VK_CONTROL = 0x11
+            VK_C = 0x43
+            self.user32.keybd_event(VK_CONTROL, 0, 0, 0)
+            self.user32.keybd_event(VK_C, 0, 0, 0)
+            time.sleep(0.03)
+            self.user32.keybd_event(VK_C, 0, self.KEYEVENTF_KEYUP, 0)
+            self.user32.keybd_event(VK_CONTROL, 0, self.KEYEVENTF_KEYUP, 0)

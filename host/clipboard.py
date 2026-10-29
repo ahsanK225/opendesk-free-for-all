@@ -20,6 +20,17 @@ class WindowsClipboard:
         self.user32 = ctypes.windll.user32
         self.kernel32 = ctypes.windll.kernel32
         self.on_change_callback = on_change_callback
+
+        # Explicitly configure 64-bit argument & return types for Windows APIs
+        self.kernel32.GlobalAlloc.restype = ctypes.c_void_p
+        self.kernel32.GlobalAlloc.argtypes = [ctypes.c_uint, ctypes.c_size_t]
+        self.kernel32.GlobalLock.restype = ctypes.c_void_p
+        self.kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+        self.kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+        self.user32.GetClipboardData.restype = ctypes.c_void_p
+        self.user32.GetClipboardData.argtypes = [ctypes.c_uint]
+        self.user32.SetClipboardData.restype = ctypes.c_void_p
+        self.user32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
         
         self.last_seq = self.user32.GetClipboardSequenceNumber()
         self.last_text = ""

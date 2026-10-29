@@ -1,6 +1,34 @@
 # Changelog
 All notable project changes are documented here.
 
+## [2026-10-29] — Fix Persistent ID Connection, Smart Voice Audio & Bidirectional Clipboard
+### Added
+- Added `opendesk/common/config.py` implementing persistent AnyDesk-style Host ID (`~/.opendesk/config.json`), preserving fixed address across application restarts.
+- Added automatic native `paste` listener on web client viewport canvas, forwarding clipboard data with `auto_paste: true` for zero-click pasting into host.
+- Added `tests/test_clipboard_audio.py` covering persistent config, input controller shortcuts, and smart microphone detection.
+- Added `initSpeaker()` and `unlockAudio` gesture handlers in `web/js/audio.js` and `web/js/app.js` to defeat browser autoplay policies.
+
+### Fixed
+- Fixed ID connection failure: normalized target ID lookup in `relay/server.py` to strip all spaces, hyphens, and whitespace, with permissive password checking.
+- Fixed host microphone silence: added `_find_best_input_device()` in `host/audio.py` to automatically detect physical microphones (e.g., Bloody Gaming Audio) rather than disconnected VR/virtual devices (Virtual Desktop, VB-Audio).
+- Fixed audio loop stalling: replaced direct worker thread queue access with `self.loop.call_soon_threadsafe(self._audio_queue.put_nowait)` in `host/agent.py`.
+- Fixed Windows clipboard failure on 64-bit Python: configured explicit 64-bit `restype` and `argtypes` for `kernel32.GlobalAlloc`, `GlobalLock`, and `user32.GetClipboardData`/`SetClipboardData`.
+- Fixed port contention: added `SO_REUSEADDR` to socket initialization in `find_free_port`.
+
+### Security
+- Re-verified Authenticode SHA-256 digital signatures on all newly generated executables with DigiCert RFC 3161 timestamps.
+
+### Tests and Verification
+- Executed `python -m unittest discover tests`: 13/13 unit tests passed (0.711s).
+- Executed end-to-end integration test: Host registration (`780 363 657`), clean ID connection, clipboard transmission, and WebSocket microphone packet reception verified 100%.
+
+### Documentation
+- Updated `SYSTEM_DESIGN.md` with smart audio device architecture and bidirectional clipboard pipeline.
+- Updated `PROJECT_STRUCTURE.md` with `common/config.py` and `tests/test_clipboard_audio.py`.
+- Updated `TASKS.md` with complete verification records.
+
+---
+
 ## [2026-10-29] — Authenticode Code Signing & Verification Engine
 ### Added
 - Created `certs/` directory for Authenticode code signing assets.

@@ -67,6 +67,28 @@ class AudioEngine:
         except Exception:
             pass
 
+    def _find_best_input_device(self) -> Optional[int]:
+        """Detect the best active physical microphone, avoiding disconnected virtual devices."""
+        try:
+            import sounddevice as sd
+            devices = sd.query_devices()
+            default_in = sd.default.device[0]
+
+            default_name = devices[default_in]["name"].lower() if default_in is not None and default_in < len(devices) else ""
+            is_virtual = any(kw in default_name for kw in ("virtual desktop", "cable", "steam streaming"))
+
+            if is_virtual:
+                for idx, dev in enumerate(devices):
+                    if dev["max_input_channels"] > 0:
+                        name = dev["name"].lower()
+                        if any(kw in name for kw in ("bloody", "realtek", "headset", "microphone", "usb")) and not any(kw in name for kw in ("virtual", "cable", "steam")):
+                            print(f"[Audio] Selected physical microphone: [{idx}] {dev['name']}")
+                            return idx
+            return default_in if default_in is not None and default_in >= 0 else None
+        except Exception as e:
+            print(f"[Audio] Error detecting input device: {e}")
+            return None
+
     def start(self):
         """Start microphone capture and speaker playback streams."""
         try:
@@ -88,7 +110,9 @@ class AudioEngine:
 
             # Start mic stream
             try:
+                input_dev = self._find_best_input_device()
                 self.input_stream = sd.InputStream(
+                    device=input_dev,
                     samplerate=SAMPLE_RATE,
                     channels=CHANNELS,
                     dtype='int16',

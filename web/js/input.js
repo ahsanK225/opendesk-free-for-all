@@ -101,6 +101,19 @@ class InputHandler {
         payload: { code: e.code, key: e.key }
       });
     });
+
+    // Automatic Native Paste Synchronization
+    window.addEventListener("paste", (e) => {
+      if (!this.enabled) return;
+      const text = (e.clipboardData || window.clipboardData)?.getData("text");
+      if (text) {
+        e.preventDefault();
+        this.send({
+          type: "clipboard_text",
+          payload: { text: text, auto_paste: true }
+        });
+      }
+    });
   }
 
   sendShortcut(name) {

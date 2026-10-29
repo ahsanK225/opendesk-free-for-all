@@ -24,11 +24,29 @@ class WebAudioVoiceChat {
   _ensureAudioContext() {
     if (!this.audioCtx) {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      this.audioCtx = new AudioContextClass({ sampleRate: 16000 });
+      try {
+        this.audioCtx = new AudioContextClass({ sampleRate: 16000 });
+      } catch (e) {
+        this.audioCtx = new AudioContextClass();
+      }
     }
-    if (this.audioCtx.state === "suspended") {
-      this.audioCtx.resume();
+    this.resumeContext();
+  }
+
+  /**
+   * Resumes AudioContext if suspended by browser autoplay policy.
+   */
+  resumeContext() {
+    if (this.audioCtx && this.audioCtx.state === "suspended") {
+      this.audioCtx.resume().catch(() => {});
     }
+  }
+
+  /**
+   * Pre-initializes audio context on session start so incoming host audio plays immediately.
+   */
+  initSpeaker() {
+    this._ensureAudioContext();
   }
 
   /**
@@ -37,11 +55,10 @@ class WebAudioVoiceChat {
   async start() {
     if (this.isActive) return;
 
-    try {
-      this._ensureAudioContext();
-
-      // Request microphone with echo cancellation and noise suppression
-      this.mediaStream = await navigator.mediaDevices.getUserMedia({
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert("Microphone Access Notice:\nBrowsers require a Secure Context (HTTPS or localhost) for microphone access.\nPlease use the Cloudflare Worldwide HTTPS link or open via localhost.");
+      return;
+    }
         audio: {
           channelCount: 1,
           sampleRate: 16000,

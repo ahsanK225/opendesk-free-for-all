@@ -174,8 +174,12 @@ document.addEventListener("DOMContentLoaded", () => {
         break;
 
       case "clipboard_text":
+        const clipText = payload.text || "";
         if (clipboardTextarea) {
-          clipboardTextarea.value = payload.text || "";
+          clipboardTextarea.value = clipText;
+        }
+        if (clipText && navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(clipText).catch(() => {});
         }
         break;
 
@@ -200,6 +204,11 @@ document.addEventListener("DOMContentLoaded", () => {
     inSession = true;
     activeTargetId = targetId;
     hideError();
+
+    // Prepare audio playback
+    if (voiceChat) {
+      voiceChat.initSpeaker();
+    }
 
     connectScreen.style.display = "none";
     viewportScreen.style.display = "flex";
@@ -245,9 +254,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // User gesture listener to automatically unlock Web Audio API playback
+  const unlockAudio = () => {
+    if (voiceChat) voiceChat.resumeContext();
+  };
+  window.addEventListener("click", unlockAudio, { passive: true });
+  window.addEventListener("keydown", unlockAudio, { passive: true });
+  window.addEventListener("touchstart", unlockAudio, { passive: true });
+
   // --- Event Listeners ---
   btnConnect.addEventListener("click", () => {
-    const rawTarget = targetIdInput.value.trim();
+    unlockAudio();
+    const rawTarget = targetIdInput.value.replace(/[\s-]/g, "").trim();
     if (!rawTarget) {
       showError("Please enter a valid remote OpenDesk ID.");
       return;

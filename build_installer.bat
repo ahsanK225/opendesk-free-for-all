@@ -15,7 +15,7 @@ copy /y dist\OpenDesk.exe OpenDesk.exe >nul
 
 echo.
 echo [2/4] Signing OpenDesk.exe with Authenticode Signature...
-powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\sign_executables.ps1" -Files "dist\OpenDesk.exe","OpenDesk.exe"
+powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\sign_executables.ps1" -Files "dist\OpenDesk.exe" "OpenDesk.exe"
 
 echo.
 echo [3/4] Locating Inno Setup Compiler...
@@ -39,11 +39,11 @@ copy /y installer_output\OpenDesk_Setup_v1.1.0.exe OpenDesk_Setup.exe >nul
 
 echo.
 echo [4/4] Signing OpenDesk_Setup.exe with Authenticode Signature...
-powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\sign_executables.ps1" -Files "installer_output\OpenDesk_Setup_v1.1.0.exe","OpenDesk_Setup.exe"
+powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\sign_executables.ps1" -Files "installer_output\OpenDesk_Setup_v1.1.0.exe" "OpenDesk_Setup.exe"
 
 echo.
 echo ========================================================
-echo   BUILD & SIGNING COMPLETED SUCCESSFULLY!
+echo   BUILD AND SIGNING COMPLETED SUCCESSFULLY!
 echo   Signed Portable:  OpenDesk.exe
 echo   Signed Installer: OpenDesk_Setup.exe
 echo ========================================================
