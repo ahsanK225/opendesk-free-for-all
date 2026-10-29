@@ -12,10 +12,11 @@ if errorlevel 1 (
     exit /b 1
 )
 copy /y dist\OpenDesk.exe OpenDesk.exe >nul
+copy /y dist\OpenDesk.exe OpenDesk_v1.1.2.exe >nul
 
 echo.
-echo [2/4] Signing OpenDesk.exe with Authenticode Signature...
-powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\sign_executables.ps1" -Files "dist\OpenDesk.exe,OpenDesk.exe" -Password "OpenDesk2026!"
+echo [2/4] Signing OpenDesk Executables with Authenticode Signature...
+powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\sign_executables.ps1" -Files "dist\OpenDesk.exe,OpenDesk.exe,OpenDesk_v1.1.2.exe" -Password "OpenDesk2026!"
 
 echo.
 echo [3/4] Locating Inno Setup Compiler...

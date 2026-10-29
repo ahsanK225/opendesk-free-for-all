@@ -142,9 +142,10 @@ OpenDesk includes an autonomous, 1-click in-app software updater designed for se
 ## 📦 Standalone Distribution & Installer
 
 ### 1. Ready-To-Share Installer
-* **Direct Download**: [👉 Download Latest Installer (`OpenDesk_Setup.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/latest)
+* **Direct Download (Installer)**: [👉 Download Setup Wizard (`OpenDesk_Setup_v1.1.2.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.2/OpenDesk_Setup_v1.1.2.exe)
+* **Direct Download (Portable)**: [👉 Download Portable Executable (`OpenDesk_v1.1.2.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.2/OpenDesk_v1.1.2.exe)
 * **GitHub Releases**: [View All Releases & Assets](https://github.com/ahsanK225/opendesk-free-for-all/releases)
-* **Local Build Path**: Generated locally in your project folder as `OpenDesk_Setup.exe` and `OpenDesk.exe`.
+* **Local Build Path**: Generated locally in your project folder as `installer_output\OpenDesk_Setup_v1.1.2.exe` and `OpenDesk.exe`.
 
 ### 2. Features of the Installer:
 * **Interactive Setup Wizard**: Guided welcome, destination directory, and confirmation screens.
