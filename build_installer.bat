@@ -12,11 +12,11 @@ if errorlevel 1 (
     exit /b 1
 )
 copy /y dist\OpenDesk.exe OpenDesk.exe >nul
-copy /y dist\OpenDesk.exe OpenDesk_v1.1.4_Portable.exe >nul
+copy /y dist\OpenDesk.exe OpenDesk_v1.1.5_Portable.exe >nul
 
 echo.
 echo [2/4] Signing OpenDesk Executables with Authenticode Signature...
-powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\sign_executables.ps1" -Files "dist\OpenDesk.exe,OpenDesk.exe,OpenDesk_v1.1.4_Portable.exe" -Password "OpenDesk2026!"
+powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\sign_executables.ps1" -Files "dist\OpenDesk.exe,OpenDesk.exe,OpenDesk_v1.1.5_Portable.exe" -Password "OpenDesk2026!"
 
 echo.
 echo [3/4] Locating Inno Setup Compiler...
@@ -36,12 +36,12 @@ if errorlevel 1 (
     echo [ERROR] Inno Setup packaging failed!
     exit /b 1
 )
-copy /y installer_output\OpenDesk_Setup_v1.1.4.exe OpenDesk_Setup.exe >nul
-copy /y installer_output\OpenDesk_Setup_v1.1.4.exe OpenDesk_Setup_v1.1.4_Installer.exe >nul
+copy /y installer_output\OpenDesk_Setup_v1.1.5.exe OpenDesk_Setup.exe >nul
+copy /y installer_output\OpenDesk_Setup_v1.1.5.exe OpenDesk_Setup_v1.1.5_Installer.exe >nul
 
 echo.
 echo [4/4] Signing OpenDesk_Setup.exe with Authenticode Signature...
-powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\sign_executables.ps1" -Files "installer_output\OpenDesk_Setup_v1.1.4.exe,OpenDesk_Setup.exe,OpenDesk_Setup_v1.1.4_Installer.exe" -Password "OpenDesk2026!"
+powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\sign_executables.ps1" -Files "installer_output\OpenDesk_Setup_v1.1.5.exe,OpenDesk_Setup.exe,OpenDesk_Setup_v1.1.5_Installer.exe" -Password "OpenDesk2026!"
 
 echo.
 echo ========================================================

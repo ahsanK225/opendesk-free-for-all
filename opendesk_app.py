@@ -1008,18 +1008,18 @@ class OpenDeskGUI:
         if not self.public_url:
             self.status_badge.config(text="● LOCAL READY", bg="#1f382a", fg="#9ece6a")
         else:
-            publish_host_rendezvous(self.assigned_id, self.public_url)
+            threading.Thread(target=lambda: publish_host_rendezvous(self.assigned_id, self.public_url), daemon=True).start()
 
     def _on_tunnel_url_ready(self, url: str):
         self.public_url = url
         self.root.after(0, self._update_tunnel_ui)
         if self.assigned_id and url:
-            publish_host_rendezvous(self.assigned_id, url)
+            threading.Thread(target=lambda: publish_host_rendezvous(self.assigned_id, url), daemon=True).start()
             if self.rendezvous_heartbeat is None:
                 self.rendezvous_heartbeat = RendezvousHeartbeat(
                     host_id_getter=lambda: self.assigned_id,
                     tunnel_url_getter=lambda: self.public_url,
-                    interval=40.0
+                    interval=30.0
                 )
                 self.rendezvous_heartbeat.start()
 

@@ -25,7 +25,7 @@ opendesk/
 ├── opendesk.ico                    # High-resolution application icon
 ├── opendesk.spec                   # PyInstaller bundle specification with all hidden imports
 ├── opendesk_app.py                 # AnyDesk 8 multi-tab GUI, sidebar, quick-connect & embedded session viewer
-├── opendesk_installer.iss          # Inno Setup 6 wizard installation script (v1.1.4)
+├── opendesk_installer.iss          # Inno Setup 6 wizard installation script (v1.1.5)
 ├── OpenDesk_Setup.exe              # Compiled Inno Setup installer wizard (Digitally Signed)
 ├── PROJECT_STRUCTURE.md            # Detailed structural and module specification
 ├── push_to_github.bat              # 1-Click Git push synchronization script
@@ -48,21 +48,21 @@ opendesk/
 │   └── OpenDesk_CodeSigning.pfx    # PKCS#12 certificate and private key bundle
 │
 ├── client/
-│   ├── viewer.py                   # In-tab EmbeddedSessionView & NativeSessionViewer (Tkinter + PIL DeskRT)
+│   ├── viewer.py                   # In-tab EmbeddedSessionView & NativeSessionViewer with Canvas render debouncing (Tkinter + PIL DeskRT)
 │   └── __init__.py
 │
 ├── common/
 │   ├── codec.py                    # DeskRT 64x64 grid tile & delta frame encoder
 │   ├── config.py                   # Persistent host ID, recent sessions, favorites, unattended access
 │   ├── protocol.py                 # JSON message schema & message type definitions
-│   ├── rendezvous.py               # Global rendezvous directory (9-digit ID to Cloudflare tunnel mapping)
+│   ├── rendezvous.py               # Dual-Redundant Global Rendezvous (ntfy.sh Cloudflare Edge primary + KeyValue fallback)
 │   ├── tunnel.py                   # Externalized cloudflared runner & process killer
 │   ├── updater.py                  # In-app auto-update engine, progress downloader & self-restart
 │   └── __init__.py
 │
 ├── host/
 │   ├── agent.py                    # Host orchestration engine, event loop & signaling
-│   ├── audio.py                    # Bi-directional 16kHz PCM audio capture with auto-mic detection
+│   ├── audio.py                    # Bi-directional 16kHz PCM audio capture with 40ms blocks & zero-delay jitter purging
 │   ├── capture.py                  # High-fps screen grabber using mss
 │   ├── clipboard.py                # 64-bit safe Win32 clipboard monitor and setter
 │   ├── file_manager.py             # Chunked file upload and download handler

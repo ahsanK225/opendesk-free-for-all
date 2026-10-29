@@ -47,23 +47,22 @@ class TestRendezvous(unittest.TestCase):
         self.assertTrue(pub_ok)
 
         # Mock resolve
-        encoded_val = base64.b64encode(b"https://friendly-host.trycloudflare.com").decode().replace("=", "").replace("/", "-")
         mock_resp_res = MagicMock()
-        mock_resp_res.read.return_value = f'"{encoded_val}"'.encode()
+        mock_resp_res.read.return_value = b"https://friendly-host.trycloudflare.com\n"
         mock_resp_res.__enter__.return_value = mock_resp_res
         mock_urlopen.return_value = mock_resp_res
 
-        found_url = resolve_host_rendezvous("732 364 935")
+        found_url = resolve_host_rendezvous("732 364 935", retries=1)
         self.assertEqual(found_url, "https://friendly-host.trycloudflare.com")
 
     @patch("urllib.request.urlopen")
     def test_resolve_not_found(self, mock_urlopen):
         mock_resp = MagicMock()
-        mock_resp.read.return_value = b'null'
+        mock_resp.read.return_value = b""
         mock_resp.__enter__.return_value = mock_resp
         mock_urlopen.return_value = mock_resp
 
-        res = resolve_host_rendezvous("000000000")
+        res = resolve_host_rendezvous("000000000", retries=1)
         self.assertIsNone(res)
 
     def test_heartbeat_lifecycle(self):

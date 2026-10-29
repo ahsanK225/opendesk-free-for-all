@@ -1,6 +1,6 @@
 # Project Task Checklist & Execution Board
 
-## Current Task: In-App Automatic Software Update System & Remote Auto-Updater
+## Current Task: Dual-Redundant Rendezvous, Zero-Lag VoIP Audio & Render Debouncing (v1.1.5)
 Status: `VERIFIED COMPLETE`
 
 ### Task Matrix
@@ -24,3 +24,4 @@ Status: `VERIFIED COMPLETE`
 | TASK-42 | Global Rendezvous Directory & Remote 9-Digit Discovery | Agent 1 (Analysis) / Agent 2 (Architecture) / Agent 3 (Coding) | TASK-41 | Map 9-digit IDs to Cloudflare tunnels worldwide; resolve remote host on connect; fix "Host offline" error; upload signed release assets | VERIFIED COMPLETE | `common/rendezvous.py` implemented; 25/25 unit tests pass; signed binaries uploaded to GitHub Release v1.1.2 |
 | TASK-43 | Automatic Version Bump to v1.1.3 & Remote Update Release | Agent 1 (Analysis) / Agent 3 (Coding) / Agent 8 (Documentation) | TASK-42 | Adopt mandatory continuous version increment rule; bump version to 1.1.3 across updater, manifest, and installer; publish GitHub Release v1.1.3 | VERIFIED COMPLETE | Version set to 1.1.3; all 25 unit tests passed; Authenticode signed binaries published to GitHub Release v1.1.3 |
 | TASK-44 | Update Dialog Layout Fix & v1.1.4 Release | Agent 1 (Analysis) / Agent 6 (Design) / Agent 3 (Coding) | TASK-43 | Fix update dialog layout (pack buttons to bottom, scrollable changelog, prominent download button); bump version to 1.1.4; publish GitHub Release v1.1.4 | VERIFIED COMPLETE | `opendesk_app.py` update dialog redesigned; 25/25 unit tests pass; Authenticode signed binaries published to GitHub Release v1.1.4 |
+| TASK-45 | Dual-Redundant Rendezvous, Zero-Lag VoIP Audio & Render Debouncing (v1.1.5) | Agent 1 (Analysis) / Agent 2 (Architecture) / Agent 3 (Coding) / Agent 5 (Testing) / Agent 8 (Docs) | TASK-44 | 1. Fix ID connect failure via Dual-Redundant Cloudflare Edge (ntfy) + KV fallback rendezvous.<br>2. Fix voice latency via 40ms block size & adaptive jitter purging queue.<br>3. Fix app freeze/'Not Responding' via Canvas render debouncing (`after_idle`) & async thread publishing.<br>4. Rebuild signed binaries & publish GitHub Release v1.1.5. | VERIFIED COMPLETE | `common/rendezvous.py`, `host/audio.py`, `client/viewer.py`, `opendesk_app.py` updated; 26/26 unit tests passed; Authenticode signed binaries published to GitHub Release v1.1.5 |

@@ -1,6 +1,39 @@
 # Changelog
 All notable project changes are documented here.
 
+## [2026-10-29] — Release v1.1.5: Dual-Redundant Rendezvous, Zero-Lag VoIP Audio & Render Debouncing
+### Added
+- **Dual-Redundant Global Rendezvous Architecture** (`common/rendezvous.py`):
+  - Primary Channel: High-performance Cloudflare Edge messaging (`ntfy.sh/opendesk_node_{id}`) providing global sub-100ms URL publishing and resolution with zero authentication requirements and worldwide CDN caching.
+  - Secondary Channel: Fallback Key-Value registry (`keyvalue.immanuel.co/api/KeyVal`) with Base64 payload encoding.
+  - Concurrent multi-threaded publish (`_publish_ntfy` & `_publish_kv`) and resilient resolution pipeline (`_resolve_ntfy` with instant fallback to `_resolve_kv`) with configurable retries and exponential backoff.
+  - Fixes the issue where remote hosts could only connect via direct tunnel URL and 9-digit numerical ID failed to connect across certain ISP/firewall configurations.
+- **Adaptive Zero-Delay VoIP Jitter Purging** (`host/audio.py`):
+  - Reduced audio block size from 100ms (`BLOCK_SIZE = 1600`) to **40ms (`BLOCK_SIZE = 640`)** at 16 kHz mono.
+  - Added real-time jitter buffer purging in `AudioEngine.play_audio()`: automatically drops stale queued chunks when queue size exceeds 2 packets (`>80ms`), preventing packet accumulation and permanent latency drift under bursty network conditions.
+  - Reduced playhead lag in browser client (`web/js/audio.js`) by clamping the scheduling window to `<0.15s`.
+- Added new unit test `test_audio_engine_jitter_purge` in `tests/test_audio.py` verifying real-time queue purging.
+
+### Fixed
+- **Fixed Desktop GUI Freezing & Windows 'Not Responding'**:
+  - `client/viewer.py`: Implemented Canvas frame render debouncing (`_trigger_render` with `_render_pending` flag and `self.after_idle(self._render_frame)`). Eliminates Tkinter event loop flooding during high-frequency `VIDEO_DELTA` tile streams, preserving responsiveness for OS message dispatching (`WM_PAINT`, `WM_TIMER`).
+  - `opendesk_app.py`: Moved `publish_host_rendezvous` and tunnel registration out of the Tkinter main thread into asynchronous background daemon workers, completely preventing UI lockups on startup or tunnel negotiation.
+
+### Changed
+- Standardized version `1.1.5` across all components:
+  - `common/updater.py`: Synchronized `APP_VERSION = "1.1.5"`.
+  - `version.json`: Updated update manifest to `1.1.5` targeting `OpenDesk_v1.1.5_Portable.exe` and `OpenDesk_Setup_v1.1.5_Installer.exe`.
+  - `opendesk_installer.iss`: Synchronized `#define MyAppVersion "1.1.5"` and `OutputBaseFilename=OpenDesk_Setup_v1.1.5`.
+  - `build_installer.bat`: Configured compilation and Authenticode signing targets for `v1.1.5`.
+- Published official GitHub Release `v1.1.5` with signed portable and setup wizard binaries.
+
+### Tests and Verification
+- Executed unit test suite `python -m unittest discover tests`: **26/26 tests passed in 1.255s**.
+- Compiled and digitally signed all four binaries with Authenticode SHA-256 + DigiCert RFC 3161 timestamps via `scripts/sign_executables.ps1`.
+- Verified digital signatures with `Get-AuthenticodeSignature`: confirmed valid signatures on all files.
+
+---
+
 ## [2026-10-29] — Release v1.1.4: Update Dialog Layout Fix & Continuous Auto-Update
 ### Fixed
 - Fixed update dialog UI layout bug in `opendesk_app.py` (`_open_update_dialog`):

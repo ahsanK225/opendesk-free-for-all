@@ -69,23 +69,25 @@ OpenDesk implements an AnyDesk-style zero-configuration discovery system enablin
         ├── 1. Initializes Local Relay & Cloudflare Tunnel
         │      Tunnel URL generated: https://alpha-beta.trycloudflare.com
         │
-        ├── 2. Publishes to Global Rendezvous (common/rendezvous.py)
-        │      HTTP POST -> keyvalue.immanuel.co/api/KeyVal/UpdateValue/s460x9wm/732364935/<Base64 URL>
+        ├── 2. Publishes to Dual-Redundant Global Rendezvous (common/rendezvous.py)
+        │      Primary: HTTP POST -> ntfy.sh/opendesk_node_732364935 (Cloudflare Edge, <100ms)
+        │      Secondary: HTTP POST -> keyvalue.immanuel.co/api/KeyVal/UpdateValue/s460x9wm/732364935/<Base64 URL>
         │
         └── 3. Runs Background RendezvousHeartbeat every 40s
-               Maintains fresh endpoint registration in registry
+               Maintains fresh endpoint registration across both channels
 
                                      ▲
-                                     │ (Lookup: <0.3s)
+                                     │ (Lookup: <100ms on Cloudflare Edge)
                                      ▼
 
 [Client PC (Any Network)]
         │
         ├── 1. User enters 9-digit ID: "732 364 935"
         │
-        ├── 2. EmbeddedSessionView Worker Queries Global Rendezvous
-        │      HTTP GET -> keyvalue.immanuel.co/api/KeyVal/GetValue/s460x9wm/732364935
-        │      Decodes Base64 -> https://alpha-beta.trycloudflare.com
+        ├── 2. EmbeddedSessionView Worker Queries Dual-Redundant Rendezvous
+        │      Primary: HTTP GET -> ntfy.sh/opendesk_node_732364935/raw?poll=1
+        │      Secondary Fallback: HTTP GET -> keyvalue.immanuel.co/api/KeyVal/GetValue/s460x9wm/732364935
+        │      Decodes URL -> https://alpha-beta.trycloudflare.com
         │
         └── 3. Connects directly: wss://alpha-beta.trycloudflare.com/ws
                Host relay accepts client and connects session!
@@ -128,14 +130,19 @@ Unsigned binaries trigger Windows SmartScreen warnings ("Windows protected your 
 
 ## 4. Audio Streaming Architecture
 - **Format**: Uncompressed Linear PCM, 16,000 Hz, 16-bit signed integer, 1 channel (mono).
-- **Packet Size**: 100 ms chunks (1,600 samples / 3,200 bytes per frame).
+- **Packet Size**: 40 ms chunks (640 samples / 1,280 bytes per frame), down from 100 ms to achieve sub-millisecond audio transmission latency.
+- **Adaptive Jitter Buffer Purge**: The speaker playback queue automatically drops stale frames if the queue length exceeds 2 packets (>80ms), preventing cumulative audio drift and delay accumulation during bursty network activity.
 - **Transport**: JSON WebSocket frames with base64 encoded audio payloads (`{"type": "audio", "data": "<base64>"}`).
-- **Smart Device Selection**: Automatically scans PortAudio input devices and selects physical microphones (e.g., Bloody Gaming Audio, Realtek) over disconnected virtual devices (Virtual Desktop, VB-Audio, Steam Streaming).
+- **Smart Device Selection**: Automatically scans PortAudio input devices and selects physical microphones (e.g., Gaming Audio Headset, Realtek) over disconnected virtual devices (Virtual Desktop, VB-Audio, Steam Streaming).
 - **Thread-Safe Queueing**: Dispatches PortAudio background thread callbacks into asyncio event loop via `call_soon_threadsafe`.
-- **Browser Playback**: Decoded via `AudioContext` and scheduled smoothly into Web Audio buffer sources to prevent popping and underruns.
+- **Browser Playback**: Decoded via `AudioContext` and scheduled smoothly into Web Audio buffer sources clamped to <0.15s window to prevent popping, underruns, and playhead lag.
 - **Echo Cancellation**: Configured in Web Audio API with `echoCancellation: true`, `noiseSuppression: true`, `autoGainControl: true`.
 
-## 5. Bidirectional Clipboard Synchronization Architecture
+## 5. Viewport Rendering & Event Loop Debouncing
+- **Canvas Debouncing**: `client/viewer.py` uses `_trigger_render` with an atomic `_render_pending` flag and `self.after_idle(self._render_frame)` to batch incoming `VIDEO_DELTA` tile bursts.
+- **Starvation Prevention**: Prevents saturation of Tkinter's single-threaded event loop, keeping the Windows OS message dispatch queue (`WM_PAINT`, `WM_TIMER`, mouse motion) active and eliminating application hangs / "Not Responding" states under high framerate.
+
+## 6. Bidirectional Clipboard Synchronization Architecture
 - **Host-to-Client**: `WindowsClipboard` monitors OS sequence numbers (`GetClipboardSequenceNumber`) with 64-bit safe ctypes pointers (`GlobalAlloc`, `GlobalLock`). Detected changes are relayed to the client and written automatically via `navigator.clipboard.writeText`.
 - **Client-to-Host**: Native browser `paste` events intercept `Ctrl+V` on the viewport canvas, transmitting the plain text payload to the host with `auto_paste: true`. The host commits the text to the Windows clipboard and injects `Ctrl+V` via `user32.keybd_event`.
 

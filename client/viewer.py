@@ -69,6 +69,7 @@ class EmbeddedSessionView(tk.Frame):
         self.canvas_scale = 1.0
         self.offset_x = 0
         self.offset_y = 0
+        self._render_pending = False
 
         # Subsystems
         self.clipboard = WindowsClipboard(on_change_callback=self._on_local_clipboard_changed)
@@ -289,9 +290,17 @@ class EmbeddedSessionView(tk.Frame):
     # --- Video Frame Rendering ---
     def _on_canvas_resize(self, event):
         if self.remote_image:
-            self._render_frame()
+            self._trigger_render()
+
+    def _trigger_render(self):
+        """Debounce canvas redraws to prevent Tkinter event queue starvation and 'Not Responding' freezes."""
+        if self._render_pending or not self.winfo_exists():
+            return
+        self._render_pending = True
+        self.after_idle(self._render_frame)
 
     def _render_frame(self):
+        self._render_pending = False
         if not self.remote_image or not self.winfo_exists():
             return
         cw = max(1, self.canvas.winfo_width())
@@ -431,7 +440,7 @@ class EmbeddedSessionView(tk.Frame):
                 self.remote_height = h
                 self.remote_image = img
                 if self.winfo_exists():
-                    self.after(0, self._render_frame)
+                    self.after(0, self._trigger_render)
 
         elif mtype == MessageType.VIDEO_DELTA:
             if self.remote_image:
@@ -441,7 +450,7 @@ class EmbeddedSessionView(tk.Frame):
                     tile_img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
                     self.remote_image.paste(tile_img, (t["x"], t["y"]))
                 if self.winfo_exists():
-                    self.after(0, self._render_frame)
+                    self.after(0, self._trigger_render)
 
         elif mtype == MessageType.CLIPBOARD_TEXT:
             text = payload.get("text", "")

@@ -189,8 +189,8 @@ class WebAudioVoiceChat {
       source.connect(this.audioCtx.destination);
 
       const currentTime = this.audioCtx.currentTime;
-      if (this.nextPlayTime < currentTime) {
-        this.nextPlayTime = currentTime + 0.02; // Small 20ms jitter cushion
+      if (this.nextPlayTime < currentTime || this.nextPlayTime > currentTime + 0.15) {
+        this.nextPlayTime = currentTime + 0.01; // Clamp maximum audio latency to <150ms
       }
 
       source.start(this.nextPlayTime);

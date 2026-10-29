@@ -45,6 +45,18 @@ class TestAudioEngine(unittest.TestCase):
         queued = engine.play_queue.get_nowait()
         self.assertEqual(queued, dummy_audio)
 
+    def test_audio_engine_jitter_purge(self):
+        engine = AudioEngine()
+        dummy_audio = np.zeros(BLOCK_SIZE, dtype=np.int16).tobytes()
+        b64_audio = base64.b64encode(dummy_audio).decode("ascii")
+
+        # Simulate burst of 10 incoming chunks
+        for _ in range(10):
+            engine.play_chunk(b64_audio)
+
+        # Queue should be capped at <= 3 chunks to prevent VoIP lag
+        self.assertLessEqual(engine.play_queue.qsize(), 3)
+
     def test_audio_control_mute(self):
         engine = AudioEngine()
         self.assertTrue(engine.mic_enabled)
