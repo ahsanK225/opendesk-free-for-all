@@ -1,9 +1,10 @@
 {
-  "version": "1.1.3",
+  "version": "1.1.4",
   "release_date": "2026-10-29",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.3/OpenDesk_v1.1.3_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.3/OpenDesk_Setup_v1.1.3_Installer.exe",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.4/OpenDesk_v1.1.4_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.4/OpenDesk_Setup_v1.1.4_Installer.exe",
   "changelog": [
+    "Prominent 'Download & Update Now' button layout fix with scrollable changelog",
     "Global Rendezvous 9-Digit Discovery across different networks and firewalls",
     "Resolved remote session connection 'Host is offline or ID not found' error",
     "Dynamic Cloudflare Tunnel resolution and automatic fallback pairing",

@@ -1,6 +1,30 @@
 # Changelog
 All notable project changes are documented here.
 
+## [2026-10-29] — Release v1.1.4: Update Dialog Layout Fix & Continuous Auto-Update
+### Fixed
+- Fixed update dialog UI layout bug in `opendesk_app.py` (`_open_update_dialog`):
+  - In previous versions, the changelog text container with `expand=True` pushed the action buttons outside the visible window bounds on long release notes.
+  - Re-architected layout packing order: action button row (`btn_row`) and progress frame (`prog_frame`) are now packed to `side="bottom"` first, guaranteeing 100% visibility under all screen resolutions and DPI scaling factors.
+  - Added native vertical scrollbar to the changelog text area in `cl_frame`.
+  - Upgraded download trigger button into a prominent, high-contrast action element: `📥 Download & Update Now (Restart OpenDesk)`.
+  - Added automatic parent/screen centering on dialog initialization.
+
+### Changed
+- Standardized version `1.1.4` across all components:
+  - `common/updater.py`: Synchronized `APP_VERSION = "1.1.4"`.
+  - `version.json`: Updated manifest to `1.1.4` targeting `OpenDesk_v1.1.4_Portable.exe` and `OpenDesk_Setup_v1.1.4_Installer.exe`.
+  - `opendesk_installer.iss`: Synchronized `#define MyAppVersion "1.1.4"` and `OutputBaseFilename=OpenDesk_Setup_v1.1.4`.
+  - `build_installer.bat`: Configured compilation and Authenticode signing targets for `v1.1.4`.
+- Published official GitHub Release `v1.1.4` with signed portable and setup wizard binaries.
+
+### Tests and Verification
+- Executed unit test suite `python -m unittest discover tests`: **25/25 tests passed in 1.284s**.
+- Compiled and digitally signed all four binaries with Authenticode SHA-256 + DigiCert RFC 3161 timestamps via `scripts/sign_executables.ps1`.
+- Verified digital signatures with `Get-AuthenticodeSignature`: confirmed valid signatures on all files.
+
+---
+
 ## [2026-10-29] — Release v1.1.3: Continuous Version Bumping & Remote Update Distribution
 ### Changed
 - Established permanent engineering rule in `GEMINI_SYSTEM_PROMPT.md`: mandatory automatic patch version incrementing (`+0.0.1`) on every project modification to guarantee zero-friction remote auto-updates for connected users.

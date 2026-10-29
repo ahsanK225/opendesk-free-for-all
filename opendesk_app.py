@@ -234,47 +234,38 @@ class OpenDeskGUI:
         import tempfile
         dialog = tk.Toplevel(self.root)
         dialog.title("OpenDesk In-App Software Update")
-        dialog.geometry("560x430")
-        dialog.minsize(520, 390)
+        dialog.geometry("600x530")
+        dialog.minsize(540, 480)
         dialog.configure(bg="#141822")
+        dialog.transient(self.root)
         dialog.grab_set()
 
-        # Header
-        h_frame = tk.Frame(dialog, bg="#141822")
-        h_frame.pack(fill="x", padx=20, pady=(16, 4))
+        # Center on screen or root
+        try:
+            self.root.update_idletasks()
+            rw = self.root.winfo_width()
+            rh = self.root.winfo_height()
+            rx = self.root.winfo_rootx()
+            ry = self.root.winfo_rooty()
+            dw, dh = 600, 530
+            x = max(0, rx + (rw - dw) // 2)
+            y = max(0, ry + (rh - dh) // 2)
+            dialog.geometry(f"{dw}x{dh}+{x}+{y}")
+        except Exception:
+            pass
 
-        tk.Label(h_frame, text="⚡ OpenDesk Software Update", font=("Segoe UI", 13, "bold"),
+        # 1. Header (TOP)
+        h_frame = tk.Frame(dialog, bg="#141822")
+        h_frame.pack(side="top", fill="x", padx=22, pady=(16, 6))
+
+        tk.Label(h_frame, text="⚡ OpenDesk Software Update", font=("Segoe UI", 14, "bold"),
                  bg="#141822", fg="#f1f5f9").pack(anchor="w")
         sub_txt = f"A new version v{update_info.get('version', '')} is available! (Installed: v{APP_VERSION} • Released: {update_info.get('release_date', 'Recent')})"
         tk.Label(h_frame, text=sub_txt, font=("Segoe UI", 9), bg="#141822", fg="#22c55e").pack(anchor="w")
 
-        # Changelog Frame
-        cl_frame = tk.Frame(dialog, bg="#181c28", bd=1, relief="solid", highlightbackground="#282e3f")
-        cl_frame.pack(fill="both", expand=True, padx=20, pady=10)
-
-        tk.Label(cl_frame, text="What's New in this Version:", font=("Segoe UI", 9, "bold"),
-                 bg="#181c28", fg="#ef4444").pack(anchor="w", padx=12, pady=(8, 4))
-
-        text_box = tk.Text(cl_frame, font=("Segoe UI", 9), bg="#141822", fg="#cbd5e1",
-                           wrap="word", bd=0, padx=10, pady=8)
-        text_box.pack(fill="both", expand=True, padx=12, pady=(0, 10))
-        text_box.insert("1.0", update_info.get("changelog", "Improvements and bug fixes."))
-        text_box.configure(state="disabled")
-
-        # Progress / Status Frame
-        prog_frame = tk.Frame(dialog, bg="#141822")
-        prog_frame.pack(fill="x", padx=20, pady=(0, 10))
-
-        status_lbl = tk.Label(prog_frame, text="Ready. Click 'Update & Restart' to download and automatically upgrade.",
-                              font=("Segoe UI", 8), bg="#141822", fg="#94a3b8")
-        status_lbl.pack(anchor="w", pady=(0, 4))
-
-        progress_bar = ttk.Progressbar(prog_frame, orient="horizontal", mode="determinate")
-        progress_bar.pack(fill="x")
-
-        # Buttons Row
+        # 2. Bottom Buttons Row (PACKED FIRST TO BOTTOM - 100% GUARANTEED VISIBLE)
         btn_row = tk.Frame(dialog, bg="#141822")
-        btn_row.pack(fill="x", padx=20, pady=(0, 16))
+        btn_row.pack(side="bottom", fill="x", padx=22, pady=(12, 18))
 
         cancel_flag = [False]
 
@@ -283,7 +274,7 @@ class OpenDeskGUI:
             dialog.destroy()
 
         def start_download():
-            apply_btn.configure(state="disabled", text="Downloading...")
+            apply_btn.configure(state="disabled", text="⏳ Downloading Update...")
             cancel_btn.configure(text="Cancel")
 
             download_url = update_info.get("download_url", "")
@@ -310,26 +301,58 @@ class OpenDeskGUI:
 
                 if success and not cancel_flag[0]:
                     dialog.after(0, lambda: [
-                        status_lbl.configure(text="Download complete! Restarting OpenDesk into new version...", fg="#22c55e"),
+                        status_lbl.configure(text="✓ Download complete! Relaunching into new version in 1 second...", fg="#22c55e"),
                         dialog.after(800, lambda: apply_update_and_restart(temp_exe))
                     ])
                 elif not cancel_flag[0]:
                     dialog.after(0, lambda: [
                         status_lbl.configure(text="Download failed. Please check internet connection.", fg="#ef4444"),
-                        apply_btn.configure(state="normal", text="Retry Download")
+                        apply_btn.configure(state="normal", text="📥 Download & Update Now")
                     ])
 
             threading.Thread(target=run_dl, daemon=True).start()
 
-        apply_btn = tk.Button(btn_row, text="🚀 Update & Restart Now", font=("Segoe UI", 9, "bold"),
-                              bg="#ef4444", fg="#ffffff", activebackground="#dc2626", activeforeground="#ffffff",
-                              bd=0, padx=16, pady=6, cursor="hand2", command=start_download)
+        apply_btn = tk.Button(btn_row, text="📥 Download & Update Now (Restart OpenDesk)", font=("Segoe UI", 10, "bold"),
+                              bg="#22c55e", fg="#0f172a", activebackground="#16a34a", activeforeground="#ffffff",
+                              bd=0, padx=18, pady=8, cursor="hand2", command=start_download)
         apply_btn.pack(side="left")
 
         cancel_btn = tk.Button(btn_row, text="Later", font=("Segoe UI", 9),
                                bg="#202534", fg="#cbd5e1", activebackground="#2a3144", activeforeground="#f1f5f9",
-                               bd=0, padx=14, pady=6, cursor="hand2", command=on_cancel)
+                               bd=0, padx=14, pady=8, cursor="hand2", command=on_cancel)
         cancel_btn.pack(side="right")
+
+        # 3. Progress / Status Frame (PACKED ABOVE BUTTONS)
+        prog_frame = tk.Frame(dialog, bg="#141822")
+        prog_frame.pack(side="bottom", fill="x", padx=22, pady=(0, 6))
+
+        status_lbl = tk.Label(prog_frame, text="Click 'Download & Update Now' to download and automatically restart.",
+                              font=("Segoe UI", 8), bg="#141822", fg="#94a3b8")
+        status_lbl.pack(anchor="w", pady=(0, 4))
+
+        progress_bar = ttk.Progressbar(prog_frame, orient="horizontal", mode="determinate")
+        progress_bar.pack(fill="x")
+
+        # 4. Changelog Frame (Fills middle area with Scrollbar)
+        cl_frame = tk.Frame(dialog, bg="#181c28", bd=1, relief="solid", highlightbackground="#282e3f")
+        cl_frame.pack(side="top", fill="both", expand=True, padx=22, pady=(6, 10))
+
+        tk.Label(cl_frame, text="What's New in this Version:", font=("Segoe UI", 9, "bold"),
+                 bg="#181c28", fg="#ef4444").pack(anchor="w", padx=12, pady=(8, 4))
+
+        text_container = tk.Frame(cl_frame, bg="#141822")
+        text_container.pack(fill="both", expand=True, padx=12, pady=(0, 10))
+
+        scrollbar = tk.Scrollbar(text_container)
+        scrollbar.pack(side="right", fill="y")
+
+        text_box = tk.Text(text_container, font=("Segoe UI", 9), bg="#141822", fg="#cbd5e1",
+                           wrap="word", bd=0, padx=10, pady=8, yscrollcommand=scrollbar.set)
+        text_box.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=text_box.yview)
+
+        text_box.insert("1.0", update_info.get("changelog", "Improvements and bug fixes."))
+        text_box.configure(state="disabled")
 
     def _check_updates_interactive(self, parent_win):
         check_win = tk.Toplevel(parent_win)
