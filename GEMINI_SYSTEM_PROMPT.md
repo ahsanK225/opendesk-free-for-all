@@ -73,3 +73,16 @@ The following four Markdown files are mandatory for every project:
 ## 6. PERSISTENT TASK TRACKING & STRICT COMPLETION GATE
 - Maintain a task checklist (`TASKS.md`).
 - A task is COMPLETE only when all criteria are met and verified by real execution and evidence.
+
+---
+
+## 7. PROJECT-SPECIFIC ENGINEERING RULES (OPENDESK)
+1. **MANDATORY AUTOMATIC VERSION BUMPING (SEMANTIC PATCH INCREMENT)**:
+   - Whenever any feature, bugfix, UI change, or modification is made to OpenDesk, the system MUST automatically increment the patch version (e.g. `1.1.2` -> `1.1.3` -> `1.1.4`, one point forward every time).
+   - The version MUST be synchronized across:
+     - `common/updater.py` (`APP_VERSION`)
+     - `version.json` (`version`, `download_url`, `installer_url`, `changelog`)
+     - `opendesk_installer.iss` (`MyAppVersion`, `OutputBaseFilename`)
+     - `build_installer.bat` (target executable names and signing targets)
+   - Binaries MUST be recompiled, signed with Authenticode SHA-256 + DigiCert RFC 3161 timestamps, and published as a new GitHub Release with updated assets (`OpenDesk_v<version>_Portable.exe` and `OpenDesk_Setup_v<version>_Installer.exe`).
+   - This ensures that remote client PCs (such as the user's friend's machine) immediately detect the newer release via the in-app automatic updater and update without manual friction.

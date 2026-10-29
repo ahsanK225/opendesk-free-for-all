@@ -1,6 +1,24 @@
 # Changelog
 All notable project changes are documented here.
 
+## [2026-10-29] — Release v1.1.3: Continuous Version Bumping & Remote Update Distribution
+### Changed
+- Established permanent engineering rule in `GEMINI_SYSTEM_PROMPT.md`: mandatory automatic patch version incrementing (`+0.0.1`) on every project modification to guarantee zero-friction remote auto-updates for connected users.
+- Standardized version `1.1.3` across all components:
+  - `common/updater.py`: Synchronized `APP_VERSION = "1.1.3"`.
+  - `version.json`: Updated manifest to `1.1.3` with direct asset endpoints for `OpenDesk_v1.1.3_Portable.exe` and `OpenDesk_Setup_v1.1.3_Installer.exe`.
+  - `opendesk_installer.iss`: Synchronized `#define MyAppVersion "1.1.3"` and `OutputBaseFilename=OpenDesk_Setup_v1.1.3`.
+  - `build_installer.bat`: Configured compilation and Authenticode signing targets for `v1.1.3`.
+- Published official GitHub Release `v1.1.3` with digitally signed portable executable and installer wizard.
+
+### Tests and Verification
+- Executed unit test suite `python -m unittest discover tests`: **25/25 tests passed in 1.235s**.
+- Compiled `OpenDesk.exe`, `OpenDesk_v1.1.3_Portable.exe`, `OpenDesk_Setup.exe`, and `OpenDesk_Setup_v1.1.3_Installer.exe`.
+- Digitally signed all binaries with Authenticode SHA-256 + DigiCert RFC 3161 timestamps via `scripts/sign_executables.ps1`.
+- Verified digital signatures with `Get-AuthenticodeSignature`: confirmed valid signatures on all files.
+
+---
+
 ## [2026-10-29] — Global Rendezvous Directory & Remote 9-Digit Discovery (v1.1.2)
 ### Added
 - Added `opendesk/common/rendezvous.py` providing AnyDesk-style zero-configuration remote discovery across different networks:
