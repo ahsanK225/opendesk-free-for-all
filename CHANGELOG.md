@@ -1,6 +1,36 @@
 # Changelog
 All notable project changes are documented here.
 
+## [2026-10-29] — Smart Incremental Auto-Update System & Differential SHA-256 Verification
+### Added
+- **Smart Incremental Auto-Updater Engine** (`common/incremental_updater.py`):
+  - AnyDesk-style differential file update system: compares local file hashes against versioned `manifest.json`.
+  - Downloads only new or modified files, skipping unchanged binary/dependency files (reducing update payloads from **70 MB to 15-200 KB** and saving >98% bandwidth).
+  - SHA-256 cryptographic hash verification performed on every streaming file chunk before staging.
+  - Automatic rollback protection: stages files into `.update_staging/` and creates pre-update snapshot in `.update_backup/`; automatically restores previous state if any integrity error or disk failure occurs.
+  - User settings and session data preservation: explicitly protects `config.json`, session histories, bookmarks, and tokens from being overwritten.
+  - Windows file lock handling: creates a standalone batch runner to cleanly swap in-use executables after process termination and relaunch.
+- **Manifest Generator Tool** (`tools/manifest_generator.py`):
+  - Recursively scans release directories, computes SHA-256 hashes, generates standardized `manifest.json` with release notes and preservation rules.
+- **Update Server / CDN Simulator** (`tools/update_server.py`):
+  - Multi-threaded HTTP server supporting range requests, CORS, and delta file delivery for local testing and CDN hosting.
+- **Comprehensive Unit & Integration Test Suite** (`tests/test_incremental_updater.py`):
+  - 6 tests validating hash verification, differential skipping, user config preservation, corrupted file rollback, and end-to-end multi-release updating (`v1.0.0` -> `v1.0.1` -> `v1.0.2`).
+- **Comprehensive Documentation** (`INCREMENTAL_UPDATE_GUIDE.md`):
+  - Detailed release packaging, server deployment, lifecycle, and operational manual.
+
+### Changed
+- `common/updater.py`: Integrated `IncrementalUpdater` into `check_for_updates()`, dynamically generating `differential_plan` when manifest files are present.
+- `opendesk_app.py`:
+  - Enhanced update notification banner to highlight delta download size and bandwidth savings (e.g. `142 KB delta • 99% saved`).
+  - Enhanced update dialog with `[ ⚡ Apply Smart Incremental Update ]` button, per-file download progress tracking, and atomic restart.
+
+### Tests and Verification
+- Ran `python -m unittest tests/test_incremental_updater.py`: **6/6 tests passed in 1.213s**.
+- Ran full test suite `python -m unittest discover tests`: **32/32 tests passed in 2.402s**.
+
+---
+
 ## [2026-10-29] — Release v1.1.5: Dual-Redundant Rendezvous, Zero-Lag VoIP Audio & Render Debouncing
 ### Added
 - **Dual-Redundant Global Rendezvous Architecture** (`common/rendezvous.py`):

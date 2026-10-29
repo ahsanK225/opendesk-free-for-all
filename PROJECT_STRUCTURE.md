@@ -21,6 +21,7 @@ opendesk/
 ├── build_installer.bat             # 1-Click compiler for PyInstaller & Inno Setup
 ├── CHANGELOG.md                    # Auditable chronological change history
 ├── GEMINI_SYSTEM_PROMPT.md         # Active engineering rules & multi-agent system prompt
+├── INCREMENTAL_UPDATE_GUIDE.md     # Differential auto-update & server deployment guide
 ├── OpenDesk.exe                    # Standalone single-file executable (Digitally Signed)
 ├── opendesk.ico                    # High-resolution application icon
 ├── opendesk.spec                   # PyInstaller bundle specification with all hidden imports
@@ -54,6 +55,7 @@ opendesk/
 ├── common/
 │   ├── codec.py                    # DeskRT 64x64 grid tile & delta frame encoder
 │   ├── config.py                   # Persistent host ID, recent sessions, favorites, unattended access
+│   ├── incremental_updater.py      # Smart differential updater with SHA-256 verification & atomic rollback
 │   ├── protocol.py                 # JSON message schema & message type definitions
 │   ├── rendezvous.py               # Dual-Redundant Global Rendezvous (ntfy.sh Cloudflare Edge primary + KeyValue fallback)
 │   ├── tunnel.py                   # Externalized cloudflared runner & process killer
@@ -84,12 +86,17 @@ opendesk/
 │   ├── test_clipboard_audio.py     # Unit tests for 64-bit clipboard and mic selection
 │   ├── test_codec.py               # Unit tests for tile delta encoding and compression
 │   ├── test_file_manager.py        # Unit tests for file chunking and hash integrity
+│   ├── test_incremental_updater.py # Unit tests for SHA-256 delta updates, rollback & multi-release tests
 │   ├── test_integration.py         # End-to-end integration tests for relay and host
 │   ├── test_native_viewer.py       # Unit tests for native desktop session viewer
 │   ├── test_rendezvous.py          # Unit tests for 9-digit rendezvous publish, resolve, and heartbeat
 │   ├── test_tabbed_gui.py          # Unit tests for AnyDesk tab lifecycle & recent session config
 │   ├── test_updater.py             # Unit tests for auto-update version check & download
 │   └── __init__.py
+│
+├── tools/
+│   ├── manifest_generator.py       # Generates versioned manifest.json with file SHA-256 hashes
+│   └── update_server.py            # HTTP update distribution server for delta delivery
 │
 └── web/
     ├── index.html                  # Responsive HTML5 client web app (browser fallback)

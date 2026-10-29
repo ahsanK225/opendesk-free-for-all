@@ -15,8 +15,21 @@ import subprocess
 import tempfile
 from typing import Optional, Dict, Any, Callable, Tuple
 
+from common.incremental_updater import (
+    IncrementalUpdater,
+    DifferentialPlan,
+    compute_file_sha256,
+)
+
 APP_VERSION = "1.1.5"
 UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/ahsanK225/opendesk-free-for-all/main/version.json"
+
+
+def get_install_dir() -> str:
+    """Return the base installation directory of the running application."""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def parse_version(v_str: str) -> Tuple[int, ...]:
@@ -66,6 +79,20 @@ def check_for_updates(current_version: str = APP_VERSION,
                 else:
                     changelog_text = str(changelog_raw)
 
+                plan = None
+                is_incremental = False
+                if "files" in data and isinstance(data["files"], list):
+                    try:
+                        inc_updater = IncrementalUpdater(
+                            install_dir=get_install_dir(),
+                            manifest_url=manifest_url,
+                            current_version=current_version,
+                        )
+                        plan = inc_updater.compute_differential(data)
+                        is_incremental = True
+                    except Exception as plan_err:
+                        print(f"[Updater] Differential plan computation notice: {plan_err}")
+
                 return {
                     "available": available,
                     "version": remote_ver,
@@ -73,7 +100,10 @@ def check_for_updates(current_version: str = APP_VERSION,
                     "release_date": data.get("release_date", "Recent"),
                     "download_url": data.get("download_url", ""),
                     "installer_url": data.get("installer_url", ""),
-                    "changelog": changelog_text
+                    "changelog": changelog_text,
+                    "manifest_data": data,
+                    "is_incremental": is_incremental,
+                    "differential_plan": plan,
                 }
     except Exception as e:
         print(f"[Updater] Update check failed or offline: {e}")

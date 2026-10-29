@@ -211,7 +211,13 @@ class OpenDeskGUI:
         left_box.pack(side="left", padx=14, pady=6)
 
         tk.Label(left_box, text="⚡", font=("Segoe UI Emoji", 11), bg="#1e2433", fg="#ef4444").pack(side="left")
-        tk.Label(left_box, text=f"Update Available: OpenDesk v{remote_ver} is now ready to install!",
+        if update_info.get("is_incremental") and update_info.get("differential_plan"):
+            plan = update_info["differential_plan"]
+            banner_txt = f"⚡ Smart Incremental Update v{remote_ver} Ready! ({plan.total_delta_bytes/1024:.0f} KB delta • {plan.bandwidth_saved_pct:.0f}% bandwidth saved)"
+        else:
+            banner_txt = f"Update Available: OpenDesk v{remote_ver} is now ready to install!"
+
+        tk.Label(left_box, text=banner_txt,
                  font=("Segoe UI", 9, "bold"), bg="#1e2433", fg="#f1f5f9").pack(side="left", padx=6)
 
         right_box = tk.Frame(self.banner_frame, bg="#1e2433")
@@ -260,8 +266,16 @@ class OpenDeskGUI:
 
         tk.Label(h_frame, text="⚡ OpenDesk Software Update", font=("Segoe UI", 14, "bold"),
                  bg="#141822", fg="#f1f5f9").pack(anchor="w")
-        sub_txt = f"A new version v{update_info.get('version', '')} is available! (Installed: v{APP_VERSION} • Released: {update_info.get('release_date', 'Recent')})"
-        tk.Label(h_frame, text=sub_txt, font=("Segoe UI", 9), bg="#141822", fg="#22c55e").pack(anchor="w")
+
+        is_inc = update_info.get("is_incremental", False)
+        diff_plan = update_info.get("differential_plan")
+
+        if is_inc and diff_plan:
+            kb_delta = diff_plan.total_delta_bytes / 1024
+            sub_txt = f"📦 Smart Incremental Update v{diff_plan.target_version} Available! (Installed: v{APP_VERSION})\nDownload Size: {kb_delta:.1f} KB (Saved {diff_plan.bandwidth_saved_pct:.1f}% bandwidth • Skipped {len(diff_plan.to_skip)} unchanged files)"
+        else:
+            sub_txt = f"A new version v{update_info.get('version', '')} is available! (Installed: v{APP_VERSION} • Released: {update_info.get('release_date', 'Recent')})"
+        tk.Label(h_frame, text=sub_txt, font=("Segoe UI", 9), bg="#141822", fg="#22c55e", justify="left").pack(anchor="w", pady=(2, 0))
 
         # 2. Bottom Buttons Row (PACKED FIRST TO BOTTOM - 100% GUARANTEED VISIBLE)
         btn_row = tk.Frame(dialog, bg="#141822")
@@ -277,12 +291,50 @@ class OpenDeskGUI:
             apply_btn.configure(state="disabled", text="⏳ Downloading Update...")
             cancel_btn.configure(text="Cancel")
 
-            download_url = update_info.get("download_url", "")
-            if not download_url:
-                messagebox.showerror("Error", "Download URL not found in update manifest.", parent=dialog)
-                return
-
             def run_dl():
+                if is_inc and diff_plan:
+                    from common.incremental_updater import IncrementalUpdater
+                    from common.updater import get_install_dir
+
+                    def on_delta_prog(downloaded, total, cur_file, idx, total_files):
+                        pct = int((downloaded / total) * 100) if total > 0 else 50
+                        txt = f"Downloading delta ({idx}/{total_files}): {cur_file} ({downloaded/1024:.1f} KB / {total/1024:.1f} KB)"
+                        dialog.after(0, lambda: [
+                            progress_bar.configure(value=pct),
+                            status_lbl.configure(text=txt, fg="#f1f5f9")
+                        ])
+
+                    inc = IncrementalUpdater(install_dir=get_install_dir(), manifest_url="", current_version=APP_VERSION)
+                    success, staging_or_err = inc.download_delta(diff_plan, progress_callback=on_delta_prog, cancel_flag=lambda: cancel_flag[0])
+
+                    if success and not cancel_flag[0]:
+                        dialog.after(0, lambda: [
+                            status_lbl.configure(text="✓ SHA-256 hashes verified! Applying staged files...", fg="#22c55e"),
+                        ])
+                        apply_ok, msg = inc.apply_staged_update(diff_plan, staging_or_err)
+                        if apply_ok:
+                            dialog.after(0, lambda: [
+                                status_lbl.configure(text="✓ Update applied! Relaunching in 1 second...", fg="#22c55e"),
+                                dialog.after(800, lambda: apply_update_and_restart(sys.executable))
+                            ])
+                        else:
+                            dialog.after(0, lambda: [
+                                status_lbl.configure(text=f"Failed to apply: {msg}", fg="#ef4444"),
+                                apply_btn.configure(state="normal", text="Retry Update")
+                            ])
+                    elif not cancel_flag[0]:
+                        dialog.after(0, lambda: [
+                            status_lbl.configure(text=f"Download failed: {staging_or_err}", fg="#ef4444"),
+                            apply_btn.configure(state="normal", text="Retry Update")
+                        ])
+                    return
+
+                # Fallback full binary download
+                download_url = update_info.get("download_url", "")
+                if not download_url:
+                    messagebox.showerror("Error", "Download URL not found in update manifest.", parent=dialog)
+                    return
+
                 temp_dir = tempfile.gettempdir()
                 temp_exe = os.path.join(temp_dir, f"OpenDesk_v{update_info.get('version', '')}_new.exe")
 
@@ -312,7 +364,8 @@ class OpenDeskGUI:
 
             threading.Thread(target=run_dl, daemon=True).start()
 
-        apply_btn = tk.Button(btn_row, text="📥 Download & Update Now (Restart OpenDesk)", font=("Segoe UI", 10, "bold"),
+        btn_text = "⚡ Apply Smart Incremental Update" if (is_inc and diff_plan) else "📥 Download & Update Now (Restart OpenDesk)"
+        apply_btn = tk.Button(btn_row, text=btn_text, font=("Segoe UI", 10, "bold"),
                               bg="#22c55e", fg="#0f172a", activebackground="#16a34a", activeforeground="#ffffff",
                               bd=0, padx=18, pady=8, cursor="hand2", command=start_download)
         apply_btn.pack(side="left")

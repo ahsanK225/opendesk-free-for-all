@@ -202,3 +202,19 @@ OpenDesk employs a lightweight, decoupled update manifest stored at the root of 
    - Because Windows locks active running executables, OpenDesk writes an atomic batch updater helper script (`%TEMP%\opendesk_self_update.bat`).
    - The batch script waits for the old OpenDesk process to cleanly exit (`timeout /t 2`), overwrites the target binary (`copy /y`), relaunches the new binary (`start "" "%TARGET_EXE%"`), and self-deletes (`del "%~f0"`).
    - This ensures zero-friction, 1-click self-updates for all clients and remote workstations without requiring manual zip extraction or reinstallation.
+
+### 8.3 Smart Incremental Differential Auto-Update System
+- **Differential Manifest Comparison (`common/incremental_updater.py`)**:
+  - Instead of downloading the full 70 MB application package on minor releases, the client inspects file hashes against the remote `manifest.json`.
+  - Unchanged files (such as runtime DLLs, system libraries, and static assets) are marked `to_skip` (0 bytes downloaded).
+  - Only modified or new files are downloaded into a temporary `.update_staging/` sandbox (typically 15 KB to 200 KB, saving >98% bandwidth).
+- **Per-File SHA-256 Integrity Verification**:
+  - Every downloaded chunk is verified against the manifest's SHA-256 cryptographic hash.
+  - If a hash mismatch or corrupt payload is detected, the staging directory is wiped immediately, and the update aborts with a clear error.
+- **Atomic Rollback & User Data Preservation**:
+  - A pre-update snapshot of target files is created in `.update_backup/`.
+  - If any error occurs during the file copy process, the backup is restored automatically, leaving the running installation completely uncorrupted.
+  - Glob rules (`config.json`, `recent_sessions.json`, `unattended.key`, `logs/*`, `certs/*`) prevent user tokens, settings, and session histories from ever being overwritten during updates.
+- **Manifest Generation & Release Server Tools**:
+  - `tools/manifest_generator.py`: Recursively scans release folders and generates versioned `manifest.json` files with SHA-256 hashes.
+  - `tools/update_server.py`: Lightweight HTTP server supporting byte-range streaming, CORS headers, and delta delivery for local testing and CDN deployment.
