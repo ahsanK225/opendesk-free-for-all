@@ -55,7 +55,7 @@ class TestUpdater(unittest.TestCase):
     @patch("urllib.request.urlopen")
     def test_check_for_updates_up_to_date(self, mock_urlopen):
         sample_manifest = {
-            "version": "1.2.0",
+            "version": APP_VERSION,
             "release_date": "2026-10-29",
             "download_url": "https://example.com/OpenDesk.exe",
             "changelog": []
@@ -66,7 +66,7 @@ class TestUpdater(unittest.TestCase):
         mock_resp.__enter__.return_value = mock_resp
         mock_urlopen.return_value = mock_resp
 
-        result = check_for_updates(current_version="1.2.0", manifest_url="http://fake.url")
+        result = check_for_updates(current_version=APP_VERSION, manifest_url="http://fake.url")
         self.assertIsNotNone(result)
         self.assertFalse(result["available"])
 

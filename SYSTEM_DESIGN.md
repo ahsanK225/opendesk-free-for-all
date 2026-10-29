@@ -143,7 +143,7 @@ OpenDesk employs a lightweight, decoupled update manifest stored at the root of 
 - **Payload Schema**:
   ```json
   {
-    "version": "1.2.0",
+    "version": "1.1.2",
     "release_date": "2026-10-29",
     "download_url": "https://raw.githubusercontent.com/ahsanK225/opendesk-free-for-all/main/OpenDesk.exe",
     "installer_url": "https://raw.githubusercontent.com/ahsanK225/opendesk-free-for-all/main/OpenDesk_Setup.exe",

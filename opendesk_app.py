@@ -739,7 +739,7 @@ class OpenDeskGUI:
                                             font=("Segoe UI", 8), bg="#12151e", fg="#64748b")
         self.bottom_status_label.pack(side="left", padx=14, pady=4)
 
-        tk.Label(bottom_bar, text="DeskRT 60FPS Delta Engine • 16kHz HD Voice • v1.2.0 (Digitally Signed)",
+        tk.Label(bottom_bar, text=f"DeskRT 60FPS Delta Engine • 16kHz HD Voice • v{APP_VERSION} (Digitally Signed)",
                  font=("Segoe UI", 8), bg="#12151e", fg="#64748b").pack(side="right", padx=14, pady=4)
 
     # =========================================================================

@@ -15,7 +15,7 @@ import subprocess
 import tempfile
 from typing import Optional, Dict, Any, Callable, Tuple
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.1.2"
 UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/ahsanK225/opendesk-free-for-all/main/version.json"
 
 

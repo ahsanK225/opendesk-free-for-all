@@ -1,6 +1,24 @@
 # Changelog
 All notable project changes are documented here.
 
+## [2026-10-29] — Release v1.1.2: Version Alignment & Automated In-App Updater
+### Changed
+- Standardized application release version to `v1.1.2` across all components:
+  - `version.json`: Updated remote update manifest to version `1.1.2`.
+  - `common/updater.py`: Synchronized `APP_VERSION = "1.1.2"`.
+  - `opendesk_installer.iss`: Configured installer wizard to generate `OpenDesk_Setup_v1.1.2.exe`.
+  - `build_installer.bat`: Updated compilation targets and Authenticode signing for `OpenDesk_Setup_v1.1.2.exe`.
+  - `opendesk_app.py`: Dynamically bound bottom status bar and Settings dialog to `APP_VERSION`.
+  - `tests/test_updater.py`: Updated test fixtures and assertions to test against `1.1.2`.
+
+### Tests and Verification
+- Executed unit test suite `python -m unittest discover tests`: **21/21 tests passed in 1.221s**.
+- Compiled and packaged `OpenDesk.exe` and `OpenDesk_Setup_v1.1.2.exe`.
+- Digitally signed both binaries with Authenticode SHA-256 + DigiCert RFC 3161 timestamps via `scripts/sign_executables.ps1`.
+- Verified digital signatures with `Get-AuthenticodeSignature`: confirmed valid signatures on both files.
+
+---
+
 ## [2026-10-29] — In-App Automatic Software Update System & Remote Self-Update
 ### Added
 - Added `opendesk/common/updater.py` implementing the complete autonomous update engine:

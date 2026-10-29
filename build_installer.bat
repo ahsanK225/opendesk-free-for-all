@@ -35,11 +35,11 @@ if errorlevel 1 (
     echo [ERROR] Inno Setup packaging failed!
     exit /b 1
 )
-copy /y installer_output\OpenDesk_Setup_v1.2.0.exe OpenDesk_Setup.exe >nul
+copy /y installer_output\OpenDesk_Setup_v1.1.2.exe OpenDesk_Setup.exe >nul
 
 echo.
 echo [4/4] Signing OpenDesk_Setup.exe with Authenticode Signature...
-powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\sign_executables.ps1" -Files "installer_output\OpenDesk_Setup_v1.2.0.exe,OpenDesk_Setup.exe" -Password "OpenDesk2026!"
+powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\sign_executables.ps1" -Files "installer_output\OpenDesk_Setup_v1.1.2.exe,OpenDesk_Setup.exe" -Password "OpenDesk2026!"
 
 echo.
 echo ========================================================
