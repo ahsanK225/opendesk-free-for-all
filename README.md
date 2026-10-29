@@ -131,8 +131,9 @@ python run_host.py
 ## 📦 Standalone Distribution & Installer
 
 ### 1. Ready-To-Share Installer
-* **Installer Path**: [`OpenDesk_Setup.exe`](OpenDesk_Setup.exe) (Compiled with Inno Setup 6).
-* **Portable Executable**: [`OpenDesk.exe`](OpenDesk.exe) (Compiled with PyInstaller).
+* **Direct Download**: [👉 Download Latest Installer (`OpenDesk_Setup.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/latest)
+* **GitHub Releases**: [View All Releases & Assets](https://github.com/ahsanK225/opendesk-free-for-all/releases)
+* **Local Build Path**: Generated locally in your project folder as `OpenDesk_Setup.exe` and `OpenDesk.exe`.
 
 ### 2. Features of the Installer:
 * **Interactive Setup Wizard**: Guided welcome, destination directory, and confirmation screens.
