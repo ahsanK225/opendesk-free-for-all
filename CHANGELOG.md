@@ -1,6 +1,22 @@
 # Changelog
 All notable project changes are documented here.
 
+## [2026-10-29] — Fix PyInstaller Temporary Directory Cleanup Lock (_MEIxxxx)
+### Fixed
+- Fixed `Failed to remove temporary directory: ...\_MEIxxxx` warning dialog on application exit.
+- Externalized `cloudflared.exe` execution from PyInstaller's temporary `_MEIPASS` folder to persistent user directory `~/.opendesk/bin/cloudflared.exe`, preventing child process binary locks during directory removal.
+- Implemented synchronous process tree termination in `CloudflareTunnel.stop()` using Windows `taskkill /F /T /PID` and `process.wait()`.
+- Added `atexit` termination hook in `common/tunnel.py` to prevent orphaned background tunnels.
+- Added explicit PortAudio device cleanup `sounddevice.stop()` on window close.
+
+### Tests and Verification
+- Confirmed `cloudflared.exe` now launches exclusively from `~/.opendesk/bin/cloudflared.exe` (no open handles in `%TEMP%\_MEI*`).
+- Verified clean window termination without warning dialogs.
+- Re-verified all 13 unit tests: 13/13 tests passed.
+- Both `OpenDesk.exe` and `OpenDesk_Setup.exe` recompiled and signed with Authenticode SHA-256 + DigiCert RFC 3161 timestamps.
+
+---
+
 ## [2026-10-29] — Fix Persistent ID Connection, Smart Voice Audio & Bidirectional Clipboard
 ### Added
 - Added `opendesk/common/config.py` implementing persistent AnyDesk-style Host ID (`~/.opendesk/config.json`), preserving fixed address across application restarts.

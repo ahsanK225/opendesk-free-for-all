@@ -146,6 +146,12 @@ class AudioEngine:
                 pass
             self.output_stream = None
 
+        try:
+            import sounddevice as sd
+            sd.stop()
+        except Exception:
+            pass
+
         while not self.play_queue.empty():
             try:
                 self.play_queue.get_nowait()

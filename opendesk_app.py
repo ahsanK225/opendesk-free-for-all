@@ -276,11 +276,21 @@ class OpenDeskGUI:
             self.bottom_status_label.config(text=f"Global: {self.public_url}")
 
     def _on_close(self):
-        if self.tunnel:
-            self.tunnel.stop()
-        if self.host_agent:
-            self.host_agent.stop()
-        self.root.destroy()
+        try:
+            if self.tunnel:
+                self.tunnel.stop()
+        except Exception:
+            pass
+        try:
+            if self.host_agent:
+                self.host_agent.stop()
+        except Exception:
+            pass
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+        time.sleep(0.05)
         sys.exit(0)
 
 def main():

@@ -8,6 +8,7 @@ import os
 import sys
 import re
 import shutil
+import atexit
 import subprocess
 import threading
 from typing import Optional, Callable
@@ -20,13 +21,29 @@ class CloudflareTunnel:
         self.process: Optional[subprocess.Popen] = None
         self.thread: Optional[threading.Thread] = None
         self.running = False
+        atexit.register(self.stop)
 
     def _find_binary(self) -> Optional[str]:
-        # 1. Bundled in PyInstaller _MEIPASS
+        # 1. External permanent directory outside PyInstaller _MEIPASS
+        # Running child executables from inside _MEIPASS prevents Windows from deleting temp files on exit.
+        permanent_dir = os.path.expanduser("~/.opendesk/bin")
+        permanent_bin = os.path.join(permanent_dir, "cloudflared.exe")
+
         if hasattr(sys, "_MEIPASS"):
-            cand = os.path.join(sys._MEIPASS, "bin", "cloudflared.exe")
-            if os.path.isfile(cand):
-                return cand
+            bundled = os.path.join(sys._MEIPASS, "bin", "cloudflared.exe")
+            if os.path.isfile(bundled):
+                try:
+                    os.makedirs(permanent_dir, exist_ok=True)
+                    # Copy out of _MEIPASS if not exists or size differs
+                    if not os.path.isfile(permanent_bin) or os.path.getsize(permanent_bin) != os.path.getsize(bundled):
+                        shutil.copy2(bundled, permanent_bin)
+                    return permanent_bin
+                except Exception as e:
+                    print(f"[Tunnel] Note copying binary to permanent cache: {e}")
+                    return bundled
+
+        if os.path.isfile(permanent_bin):
+            return permanent_bin
 
         # 2. Local bin directory
         cand = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "bin", "cloudflared.exe"))
@@ -90,8 +107,17 @@ class CloudflareTunnel:
         self.running = False
         if self.process:
             try:
-                self.process.terminate()
-                self.process.kill()
+                pid = self.process.pid
+                # On Windows, taskkill /F /T terminates process and all child processes synchronously
+                if sys.platform == "win32":
+                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+                else:
+                    self.process.terminate()
+                self.process.wait(timeout=2.0)
             except Exception:
-                pass
+                try:
+                    self.process.kill()
+                    self.process.wait(timeout=1.0)
+                except Exception:
+                    pass
             self.process = None
