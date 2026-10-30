@@ -1,6 +1,37 @@
 # OpenDesk: Ultra-Low-Latency Remote Desktop Suite
 
-OpenDesk is a modern, open-source remote desktop solution inspired by AnyDesk's architecture. It features a custom **DeskRT-style Tile & Delta Video Codec**, Win32 desktop session capturing, bidirectional input injection, P2P/Relay fallback networking, chunked file transfer, and live clipboard synchronization.
+![Version](https://img.shields.io/badge/version-v1.1.7-red?style=for-the-badge&logo=github)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-blue?style=for-the-badge&logo=windows)
+![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
+![Security](https://img.shields.io/badge/code%20signing-Authenticode%20SHA--256-orange?style=for-the-badge)
+
+OpenDesk is a modern, high-performance open-source remote desktop solution inspired by AnyDesk's architecture. It features a custom **DeskRT-style Tile & Delta Video Codec**, Win32 desktop session capturing, AnyDesk 8 multi-tab GUI with embedded viewports, AnyDesk-style incoming session request approval with granular permission toggles, dynamic aspect ratio modes, zoom controls, 64-bit clipboard sync, real-time voice call, and global zero-configuration tunneling powered by Cloudflare.
+
+---
+
+## 🚀 What's New in v1.1.7 (Latest Release)
+
+- **⚡ AnyDesk-style Incoming Session Request Dialog**:
+  - Topmost modal window pops up when a remote user requests connection.
+  - Accompanied by a distinct **Audio Alert Chime** (`winsound.MessageBeep`).
+  - Displays connecting client ID and remote workstation details.
+- **🛡️ Granular Session Permissions Control**:
+  - The host user can toggle permissions before accepting:
+    - `☑ Allow Remote Mouse & Keyboard Control` (supports View-Only mode)
+    - `☑ Allow Real-Time Audio / Voice Call`
+    - `☑ Allow Bidirectional Clipboard Synchronization`
+    - `☑ Allow File Transfer & Directory Browsing`
+  - Two prominent action buttons: **`[ ✓ Accept Connection ]`** and **`[ ✕ Dismiss / Reject ]`**.
+- **📐 Dynamic Display Aspect Ratio Modes & Multi-Level Zoom**:
+  - **Fit Screen (Aspect Ratio)**: Letterboxed native display.
+  - **Stretch to Fill (No Black Bars)**: Expands remote desktop to fill 100% of the canvas.
+  - **1:1 Original Size**: Pixel-for-pixel native resolution (zero scaling blur).
+  - Multi-level zoom (50% to 300%) with `Ctrl + MouseWheel` centered zooming and middle/shift-drag panning.
+  - **100% Backward Compatibility**: Mathematical coordinate normalization compatible with older host agents.
+- **🔄 Smart Incremental Auto-Updater with SHA-256 Verification**:
+  - Differential file updates downloading only new or modified bytes (reducing update payloads from 70 MB to 15-200 KB).
+  - Cryptographic SHA-256 verification and automatic rollback protection.
+  - In-app 1-click update with live download progress and seamless self-restart.
 
 ---
 
@@ -141,11 +172,11 @@ OpenDesk includes an autonomous, 1-click in-app software updater designed for se
 
 ## 📦 Standalone Distribution & Installer
 
-### 1. Ready-To-Share Installer
-* **Direct Download (Installer)**: [👉 Download Setup Wizard (`OpenDesk_Setup_v1.1.2_Installer.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.2/OpenDesk_Setup_v1.1.2_Installer.exe)
-* **Direct Download (Portable)**: [👉 Download Portable Executable (`OpenDesk_v1.1.2_Portable.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.2/OpenDesk_v1.1.2_Portable.exe)
+### 1. Ready-To-Share Installer (v1.1.7)
+* **Direct Download (Installer)**: [👉 Download Setup Wizard (`OpenDesk_Setup_v1.1.7_Installer.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.7/OpenDesk_Setup_v1.1.7_Installer.exe)
+* **Direct Download (Portable)**: [👉 Download Portable Executable (`OpenDesk_v1.1.7_Portable.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.7/OpenDesk_v1.1.7_Portable.exe)
 * **GitHub Releases**: [View All Releases & Assets](https://github.com/ahsanK225/opendesk-free-for-all/releases)
-* **Local Build Path**: Generated locally in your project folder as `installer_output\OpenDesk_Setup_v1.1.2.exe` and `OpenDesk.exe`.
+* **Local Build Path**: Generated locally in your project folder as `OpenDesk_Setup.exe` and `OpenDesk.exe`.
 
 ### 2. Features of the Installer:
 * **Interactive Setup Wizard**: Guided welcome, destination directory, and confirmation screens.
