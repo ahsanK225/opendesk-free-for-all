@@ -114,5 +114,100 @@ class TestOpenDeskIntegration(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(clip_recv["type"], MessageType.CLIPBOARD_TEXT)
                     self.assertEqual(clip_recv["payload"]["text"], "Copied from Host")
 
+    async def test_interactive_session_request_accept_flow(self):
+        """Test AnyDesk-style interactive session request -> waiting_approval -> accept -> session pairing."""
+        async with aiohttp.ClientSession() as session:
+            # 1. Host registers without password (interactive mode)
+            async with session.ws_connect(TEST_URL) as host_ws:
+                await host_ws.send_str(create_packet(MessageType.REGISTER, {
+                    "role": "host",
+                    "id": "444 555 666",
+                    "password": ""
+                }))
+                await host_ws.receive_str()
+
+                # 2. Client registers
+                async with session.ws_connect(TEST_URL) as client_ws:
+                    await client_ws.send_str(create_packet(MessageType.REGISTER, {
+                        "role": "client",
+                        "id": "777 888 999"
+                    }))
+                    client_reg_raw = await client_ws.receive_str()
+                    client_reg = parse_packet(client_reg_raw)
+                    client_clean_id = client_reg["payload"]["clean_id"]
+
+                    # 3. Client sends connect request
+                    await client_ws.send_str(create_packet(MessageType.CONNECT, {
+                        "target_id": "444 555 666"
+                    }))
+
+                    # 4. Host receives session_request
+                    req_raw = await host_ws.receive_str()
+                    req_pkt = parse_packet(req_raw)
+                    self.assertEqual(req_pkt["type"], MessageType.SESSION_REQUEST)
+                    self.assertEqual(req_pkt["payload"]["client_id"], client_clean_id)
+
+                    # 5. Client receives waiting_approval
+                    wait_raw = await client_ws.receive_str()
+                    wait_pkt = parse_packet(wait_raw)
+                    self.assertEqual(wait_pkt["type"], MessageType.CONNECT_RESP)
+                    self.assertEqual(wait_pkt["payload"]["status"], "waiting_approval")
+
+                    # 6. Host sends session_accept with custom permissions
+                    granted_perms = {"input": False, "audio": True, "clipboard": True, "file_transfer": False}
+                    await host_ws.send_str(create_packet(MessageType.SESSION_ACCEPT, {
+                        "client_id": client_clean_id,
+                        "permissions": granted_perms
+                    }))
+
+                    # 7. Client receives connect_resp ok with granted permissions
+                    accepted_raw = await client_ws.receive_str()
+                    accepted_pkt = parse_packet(accepted_raw)
+                    self.assertEqual(accepted_pkt["type"], MessageType.CONNECT_RESP)
+                    self.assertEqual(accepted_pkt["payload"]["status"], "ok")
+                    self.assertEqual(accepted_pkt["payload"]["permissions"]["input"], False)
+
+    async def test_interactive_session_request_reject_flow(self):
+        """Test AnyDesk-style interactive session request -> reject flow."""
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(TEST_URL) as host_ws:
+                await host_ws.send_str(create_packet(MessageType.REGISTER, {
+                    "role": "host",
+                    "id": "555 666 777",
+                    "password": ""
+                }))
+                await host_ws.receive_str()
+
+                async with session.ws_connect(TEST_URL) as client_ws:
+                    await client_ws.send_str(create_packet(MessageType.REGISTER, {
+                        "role": "client"
+                    }))
+                    client_reg_raw = await client_ws.receive_str()
+                    client_clean_id = parse_packet(client_reg_raw)["payload"]["clean_id"]
+
+                    # Client connects
+                    await client_ws.send_str(create_packet(MessageType.CONNECT, {
+                        "target_id": "555 666 777"
+                    }))
+
+                    # Host receives request
+                    await host_ws.receive_str()
+
+                    # Client receives waiting_approval
+                    await client_ws.receive_str()
+
+                    # Host declines request
+                    await host_ws.send_str(create_packet(MessageType.SESSION_REJECT, {
+                        "client_id": client_clean_id,
+                        "message": "User declined connection request."
+                    }))
+
+                    # Client receives rejected response
+                    rejected_raw = await client_ws.receive_str()
+                    rejected_pkt = parse_packet(rejected_raw)
+                    self.assertEqual(rejected_pkt["type"], MessageType.CONNECT_RESP)
+                    self.assertEqual(rejected_pkt["payload"]["status"], "rejected")
+                    self.assertIn("declined", rejected_pkt["payload"]["message"].lower())
+
 if __name__ == "__main__":
     unittest.main()

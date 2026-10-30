@@ -59,6 +59,7 @@ class EmbeddedSessionView(tk.Frame):
         self.running = False
         self.in_session = False
         self._send_queue = None
+        self.granted_permissions = {"input": True, "audio": True, "clipboard": True, "file_transfer": True}
 
         # Display & Video State
         self.remote_width = 1920
@@ -427,14 +428,14 @@ class EmbeddedSessionView(tk.Frame):
         self.canvas.config(cursor="")
 
     def _on_mouse_move(self, event):
-        if not self.in_session:
+        if not self.in_session or not self.granted_permissions.get("input", True):
             return
         nx, ny = self._normalize_coords(event.x, event.y)
         if nx is not None and ny is not None:
             self._send_payload(MessageType.INPUT_MOUSE_MOVE, {"x": nx, "y": ny})
 
     def _on_mouse_button(self, event, button: int, is_down: bool):
-        if not self.in_session:
+        if not self.in_session or not self.granted_permissions.get("input", True):
             return
         nx, ny = self._normalize_coords(event.x, event.y)
         mtype = MessageType.INPUT_MOUSE_DOWN if is_down else MessageType.INPUT_MOUSE_UP
@@ -453,13 +454,13 @@ class EmbeddedSessionView(tk.Frame):
                 self.set_zoom(self.zoom_level - 0.15, center_x=event.x, center_y=event.y)
             return
 
-        if not self.in_session:
+        if not self.in_session or not self.granted_permissions.get("input", True):
             return
         delta_y = -1 if event.delta < 0 else 1
         self._send_payload(MessageType.INPUT_MOUSE_SCROLL, {"delta_x": 0, "delta_y": delta_y})
 
     def _on_key_press(self, event):
-        if not self.in_session:
+        if not self.in_session or not self.granted_permissions.get("input", True):
             return
         # Intercept Ctrl+V to sync local clipboard to remote host automatically
         if (event.state & 0x0004) and event.keysym.lower() == 'v':
@@ -470,7 +471,7 @@ class EmbeddedSessionView(tk.Frame):
         self._send_payload(MessageType.INPUT_KEY_DOWN, {"code": code, "key": event.char})
 
     def _on_key_release(self, event):
-        if not self.in_session:
+        if not self.in_session or not self.granted_permissions.get("input", True):
             return
         code = self._map_tk_keysym_to_js(event.keysym)
         self._send_payload(MessageType.INPUT_KEY_UP, {"code": code, "key": event.char})
@@ -709,8 +710,19 @@ class EmbeddedSessionView(tk.Frame):
             status = payload.get("status")
             if status == "ok":
                 self.in_session = True
+                self.granted_permissions = payload.get("permissions", {}) or {"input": True, "audio": True, "clipboard": True, "file_transfer": True}
                 if self.winfo_exists():
                     self.after(0, self._on_session_connected)
+            elif status == "waiting_approval":
+                if self.winfo_exists():
+                    self.after(0, lambda: self.status_badge.config(
+                        text=f"● Waiting for [{self.target_id}] to accept...",
+                        bg="#252a38", fg="#38bdf8"
+                    ))
+            elif status == "rejected":
+                msg = payload.get("message", "Connection request was declined by the remote user.")
+                if self.winfo_exists():
+                    self.after(0, lambda: self._on_connection_error(f"Connection Declined:\n\n{msg}"))
             else:
                 msg = payload.get("message", "Could not connect to host.")
                 if self.winfo_exists():
@@ -754,8 +766,13 @@ class EmbeddedSessionView(tk.Frame):
                 self.after(0, self._on_remote_disconnected)
 
     def _on_session_connected(self):
-        self.status_badge.config(text=f"● Connected [{self.target_id}]", bg="#1f382a", fg="#9ece6a")
-        self.audio_engine.start()
+        perms = getattr(self, "granted_permissions", {})
+        if perms and not perms.get("input", True):
+            self.status_badge.config(text=f"● Connected [{self.target_id}] (View Only)", bg="#1f382a", fg="#9ece6a")
+        else:
+            self.status_badge.config(text=f"● Connected [{self.target_id}]", bg="#1f382a", fg="#9ece6a")
+        if perms.get("audio", True):
+            self.audio_engine.start()
 
     def _on_connection_error(self, err_msg: str):
         messagebox.showerror("Connection Error", f"Unable to establish session with [{self.target_id}]:\n\n{err_msg}")

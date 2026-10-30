@@ -254,3 +254,30 @@ The resulting `norm_x, norm_y` are clamped to $[0.0, 1.0]$ and transmitted over 
 Older host versions (v1.0.0, v1.1.0, v1.1.2, v1.1.5) consume these standard normalized coordinates without any modification:
 $$\text{host\_x} = \text{int}(\text{norm\_x} \times \text{host\_width}), \quad \text{host\_y} = \text{int}(\text{norm\_y} \times \text{host\_height})$$
 Thus, older hosts hit the exact target pixel regardless of whether the connecting client is zoomed in 200%, stretched, or in native 1:1 mode. Older clients connecting to newer hosts also remain 100% functional, preserving complete bidirectional backward compatibility.
+
+## 10. Interactive Session Handshake & Granular Permissions Security Model
+
+### 10.1 Handshake Sequence
+In interactive (non-unattended) scenarios, OpenDesk protects host users from unauthorized control by introducing an AnyDesk-style approval gateway:
+```
+[Client]                         [Relay Server]                        [Host Agent / GUI]
+   │                                    │                                      │
+   ├─── 1. connect {target_id} ────────>│                                      │
+   │                                    ├─── 2. session_request {client_id} ──>│
+   │<── 3. connect_resp (waiting) ──────┤                                      │
+   │    (Status: Waiting Approval)      │                                      ├─── 4. Play alert chime (MessageBeep)
+   │                                    │                                      │    Display Topmost Modal Dialog
+   │                                    │                                      │    Host selects permissions:
+   │                                    │                                      │    [☑] Mouse/Keyboard, [☑] Audio,
+   │                                    │                                      │    [☑] Clipboard, [☑] File Transfer
+   │                                    │                                      │
+   │                                    │<── 5. session_accept {permissions} ──┤ (or session_reject)
+   │<── 6. connect_resp (ok/rejected) ──┤                                      │
+   │    (Starts stream / Shows alert)   │                                      ├─── 6b. Apply permissions & start stream
+```
+
+### 10.2 Permission Enforcement
+1. **Remote Input**: If `allow_input` is False, `WindowsInputController.enabled = False` discards all incoming mouse moves, button clicks, wheel scrolls, and keystrokes.
+2. **Audio Transmission**: If `allow_audio` is False, `AudioEngine` is not activated for that session, and incoming/outgoing audio packets are discarded.
+3. **Clipboard Sync**: If `allow_clipboard` is False, clipboard synchronization routines drop incoming packets and cease outbound broadcasts.
+4. **File Transfer**: If `allow_file_transfer` is False, chunked read/write requests return `FILE_ERROR`.

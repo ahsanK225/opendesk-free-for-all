@@ -349,7 +349,8 @@ class OpenDeskGUI:
                             status_lbl.configure(text=txt, fg="#f1f5f9")
                         ])
 
-                success = download_update_file(download_url, temp_exe, on_progress, cancel_flag=lambda: cancel_flag[0])
+                err_holder = []
+                success = download_update_file(download_url, temp_exe, on_progress, cancel_flag=lambda: cancel_flag[0], error_holder=err_holder)
 
                 if success and not cancel_flag[0]:
                     dialog.after(0, lambda: [
@@ -357,9 +358,11 @@ class OpenDeskGUI:
                         dialog.after(800, lambda: apply_update_and_restart(temp_exe))
                     ])
                 elif not cancel_flag[0]:
+                    err_msg = err_holder[0] if err_holder else "Download failed. Please check internet connection."
                     dialog.after(0, lambda: [
-                        status_lbl.configure(text="Download failed. Please check internet connection.", fg="#ef4444"),
-                        apply_btn.configure(state="normal", text="📥 Download & Update Now")
+                        status_lbl.configure(text=f"Failed: {err_msg}", fg="#ef4444"),
+                        apply_btn.configure(state="normal", text="📥 Retry Download"),
+                        browser_btn.pack(side="left", padx=6)
                     ])
 
             threading.Thread(target=run_dl, daemon=True).start()
@@ -369,6 +372,11 @@ class OpenDeskGUI:
                               bg="#22c55e", fg="#0f172a", activebackground="#16a34a", activeforeground="#ffffff",
                               bd=0, padx=18, pady=8, cursor="hand2", command=start_download)
         apply_btn.pack(side="left")
+
+        browser_btn = tk.Button(btn_row, text="🌐 Open Releases Page", font=("Segoe UI", 9, "bold"),
+                                bg="#1e293b", fg="#38bdf8", activebackground="#334155", activeforeground="#7dd3fc",
+                                bd=0, padx=12, pady=8, cursor="hand2",
+                                command=lambda: webbrowser.open("https://github.com/ahsanK225/opendesk-free-for-all/releases"))
 
         cancel_btn = tk.Button(btn_row, text="Later", font=("Segoe UI", 9),
                                bg="#202534", fg="#cbd5e1", activebackground="#2a3144", activeforeground="#f1f5f9",
@@ -782,8 +790,8 @@ class OpenDeskGUI:
             last_seen = item.get("last_seen", "")
 
             card = tk.Frame(grid_frame, bg="#161924", bd=1, relief="solid",
-                            highlightbackground="#282e3f", highlightthickness=1, width=220, height=110)
-            card.grid(row=row, column=col, padx=6, pady=6, sticky="nsew")
+                            highlightbackground="#282e3f", highlightthickness=1, width=230, height=138)
+            card.grid(row=row, column=col, padx=8, pady=8, sticky="nsew")
             card.pack_propagate(False)
 
             top_row = tk.Frame(card, bg="#161924")
@@ -793,20 +801,31 @@ class OpenDeskGUI:
 
             fav_char = "★" if fav else "☆"
             fav_fg = "#eab308" if fav else "#64748b"
-            fav_btn = tk.Button(top_row, text=fav_char, font=("Segoe UI", 10), bg="#161924", fg=fav_fg,
+            fav_btn = tk.Button(top_row, text=fav_char, font=("Segoe UI", 11), bg="#161924", fg=fav_fg,
                                 activebackground="#161924", activeforeground="#eab308", bd=0, cursor="hand2",
                                 command=lambda t=target_id: self._on_toggle_fav(t))
             fav_btn.pack(side="right")
 
-            tk.Label(card, text=alias, font=("Segoe UI", 9, "bold"), bg="#161924", fg="#f1f5f9", anchor="w").pack(fill="x", padx=10)
-            tk.Label(card, text=target_id, font=("Consolas", 9), bg="#161924", fg="#ef4444", anchor="w").pack(fill="x", padx=10)
-            tk.Label(card, text=f"Last: {last_seen}", font=("Segoe UI", 7), bg="#161924", fg="#64748b", anchor="w").pack(fill="x", padx=10)
+            lbl_alias = tk.Label(card, text=alias, font=("Segoe UI", 9, "bold"), bg="#161924", fg="#f1f5f9", anchor="w")
+            lbl_alias.pack(fill="x", padx=10)
+            lbl_id = tk.Label(card, text=target_id, font=("Consolas", 9), bg="#161924", fg="#ef4444", anchor="w")
+            lbl_id.pack(fill="x", padx=10)
+            lbl_seen = tk.Label(card, text=f"Last: {last_seen}", font=("Segoe UI", 7), bg="#161924", fg="#64748b", anchor="w")
+            lbl_seen.pack(fill="x", padx=10)
 
-            # 1-Click Connect Button
-            conn_btn = tk.Button(card, text="Connect ➜", font=("Segoe UI", 8, "bold"), bg="#202534", fg="#f1f5f9",
-                                 activebackground="#ef4444", activeforeground="#ffffff", bd=0, padx=8, pady=2, cursor="hand2",
+            # Bottom Action Row with prominent, unclipped 1-Click Connect Button
+            act_row = tk.Frame(card, bg="#161924")
+            act_row.pack(fill="x", side="bottom", padx=10, pady=(0, 8))
+
+            conn_btn = tk.Button(act_row, text="Connect ➜", font=("Segoe UI", 8, "bold"), bg="#ef4444", fg="#ffffff",
+                                 activebackground="#dc2626", activeforeground="#ffffff", bd=0, padx=10, pady=3, cursor="hand2",
                                  command=lambda t=target_id: self._launch_session(t))
-            conn_btn.pack(anchor="e", padx=10, pady=(2, 6))
+            conn_btn.pack(side="right")
+
+            # Make entire card clickable for instant connection
+            card.config(cursor="hand2")
+            for w in (card, lbl_alias, lbl_id, lbl_seen):
+                w.bind("<Button-1>", lambda e, t=target_id: self._launch_session(t))
 
             col += 1
             if col >= max_cols:
@@ -936,6 +955,121 @@ class OpenDeskGUI:
         else:
             self.mic_btn.config(text="🔇 Mic: MUTED", bg="#3d2a1f", fg="#e0af68")
 
+    def _on_incoming_connection_request(self, client_id: str, display_id: str, on_decision: Callable):
+        """Dispatches incoming AnyDesk connection request dialog to Tkinter UI main thread."""
+        if self.root and self.root.winfo_exists():
+            self.root.after(0, lambda: self._show_incoming_connection_dialog(client_id, display_id, on_decision))
+        else:
+            on_decision(client_id, False, {})
+
+    def _show_incoming_connection_dialog(self, client_id: str, display_id: str, on_decision: Callable):
+        """AnyDesk-style Incoming Session Request Dialog with permission toggles and audio chime."""
+        # 1. Play alert sound chime
+        try:
+            import winsound
+            winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+        except Exception:
+            pass
+
+        # 2. Build AnyDesk-style modal dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("OpenDesk - Incoming Connection Request")
+        dialog.geometry("460x390")
+        dialog.minsize(440, 380)
+        dialog.maxsize(520, 440)
+        dialog.configure(bg="#141822")
+        dialog.attributes("-topmost", True)
+        dialog.lift()
+
+        # Center dialog relative to main window
+        try:
+            dialog.update_idletasks()
+            x = self.root.winfo_x() + (self.root.winfo_width() - 460) // 2
+            y = self.root.winfo_y() + (self.root.winfo_height() - 390) // 2
+            dialog.geometry(f"460x390+{max(0, x)}+{max(0, y)}")
+        except Exception:
+            pass
+
+        allow_input_var = tk.BooleanVar(value=True)
+        allow_audio_var = tk.BooleanVar(value=True)
+        allow_clipboard_var = tk.BooleanVar(value=True)
+        allow_file_var = tk.BooleanVar(value=True)
+
+        responded = [False]
+
+        def respond(accepted: bool):
+            if not responded[0]:
+                responded[0] = True
+                perms = {
+                    "input": allow_input_var.get(),
+                    "audio": allow_audio_var.get(),
+                    "clipboard": allow_clipboard_var.get(),
+                    "file_transfer": allow_file_var.get(),
+                } if accepted else {}
+                try:
+                    dialog.destroy()
+                except Exception:
+                    pass
+                on_decision(client_id, accepted, perms)
+
+        dialog.protocol("WM_DELETE_WINDOW", lambda: respond(False))
+
+        # Header Frame
+        header = tk.Frame(dialog, bg="#181c2b", padx=20, pady=12)
+        header.pack(fill="x")
+
+        icon_row = tk.Frame(header, bg="#181c2b")
+        icon_row.pack(fill="x")
+        tk.Label(icon_row, text="⚡ Incoming Connection Request", font=("Segoe UI", 12, "bold"),
+                 bg="#181c2b", fg="#ef4444").pack(side="left")
+
+        clean_disp = self._format_id(display_id)
+        tk.Label(header, text=f"Remote Client: {clean_disp}", font=("Segoe UI", 11, "bold"),
+                 bg="#181c2b", fg="#f1f5f9").pack(anchor="w", pady=(6, 2))
+        tk.Label(header, text="A remote user is requesting access to view and control your desktop.",
+                 font=("Segoe UI", 8), bg="#181c2b", fg="#94a3b8").pack(anchor="w")
+
+        # Permissions Card
+        perms_card = tk.Frame(dialog, bg="#1a1e2b", bd=1, relief="solid", highlightbackground="#282e3f", highlightthickness=1)
+        perms_card.pack(fill="both", expand=True, padx=20, pady=10)
+
+        tk.Label(perms_card, text="🛡️ Granted Permissions for this Session:", font=("Segoe UI", 9, "bold"),
+                 bg="#1a1e2b", fg="#38bdf8").pack(anchor="w", padx=14, pady=(8, 4))
+
+        cb1 = tk.Checkbutton(perms_card, text="Allow Remote Mouse & Keyboard Control", variable=allow_input_var,
+                             font=("Segoe UI", 9), bg="#1a1e2b", fg="#f1f5f9", selectcolor="#141822",
+                             activebackground="#1a1e2b", activeforeground="#f1f5f9")
+        cb1.pack(anchor="w", padx=14, pady=2)
+
+        cb2 = tk.Checkbutton(perms_card, text="Allow Real-Time Audio / Voice Call", variable=allow_audio_var,
+                             font=("Segoe UI", 9), bg="#1a1e2b", fg="#f1f5f9", selectcolor="#141822",
+                             activebackground="#1a1e2b", activeforeground="#f1f5f9")
+        cb2.pack(anchor="w", padx=14, pady=2)
+
+        cb3 = tk.Checkbutton(perms_card, text="Allow Bidirectional Clipboard Synchronization", variable=allow_clipboard_var,
+                             font=("Segoe UI", 9), bg="#1a1e2b", fg="#f1f5f9", selectcolor="#141822",
+                             activebackground="#1a1e2b", activeforeground="#f1f5f9")
+        cb3.pack(anchor="w", padx=14, pady=2)
+
+        cb4 = tk.Checkbutton(perms_card, text="Allow File Transfer & Directory Browsing", variable=allow_file_var,
+                             font=("Segoe UI", 9), bg="#1a1e2b", fg="#f1f5f9", selectcolor="#141822",
+                             activebackground="#1a1e2b", activeforeground="#f1f5f9")
+        cb4.pack(anchor="w", padx=14, pady=2)
+
+        # Action Buttons Row
+        btn_frame = tk.Frame(dialog, bg="#141822", padx=20, pady=12)
+        btn_frame.pack(fill="x", side="bottom")
+
+        accept_btn = tk.Button(btn_frame, text="✓ Accept Connection", font=("Segoe UI", 10, "bold"),
+                               bg="#22c55e", fg="#0f172a", activebackground="#16a34a", activeforeground="#ffffff",
+                               bd=0, padx=18, pady=8, cursor="hand2", command=lambda: respond(True))
+        accept_btn.pack(side="left")
+
+        reject_btn = tk.Button(btn_frame, text="✕ Dismiss / Reject", font=("Segoe UI", 10, "bold"),
+                               bg="#ef4444", fg="#ffffff", activebackground="#dc2626", activeforeground="#ffffff",
+                               bd=0, padx=16, pady=8, cursor="hand2", command=lambda: respond(False))
+        reject_btn.pack(side="right")
+
     def _open_web(self):
         webbrowser.open(f"http://localhost:{self.port}")
 
@@ -1019,7 +1153,13 @@ class OpenDeskGUI:
             time.sleep(0.5)
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            self.host_agent = HostAgent(relay_url=self.relay_url, host_id=self.assigned_id)
+            unattended_pw = get_unattended_password()
+            self.host_agent = HostAgent(
+                relay_url=self.relay_url,
+                host_id=self.assigned_id,
+                password=unattended_pw,
+                on_connection_request=self._on_incoming_connection_request
+            )
 
             async def monitor_id():
                 while True:

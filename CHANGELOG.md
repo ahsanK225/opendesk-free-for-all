@@ -1,6 +1,49 @@
 # Changelog
 All notable project changes are documented here.
 
+## [2026-10-30] — Release v1.1.7: AnyDesk-style Incoming Session Dialog, Granular Session Permissions & Favorites UI Fixes
+### Added
+- **AnyDesk-style Incoming Session Request Dialog** (`opendesk_app.py` & `host/agent.py`):
+  - When an incoming connection request arrives without an unattended password, the host computer sounds an audio alert chime (`winsound.MessageBeep`) and displays a prominent, topmost modal dialog (`_show_incoming_connection_dialog`).
+  - Identifies connecting remote client ID (`Remote Client: XXX XXX XXX`).
+  - Features granular session permissions checkboxes that the host user can configure before accepting:
+    - `☑ Allow Remote Mouse & Keyboard Control`
+    - `☑ Allow Real-Time Audio / Voice Call`
+    - `☑ Allow Bidirectional Clipboard Synchronization`
+    - `☑ Allow File Transfer & Directory Browsing`
+  - Action buttons:
+    - **`[ ✓ Accept Connection ]`** (Green `#22c55e`): Grants session with selected permissions and initiates DeskRT video and audio streaming.
+    - **`[ ✕ Dismiss / Reject ]`** (Red `#ef4444`): Declines connection immediately.
+- **Granular Session Permission Enforcement** (`host/agent.py` & `host/input_controller.py`):
+  - If mouse & keyboard control is denied, `WindowsInputController.enabled = False` blocks all mouse movement, clicks, scrolls, and keystrokes (View-Only mode).
+  - If audio is denied, microphone capture and playback streaming loops are disabled.
+  - If clipboard is denied, clipboard synchronization packets are dropped.
+  - If file transfer is denied, directory exploration and chunked uploads are rejected.
+- **Client Waiting Approval & View-Only Status Indicator** (`client/viewer.py`):
+  - Displays `● Waiting for [XXX XXX XXX] to accept...` in sky blue while awaiting host response.
+  - Displays `● Connected [XXX XXX XXX] (View Only)` if remote host disabled input permissions.
+  - Displays clear error dialog if connection request was declined by the remote user.
+- **Interactive Signaling Handshake in Relay** (`relay/server.py` & `common/protocol.py`):
+  - Added protocol message types: `MessageType.SESSION_REQUEST`, `MessageType.SESSION_ACCEPT`, `MessageType.SESSION_REJECT`.
+  - Relay handles unattended password auto-connect or interactive session approval flow.
+
+### Fixed
+- **Fixed Favorites & Recent Cards "Connect ➜" Button Visibility** (`opendesk_app.py`):
+  - Resolved clipping bug where `height=110` with `pack_propagate(False)` caused the Connect button to be pushed outside the visible card boundaries on standard and high-DPI Windows displays.
+  - Increased card height to `138px` and width to `230px`, placing the `Connect ➜` button inside a dedicated bottom action row with AnyDesk Red `#ef4444` styling.
+  - Bound mouse click on the entire card body to `_launch_session(target_id)` with `hand2` cursor for 1-click connectivity.
+- **Accurate Error Reporting in Auto-Updater & Browser Fallback** (`common/updater.py` & `opendesk_app.py`):
+  - Updated `download_update_file` to capture exact HTTP errors (e.g. `HTTP 404: Not Found` when release binary has not yet been attached to GitHub Releases).
+  - Replaced generic "check internet connection" message with descriptive error message and added a 1-click `[ 🌐 Open Releases Page ]` button to easily download from GitHub in the browser.
+
+### Tests and Verification
+- Added interactive session request accept & reject integration tests in `tests/test_integration.py` (`test_interactive_session_request_accept_flow`, `test_interactive_session_request_reject_flow`).
+- Added favorites/recent card layout test and incoming request dialog test in `tests/test_tabbed_gui.py`.
+- Full test suite expanded to **42 unit and integration tests, all 42 passing cleanly in 3.078s**.
+- Binaries compiled and signed with Authenticode SHA-256 + DigiCert RFC 3161 timestamps.
+
+---
+
 ## [2026-10-30] — Release v1.1.6: Dynamic Display Modes, Multi-Level Zooming & Backward-Compatible Coordinate Normalization
 ### Added
 - **Dynamic Display Aspect Ratio Modes** (`client/viewer.py`):

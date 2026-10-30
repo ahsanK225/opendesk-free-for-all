@@ -21,7 +21,7 @@ from common.incremental_updater import (
     compute_file_sha256,
 )
 
-APP_VERSION = "1.1.6"
+APP_VERSION = "1.1.7"
 UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/ahsanK225/opendesk-free-for-all/main/version.json"
 
 
@@ -114,7 +114,8 @@ def check_for_updates(current_version: str = APP_VERSION,
 def download_update_file(url: str,
                          dest_path: str,
                          progress_callback: Optional[Callable[[int, int], None]] = None,
-                         cancel_flag: Optional[Callable[[], bool]] = None) -> bool:
+                         cancel_flag: Optional[Callable[[], bool]] = None,
+                         error_holder: Optional[List[str]] = None) -> bool:
     """
     Download update executable in chunks with progress reporting.
     progress_callback(bytes_downloaded, total_bytes)
@@ -141,8 +142,22 @@ def download_update_file(url: str,
                     if progress_callback:
                         progress_callback(downloaded, total_size)
         return True
+    except urllib.error.HTTPError as he:
+        err_msg = f"HTTP {he.code}: {he.reason} (File may not be uploaded to GitHub release yet)"
+        print(f"[Updater] Download HTTP error: {err_msg}")
+        if error_holder is not None:
+            error_holder.append(err_msg)
+        if os.path.exists(dest_path):
+            try:
+                os.remove(dest_path)
+            except Exception:
+                pass
+        return False
     except Exception as e:
-        print(f"[Updater] Download error: {e}")
+        err_msg = str(e)
+        print(f"[Updater] Download error: {err_msg}")
+        if error_holder is not None:
+            error_holder.append(err_msg)
         if os.path.exists(dest_path):
             try:
                 os.remove(dest_path)

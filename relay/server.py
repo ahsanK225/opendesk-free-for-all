@@ -121,35 +121,85 @@ class RelayServer:
 
                         # Verify password if host explicitly configured one
                         expected_pw = target_meta.get("password")
-                        if expected_pw and expected_pw.strip() and expected_pw != password:
+                        if expected_pw and expected_pw.strip():
+                            if expected_pw != password:
+                                await ws.send_str(json.dumps({
+                                    "type": "connect_resp",
+                                    "payload": {"status": "error", "message": "Invalid password."}
+                                }))
+                                continue
+                            # Unattended Access authenticated successfully
+                            self.sessions[target_id] = peer_id
+                            self.sessions[peer_id] = target_id
+                            await target_ws.send_str(json.dumps({
+                                "type": "session_start",
+                                "payload": {
+                                    "client_id": peer_id,
+                                    "display_id": self.peer_meta[peer_id]["display_id"],
+                                    "unattended": True
+                                }
+                            }))
                             await ws.send_str(json.dumps({
                                 "type": "connect_resp",
-                                "payload": {"status": "error", "message": "Invalid password."}
+                                "payload": {
+                                    "status": "ok",
+                                    "target_id": target_id,
+                                    "message": "Connected to host via Unattended Access."
+                                }
                             }))
                             continue
 
-                        # Pair session
-                        self.sessions[target_id] = peer_id
-                        self.sessions[peer_id] = target_id
-
-                        # Notify Host of new client
+                        # Standard Interactive Session: Ask Host to Accept or Reject
                         await target_ws.send_str(json.dumps({
-                            "type": "session_start",
+                            "type": "session_request",
                             "payload": {
                                 "client_id": peer_id,
-                                "display_id": self.peer_meta[peer_id]["display_id"]
+                                "display_id": self.peer_meta.get(peer_id, {}).get("display_id", peer_id)
                             }
                         }))
 
-                        # Notify Client of successful pairing
                         await ws.send_str(json.dumps({
                             "type": "connect_resp",
                             "payload": {
-                                "status": "ok",
+                                "status": "waiting_approval",
                                 "target_id": target_id,
-                                "message": "Connected to host. Initiating stream."
+                                "message": f"Waiting for remote host [{raw_target}] to accept the connection..."
                             }
                         }))
+
+                    # --- Host Accepts Connection Request ---
+                    elif mtype == "session_accept":
+                        client_id = payload.get("client_id")
+                        permissions = payload.get("permissions", {})
+                        if client_id and client_id in self.peers:
+                            client_ws = self.peers[client_id]
+                            if not client_ws.closed:
+                                self.sessions[peer_id] = client_id
+                                self.sessions[client_id] = peer_id
+                                await client_ws.send_str(json.dumps({
+                                    "type": "connect_resp",
+                                    "payload": {
+                                        "status": "ok",
+                                        "target_id": peer_id,
+                                        "permissions": permissions,
+                                        "message": "Connected to host. Initiating stream."
+                                    }
+                                }))
+
+                    # --- Host Declines Connection Request ---
+                    elif mtype == "session_reject":
+                        client_id = payload.get("client_id")
+                        reason = payload.get("message", "Connection request was declined by remote host.")
+                        if client_id and client_id in self.peers:
+                            client_ws = self.peers[client_id]
+                            if not client_ws.closed:
+                                await client_ws.send_str(json.dumps({
+                                    "type": "connect_resp",
+                                    "payload": {
+                                        "status": "rejected",
+                                        "message": reason
+                                    }
+                                }))
 
                     # --- P2P WebRTC Signaling (Offer / Answer / Candidate) ---
                     elif mtype == "p2p_signal":

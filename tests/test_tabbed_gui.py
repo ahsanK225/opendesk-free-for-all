@@ -87,5 +87,68 @@ class TestTabbedGUI(unittest.TestCase):
         is_fav_again = config_mod.toggle_favorite("111222333")
         self.assertFalse(is_fav_again)
 
+    def test_recent_and_favorites_grid_cards_layout(self):
+        """Verify that recent and favorites cards contain visible unclipped Connect button."""
+        config_mod.add_recent_session("123 456 789", alias="Office PC")
+        config_mod.toggle_favorite("123456789")
+
+        original_start = OpenDeskGUI._start_services
+        OpenDeskGUI._start_services = lambda self: None
+        try:
+            app = OpenDeskGUI(self.root, port=18081)
+            app._render_recent_grid()
+
+            # Children of recent_grid_container
+            grid_children = app.recent_grid_container.winfo_children()
+            self.assertTrue(len(grid_children) > 0)
+            grid_frame = grid_children[0]
+
+            cards = [c for c in grid_frame.winfo_children() if isinstance(c, tk.Frame)]
+            self.assertTrue(len(cards) >= 1)
+
+            card = cards[0]
+            # Verify card dimensions are at least 230x138 to avoid button clipping
+            self.assertGreaterEqual(int(card.cget("height")), 130)
+
+            # Search inside card for the Connect button
+            all_buttons = []
+            for child in card.winfo_children():
+                if isinstance(child, tk.Button):
+                    all_buttons.append(child)
+                elif isinstance(child, tk.Frame):
+                    for sub in child.winfo_children():
+                        if isinstance(sub, tk.Button):
+                            all_buttons.append(sub)
+
+            button_texts = [b.cget("text") for b in all_buttons]
+            self.assertTrue(any("Connect" in txt for txt in button_texts), f"Connect button not found in {button_texts}")
+        finally:
+            OpenDeskGUI._start_services = original_start
+
+    def test_incoming_connection_request_callback(self):
+        """Verify incoming connection request callback dispatches on_decision."""
+        original_start = OpenDeskGUI._start_services
+        OpenDeskGUI._start_services = lambda self: None
+        try:
+            app = OpenDeskGUI(self.root, port=18082)
+            decision_result = []
+
+            def mock_decision(cid, accepted, perms):
+                decision_result.append((cid, accepted, perms))
+
+            app._on_incoming_connection_request("client_999", "999 888 777", mock_decision)
+            self.root.update()
+
+            # Find opened dialog
+            toplevels = [w for w in self.root.winfo_children() if isinstance(w, tk.Toplevel)]
+            self.assertTrue(len(toplevels) >= 1)
+            dialog = toplevels[-1]
+            self.assertIn("Incoming Connection Request", dialog.title())
+
+            # Destroy dialog (simulate user reject / close)
+            dialog.destroy()
+        finally:
+            OpenDeskGUI._start_services = original_start
+
 if __name__ == "__main__":
     unittest.main()

@@ -15,7 +15,7 @@ import json
 import base64
 import asyncio
 import threading
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 import aiohttp
 
 from opendesk.common.protocol import MessageType, create_packet, parse_packet
@@ -27,11 +27,21 @@ from opendesk.host.file_manager import FileManager
 from opendesk.host.audio import AudioEngine
 
 class HostAgent:
-    def __init__(self, relay_url: str = "ws://localhost:8080/ws", host_id: Optional[str] = None, password: str = ""):
+    def __init__(self, relay_url: str = "ws://localhost:8080/ws", host_id: Optional[str] = None, password: str = "",
+                 on_connection_request: Optional[Callable[[str, str, Callable[[str, bool, Optional[Dict[str, bool]]], None]], None]] = None):
         self.relay_url = relay_url
         self.requested_id = host_id
         self.password = password
         self.assigned_id: Optional[str] = None
+        self.on_connection_request = on_connection_request
+        
+        # Session Permissions
+        self.permissions = {
+            "input": True,
+            "audio": True,
+            "clipboard": True,
+            "file_transfer": True
+        }
         
         # Subsystems
         self.capturer = WindowsScreenCapturer()
@@ -134,7 +144,7 @@ class HostAgent:
         while self.running and self.active_session:
             try:
                 b64_chunk = await self._audio_queue.get()
-                if self.active_session:
+                if self.active_session and self.permissions.get("audio", True):
                     await self._send_packet(MessageType.AUDIO_CHUNK, {"data": b64_chunk})
             except Exception:
                 pass
@@ -146,11 +156,44 @@ class HostAgent:
                 self.clipboard.check_for_changes()
                 while not self._clip_queue.empty():
                     text = self._clip_queue.get_nowait()
-                    if self.active_session:
+                    if self.active_session and self.permissions.get("clipboard", True):
                         await self._send_packet(MessageType.CLIPBOARD_TEXT, {"text": text})
             except Exception:
                 pass
             await asyncio.sleep(0.3)
+
+    def handle_decision(self, client_id: str, accepted: bool, permissions: Optional[Dict[str, bool]] = None):
+        """Thread-safe dispatcher for UI connection decision (Accept/Reject)."""
+        if self.loop and self.loop.is_running():
+            self.loop.call_soon_threadsafe(
+                asyncio.create_task,
+                self._async_handle_decision(client_id, accepted, permissions or {})
+            )
+
+    async def _async_handle_decision(self, client_id: str, accepted: bool, permissions: Dict[str, bool]):
+        if accepted:
+            self.permissions = permissions
+            self.input_controller.enabled = bool(permissions.get("input", True))
+            allow_audio = bool(permissions.get("audio", True))
+            self.active_session = True
+            self.codec.reset()
+            if allow_audio:
+                self.audio_engine.start()
+
+            print(f"[Host] Session accepted for client [{client_id}]. Permissions: {permissions}")
+            await self._send_packet(MessageType.SESSION_ACCEPT, {
+                "client_id": client_id,
+                "permissions": permissions
+            })
+            asyncio.create_task(self._video_stream_loop())
+            if allow_audio:
+                asyncio.create_task(self._audio_stream_loop())
+        else:
+            print(f"[Host] Session declined for client [{client_id}].")
+            await self._send_packet(MessageType.SESSION_REJECT, {
+                "client_id": client_id,
+                "message": "Connection request declined by remote host."
+            })
 
     async def _handle_message(self, packet: Dict[str, Any]):
         mtype = packet.get("type")
@@ -166,13 +209,30 @@ class HostAgent:
             print(f"  Client Web UI: http://localhost:8080")
             print("=" * 50 + "\n")
 
-        # --- Session Start / End ---
+        # --- Interactive Session Request (AnyDesk-style Incoming Dialog) ---
+        elif mtype == MessageType.SESSION_REQUEST:
+            client_id = payload.get("client_id")
+            display_id = payload.get("display_id", client_id)
+            print(f"[Host] Received incoming connection request from [{display_id}].")
+            if self.on_connection_request:
+                self.on_connection_request(client_id, display_id, self.handle_decision)
+            else:
+                # Default headless behavior: accept with full permissions
+                self.handle_decision(client_id, True, {
+                    "input": True, "audio": True, "clipboard": True, "file_transfer": True
+                })
+
+        # --- Direct Session Start (Unattended Access or Legacy) ---
         elif mtype == MessageType.SESSION_START:
             client_id = payload.get("client_id")
             print(f"[Host] Incoming connection from client [{client_id}]. Starting stream...")
             self.active_session = True
             self.codec.reset()
+            self.input_controller.enabled = True
             self.audio_engine.start()
+            # Start streaming loops
+            asyncio.create_task(self._video_stream_loop())
+            asyncio.create_task(self._audio_stream_loop())
             # Start streaming loops
             asyncio.create_task(self._video_stream_loop())
             asyncio.create_task(self._audio_stream_loop())
@@ -224,11 +284,13 @@ class HostAgent:
 
         # --- Clipboard Events ---
         elif mtype == MessageType.CLIPBOARD_TEXT:
+            if not self.permissions.get("clipboard", True):
+                return
             new_text = payload.get("text", "")
             auto_paste = payload.get("auto_paste", False)
             if new_text:
                 self.clipboard.set_text(new_text)
-                if auto_paste:
+                if auto_paste and self.permissions.get("input", True):
                     if self.loop and self.loop.is_running():
                         self.loop.call_later(0.04, lambda: self.input_controller.execute_shortcut("paste"))
                     else:
@@ -236,6 +298,8 @@ class HostAgent:
 
         # --- Real-Time Voice Audio Events ---
         elif mtype == MessageType.AUDIO_CHUNK:
+            if not self.permissions.get("audio", True):
+                return
             b64_audio = payload.get("data")
             if b64_audio:
                 self.audio_engine.play_chunk(b64_audio)
@@ -249,6 +313,9 @@ class HostAgent:
 
         # --- File Transfer Events ---
         elif mtype == MessageType.FILE_LIST_REQ:
+            if not self.permissions.get("file_transfer", True):
+                await self._send_packet(MessageType.FILE_ERROR, {"message": "File transfer disabled by host."})
+                return
             target_path = payload.get("path")
             res = self.file_manager.list_directory(target_path)
             await self._send_packet(MessageType.FILE_LIST_RESP, res)
