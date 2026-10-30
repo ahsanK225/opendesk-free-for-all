@@ -215,21 +215,12 @@ class OpenDeskGUI:
                 self._apply_custom_frameless_window()
         else:
             self._apply_custom_frameless_window()
-        self.root.bind("<Configure>", self._on_window_configure)
-
-    def _on_window_configure(self, event):
-        if event.widget == self.root and hasattr(self, "max_btn"):
-            try:
-                is_maximized = self.root.state() == "zoomed"
-                self.max_btn.config(text="🗗" if is_maximized else "🗖")
-            except Exception:
-                pass
 
     def _apply_custom_frameless_window(self):
         """
-        Embeds Minimize, Maximize, and Close buttons directly inside the app,
-        removing the standard OS titlebar while retaining native resize borders,
-        Aero snap, and taskbar visibility.
+        Embeds Minimize and Close buttons directly inside the app,
+        removing the standard OS titlebar and eliminating the Maximize button
+        to ensure rock-solid AnyDesk layout stability and zero C-runtime crashes.
         """
         if sys.platform != "win32":
             return
@@ -256,7 +247,20 @@ class OpenDeskGUI:
             WS_MAXIMIZEBOX = 0x00010000
             WS_SYSMENU = 0x00080000
 
-            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
+            # 64-bit safe window style getters/setters
+            if hasattr(ctypes.windll.user32, "GetWindowLongPtrW"):
+                GetWindowLong = ctypes.windll.user32.GetWindowLongPtrW
+                SetWindowLong = ctypes.windll.user32.SetWindowLongPtrW
+            else:
+                GetWindowLong = ctypes.windll.user32.GetWindowLongW
+                SetWindowLong = ctypes.windll.user32.SetWindowLongW
+
+            GetWindowLong.argtypes = [ctypes.c_void_p, ctypes.c_int]
+            GetWindowLong.restype = ctypes.c_ssize_t
+            SetWindowLong.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_ssize_t]
+            SetWindowLong.restype = ctypes.c_ssize_t
+
+            style = GetWindowLong(hwnd, GWL_STYLE)
             if not (style & WS_CAPTION):
                 return  # WS_CAPTION is already stripped! Do NOT call SetWindowPos or recalculate frame
 
@@ -270,9 +274,9 @@ class OpenDeskGUI:
             except Exception:
                 pass
 
-            # 2. Strip WS_CAPTION to remove external OS title bar while keeping WS_THICKFRAME for resizing
-            new_style = (style & ~WS_CAPTION) | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU
-            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, new_style)
+            # 2. Strip WS_CAPTION and WS_MAXIMIZEBOX: no OS title bar, no maximize button
+            new_style = (style & ~WS_CAPTION & ~WS_MAXIMIZEBOX) | WS_THICKFRAME | WS_MINIMIZEBOX | WS_SYSMENU
+            SetWindowLong(hwnd, GWL_STYLE, new_style)
 
             SWP_NOZORDER = 0x0004
             SWP_NOMOVE = 0x0002
@@ -287,38 +291,22 @@ class OpenDeskGUI:
         finally:
             self._frameless_applying = False
 
-    def _start_window_drag(self, event):
-        """Native Windows silky-smooth window dragging with Aero snap support."""
-        if sys.platform == "win32":
-            try:
-                import ctypes
-                try:
-                    hwnd = int(self.root.wm_frame(), 16)
-                except Exception:
-                    hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id()) or self.root.winfo_id()
-                ctypes.windll.user32.ReleaseCapture()
-                ctypes.windll.user32.SendMessageW(hwnd, 0x0112, 0xF012, 0)
-                if hasattr(self, "max_btn"):
-                    self.max_btn.config(text="🗗" if self.root.state() == "zoomed" else "🗖")
-            except Exception:
-                pass
+    def _on_drag_start(self, event):
+        """Thread-safe, crash-proof native Tkinter window drag start."""
+        self._drag_start_x = event.x_root
+        self._drag_start_y = event.y_root
+        self._drag_win_x = self.root.winfo_x()
+        self._drag_win_y = self.root.winfo_y()
+
+    def _on_drag_motion(self, event):
+        """Moves window smoothly without Win32 modal message pump re-entrancy."""
+        dx = event.x_root - getattr(self, "_drag_start_x", event.x_root)
+        dy = event.y_root - getattr(self, "_drag_start_y", event.y_root)
+        self.root.geometry(f"+{getattr(self, '_drag_win_x', 0) + dx}+{getattr(self, '_drag_win_y', 0) + dy}")
 
     def _minimize_window(self):
         try:
             self.root.iconify()
-        except Exception:
-            pass
-
-    def _toggle_maximize_window(self):
-        try:
-            if self.root.state() == "zoomed":
-                self.root.state("normal")
-                if hasattr(self, "max_btn"):
-                    self.max_btn.config(text="🗖")
-            else:
-                self.root.state("zoomed")
-                if hasattr(self, "max_btn"):
-                    self.max_btn.config(text="🗗")
         except Exception:
             pass
 
@@ -329,23 +317,25 @@ class OpenDeskGUI:
         self.tab_bar_frame = tk.Frame(self.root, bg="#141822", height=42)
         self.tab_bar_frame.pack(fill="x", side="top")
 
-        # Allow dragging the window from empty areas of the tab bar
-        self.tab_bar_frame.bind("<Button-1>", self._start_window_drag)
-        self.tab_bar_frame.bind("<Double-Button-1>", lambda e: self._toggle_maximize_window())
+        # Allow dragging the window smoothly from empty areas of the tab bar
+        self.tab_bar_frame.bind("<Button-1>", self._on_drag_start)
+        self.tab_bar_frame.bind("<B1-Motion>", self._on_drag_motion)
 
         # Brand / Logo on far left
         brand_frame = tk.Frame(self.tab_bar_frame, bg="#141822")
         brand_frame.pack(side="left", padx=(14, 10), pady=6)
-        brand_frame.bind("<Button-1>", self._start_window_drag)
-        brand_frame.bind("<Double-Button-1>", lambda e: self._toggle_maximize_window())
+        brand_frame.bind("<Button-1>", self._on_drag_start)
+        brand_frame.bind("<B1-Motion>", self._on_drag_motion)
 
         logo_lbl = tk.Label(brand_frame, text="⚡", font=("Segoe UI Emoji", 13), bg="#141822", fg="#ef4444")
         logo_lbl.pack(side="left")
-        logo_lbl.bind("<Button-1>", self._start_window_drag)
+        logo_lbl.bind("<Button-1>", self._on_drag_start)
+        logo_lbl.bind("<B1-Motion>", self._on_drag_motion)
 
         name_lbl = tk.Label(brand_frame, text="OpenDesk", font=("Segoe UI", 12, "bold"), bg="#141822", fg="#f1f5f9")
         name_lbl.pack(side="left", padx=4)
-        name_lbl.bind("<Button-1>", self._start_window_drag)
+        name_lbl.bind("<Button-1>", self._on_drag_start)
+        name_lbl.bind("<B1-Motion>", self._on_drag_motion)
 
         # Tab Items Container
         self.tabs_container = tk.Frame(self.tab_bar_frame, bg="#141822")
@@ -358,6 +348,7 @@ class OpenDeskGUI:
         self.plus_btn.pack(side="left", padx=2, pady=6)
 
         # --- Integrated Window Controls on Far Right ("App Ke Ander Hi") ---
+        # AnyDesk Standard: Minimize ('―') and Close ('✕'). No Maximize button.
         win_controls = tk.Frame(self.tab_bar_frame, bg="#141822")
         win_controls.pack(side="right", fill="y")
 
@@ -368,14 +359,6 @@ class OpenDeskGUI:
         self.min_btn.bind("<Button-1>", lambda e: self._minimize_window())
         self.min_btn.bind("<Enter>", lambda e: self.min_btn.configure(bg="#222838", fg="#f1f5f9"))
         self.min_btn.bind("<Leave>", lambda e: self.min_btn.configure(bg="#141822", fg="#94a3b8"))
-
-        # Maximize / Restore Button '🗖'
-        self.max_btn = tk.Label(win_controls, text="🗖", font=("Segoe UI", 9),
-                                bg="#141822", fg="#94a3b8", width=5, cursor="hand2")
-        self.max_btn.pack(side="left", fill="y")
-        self.max_btn.bind("<Button-1>", lambda e: self._toggle_maximize_window())
-        self.max_btn.bind("<Enter>", lambda e: self.max_btn.configure(bg="#222838", fg="#f1f5f9"))
-        self.max_btn.bind("<Leave>", lambda e: self.max_btn.configure(bg="#141822", fg="#94a3b8"))
 
         # Close Button '✕' (Red on hover)
         self.close_btn = tk.Label(win_controls, text="✕", font=("Segoe UI", 9),

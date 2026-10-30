@@ -1,22 +1,24 @@
 # Changelog
 All notable project changes are documented here.
 
-## [2026-10-31] — Release v1.2.0: Startup Crash Immunity, In-App CSD Titlebar & Silent Execution Suite
+## [2026-10-31] — Release v1.2.0: Startup Crash Immunity, AnyDesk Standard Titlebar & Silent Execution Suite
 ### Added
-- **Startup Crash Immunity & Re-entrancy Protection** (`opendesk_app.py`, `client/viewer.py`):
+- **Startup Crash Immunity & AnyDesk Standard Window Controls** (`opendesk_app.py`, `client/viewer.py`, `tests/test_tabbed_gui.py`):
+  - **Eliminated Maximize Button Crash (`ucrtbase.dll 0xc0000409`)**: Identified and resolved the critical crash triggered by the Maximize button and window maximizing under frameless CSD mode. Standard AnyDesk windows do not include a maximize button (only Minimize and Close). Stripped `WS_MAXIMIZEBOX` from the Win32 window style and removed the maximize button entirely from the header bar controls, preventing DWM `WM_NCCALCSIZE` / `WM_GETMINMAXINFO` buffer overruns in the C runtime.
+  - **Flicker-Free Native Drag Engine**: Replaced synchronous `ctypes.windll.user32.SendMessageW(hwnd, WM_SYSCOMMAND, SC_MOVE + HTCAPTION, 0)` with pure event-driven Tkinter dragging (`<Button-1>` and `<B1-Motion>`), preventing modal Win32 message loop re-entrancy deadlocks and crashes on header clicks.
+  - **64-bit Safe Window Styling**: Implemented `GetWindowLongPtrW` / `SetWindowLongPtrW` with 64-bit pointer arguments, preventing 64-bit memory truncation.
   - **Eliminated Win32 Message Loop Recursion (`ucrtbase.dll 0xc0000409`)**: Identified and fixed the root cause of the startup crash occurring when OpenDesk is launched on an interactive desktop. Removed recursive `<Map>` event re-binding and `self.root.update_idletasks()` inside `_apply_custom_frameless_window()`. Added `if not (style & WS_CAPTION): return` and `_frameless_applying` re-entrancy locks so `SetWindowPos` is never invoked repeatedly.
   - **Thread-Safe Cross-Thread UI Dispatch Queue (`post_ui`)**: Decoupled all background threads (`run_agent`, Cloudflare reader, update check, and incoming WebSocket streams) from direct Tkinter Tcl command registrations. Dispatches all cross-thread events through an asynchronous message queue drained exclusively on the main GUI thread every 16ms.
   - **Connection Crash Elimination**: Completely resolved remote session crash when connecting to friends; video delta updates, clipboard transfers, and status updates are cleanly marshaled through `post_ui`.
 - **Integrated In-App Modern Title Bar (CSD - Client-Side Decoration)** (`opendesk_app.py`):
-  - Completely stripped external OS title bar and integrated Minimize (`―`), Maximize/Restore (`🗖`/`🗗`), and Close (`✕`) buttons directly into the dark top tab bar ("App Ke Ander Hi").
-  - Native Win32 window dragging with multi-monitor edge snapping and double-click maximize toggle.
+  - Completely stripped external OS title bar and integrated Minimize (`―`) and Close (`✕`) buttons directly into the dark top tab bar ("App Ke Ander Hi") following AnyDesk design standards.
 - **Silent Automated Testing & Zero Sound Pollution** (`tests/test_audio.py`, `tests/test_tabbed_gui.py`):
   - Mocked `sounddevice.OutputStream`, `sounddevice.InputStream`, and `winsound.MessageBeep` during unit and integration test executions, completely eliminating unexpected system chimes, dings, and audio bursts through the user's physical hardware.
 - **Instant Hang-Proof Exit** (`opendesk_app.py`):
   - Immediate 0ms window hiding (`withdraw()`), background worker daemon cleanup, and clean kernel-level exit (`os._exit(0)`).
 
 ### Tests and Verification
-- 52 of 52 unit and integration tests passing silently in 3.167s (`python -m unittest discover tests`).
+- 52 of 52 unit and integration tests passing silently in 3.177s (`python -m unittest discover tests`).
 - Recompiled and Authenticode signed portable (`OpenDesk_v1.2.0_Portable.exe`) and wizard installer (`OpenDesk_Setup_v1.2.0_Installer.exe`) with DigiCert RFC 3161 timestamps.
 - Published release v1.2.0 to GitHub.
 

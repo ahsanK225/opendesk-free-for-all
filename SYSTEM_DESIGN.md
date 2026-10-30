@@ -335,16 +335,16 @@ In interactive (non-unattended) scenarios, OpenDesk protects host users from una
 - **Problem**: In Python 3.12+, Tkinter strictly enforces that `widget.after()` or command callbacks cannot be registered from background worker threads. When background services (`run_agent`, Cloudflare reader, update check, or WebSocket receiver) called `root.after()`, concurrent access to Tcl's internal command hash table raised `RuntimeError: main thread is not in main loop` or corrupted the C runtime, causing `ucrtbase.dll 0xc0000409` fast-fail crashes after 2–5 seconds on startup or during remote connection with friends.
 - **Solution**: Implemented a thread-safe message queue (`self._ui_queue = queue.Queue()`) in both `OpenDeskGUI` and `EmbeddedSessionView`. Background threads enqueue UI callbacks via `self.post_ui(fn, *args, **kwargs)`, and a single recurring timer (`_process_ui_queue`) drains and executes the callbacks safely on the main GUI thread every 16ms.
 
-### 13.2 Seamless Client-Side Decoration (CSD) Titlebar & Re-entrancy Protection
-- **Problem**: Standard Windows applications display an external OS title bar with white/gray window controls above the application body. Additionally, naive attempts to re-apply window styles on Win32 `<Map>` events lead to recursive message loop re-entrancy and `ucrtbase.dll 0xc0000409` buffer overrun termination.
-- **Solution**: Seamless modern CSD integration with zero re-entrancy recursion:
+### 13.2 Seamless Client-Side Decoration (CSD) Titlebar & Maximize Stability
+- **Problem**: Standard Windows applications display an external OS title bar with white/gray window controls above the application body. Furthermore, attempting to maximize a frameless CSD window without standard captions causes DWM `WM_NCCALCSIZE` and `WM_GETMINMAXINFO` buffer overruns in `ucrtbase.dll 0xc0000409`. In addition, using Win32 `SendMessageW(WM_SYSCOMMAND, SC_MOVE + HTCAPTION)` from header click events blocks the GUI thread and causes modal message loop re-entrancy crashes when clicked or double-clicked.
+- **Solution**: AnyDesk-standard CSD integration with zero re-entrancy recursion:
   - Dynamically retrieves the true OS top-level window frame handle: `hwnd = int(self.root.wm_frame(), 16)`.
   - Enables Windows 10/11 Immersive Dark Mode via DWM attribute (`DWMWA_USE_IMMERSIVE_DARK_MODE = 20`).
   - Pre-initializes window styling via `withdraw()` -> `update_idletasks()` -> style application -> `deiconify()` so the native OS title bar is never rendered on screen.
-  - Strips `WS_CAPTION` (`0x00C00000`) while preserving `WS_THICKFRAME`, `WS_MINIMIZEBOX`, `WS_MAXIMIZEBOX`, and `WS_SYSMENU`.
+  - Strips `WS_CAPTION` (`0x00C00000`) and `WS_MAXIMIZEBOX` (`0x00010000`) using 64-bit safe `GetWindowLongPtrW` / `SetWindowLongPtrW` while preserving `WS_THICKFRAME`, `WS_MINIMIZEBOX`, and `WS_SYSMENU`.
   - Implements strict re-entrancy protection: `if not (style & WS_CAPTION): return` and `_frameless_applying` lock, ensuring `SetWindowPos(SWP_FRAMECHANGED)` is never called recursively.
-  - Seamlessly integrates Minimize (`―`), Maximize/Restore (`🗖`/`🗗`), and Close (`✕`) buttons directly inside the dark top tab bar ("App Ke Ander Hi").
-  - Implements native Win32 `SC_MOVE` + `HTCAPTION` dragging and double-click maximize toggle.
+  - Adheres strictly to the AnyDesk launcher specification: integrates Minimize (`―`) and Close (`✕`) buttons directly inside the dark top tab bar ("App Ke Ander Hi") without an unstable maximize button.
+  - Implements smooth, non-blocking, crash-proof native Tkinter dragging via `<Button-1>` and `<B1-Motion>` without Win32 modal message pump hijacking.
 
 ### 13.3 Instant Hang-Proof App Close
 - **Problem**: Synchronous shutdown of background network threads, PortAudio streams, and Cloudflare subprocesses during `_on_close` previously blocked the GUI event loop, causing Windows "Not Responding" hang dialogs.
