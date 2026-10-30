@@ -8,7 +8,7 @@ OpenDesk is an ultra-low-latency, zero-configuration remote desktop and bi-direc
 - **GUI Engine**: Tkinter / Tcl 8.6 with custom AnyDesk 8 dark-themed multi-tab strip, navigation sidebar, and embedded session canvas
 - **Screen Capture**: `mss` 10.1.0 (Direct DXGI / GDI fast screen buffer capture)
 - **Image Processing & Tile Codec**: Pillow (`PIL`) 11.1.0, NumPy 2.2.3
-- **Audio Engine**: PortAudio with `sounddevice` 0.5.1, smart physical microphone auto-detection, 16kHz 16-bit mono PCM
+- **Audio Engine**: PortAudio with `sounddevice` 0.5.1, Discord-grade 48kHz HD Studio Audio, VAD sensitivity threshold, "Let's Check" loopback mic test, Push-to-Talk, Echo Cancellation, Noise Suppression, and AGC
 - **Networking**: `aiohttp` 3.11.12, `websockets` 15.0.1, standard `asyncio`
 - **Tunneling**: Cloudflare Tunnel (`cloudflared` binary) executed from external user directory to prevent temp folder file locking
 - **Packaging Tools**: PyInstaller 6.22.3, Inno Setup 6.7.3 (ISCC)
@@ -25,11 +25,11 @@ opendesk/
 ├── OpenDesk.exe                    # Standalone single-file executable (Digitally Signed)
 ├── opendesk.ico                    # High-resolution application icon
 ├── opendesk.spec                   # PyInstaller bundle specification with all hidden imports
-├── opendesk_app.py                 # AnyDesk 8 multi-tab GUI, sidebar, quick-connect & embedded session viewer
-├── opendesk_installer.iss          # Inno Setup 6 wizard installation script (v1.1.8)
+├── opendesk_app.py                 # AnyDesk 8 multi-tab GUI, sidebar, quick-connect, Discord Voice settings & session viewer
+├── opendesk_installer.iss          # Inno Setup 6 wizard installation script (v1.1.9)
 ├── OpenDesk_Setup.exe              # Compiled Inno Setup installer wizard (Digitally Signed)
-├── OpenDesk_Setup_v1.1.8_Installer.exe # Versioned installer wizard binary (v1.1.8)
-├── OpenDesk_v1.1.8_Portable.exe    # Versioned standalone portable binary (v1.1.8)
+├── OpenDesk_Setup_v1.1.9_Installer.exe # Versioned installer wizard binary (v1.1.9)
+├── OpenDesk_v1.1.9_Portable.exe    # Versioned standalone portable binary (v1.1.9)
 ├── PROJECT_STRUCTURE.md            # Detailed structural and module specification
 ├── push_to_github.bat              # 1-Click Git push synchronization script
 ├── README.md                       # Public documentation, quickstart, and downloads

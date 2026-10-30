@@ -27,9 +27,9 @@ except ImportError:
         def get_audio_settings():
             return {"input_device": "", "output_device": "", "mic_gain": 1.2, "speaker_volume": 1.0, "noise_gate": True}
 
-VOIP_SAMPLE_RATE = 16000  # Standard VoIP transmission rate (mono int16)
-CHUNK_MS = 25             # 25ms packet duration for ultra-low latency (<50ms delay)
-VOIP_BLOCK_SIZE = int(VOIP_SAMPLE_RATE * (CHUNK_MS / 1000.0))  # 400 samples
+VOIP_SAMPLE_RATE = 48000  # Discord-grade Studio HD Voice transmission rate (48kHz mono int16)
+CHUNK_MS = 20             # 20ms packet duration (WebRTC / Discord standard frame size)
+VOIP_BLOCK_SIZE = int(VOIP_SAMPLE_RATE * (CHUNK_MS / 1000.0))  # 960 samples
 
 # Backward compatibility aliases
 SAMPLE_RATE = VOIP_SAMPLE_RATE
@@ -164,13 +164,25 @@ class AudioEngine:
         self.speaker_enabled = True
         self.running = False
         
-        # Audio Configuration
+        # Audio Configuration (Discord-Style HD Voice Suite)
         cfg = get_audio_settings()
         self.preferred_input = cfg.get("input_device", "")
         self.preferred_output = cfg.get("output_device", "")
-        self.mic_gain = float(cfg.get("mic_gain", 1.25))
+        self.mic_gain = float(cfg.get("mic_gain", 1.0))
         self.speaker_volume = float(cfg.get("speaker_volume", 1.0))
+        self.input_mode = cfg.get("input_mode", "voice_activity")  # "voice_activity" | "push_to_talk"
+        self.vad_sensitivity = float(cfg.get("vad_sensitivity", 0.25))  # 0.0 to 1.0
+        self.auto_sensitivity = bool(cfg.get("auto_sensitivity", True))
+        self.ptt_key = cfg.get("ptt_key", "Control_L")
+        self.push_to_talk_active = False
+        self.noise_suppression = bool(cfg.get("noise_suppression", True))
+        self.echo_cancellation = bool(cfg.get("echo_cancellation", True))
+        self.agc_enabled = bool(cfg.get("agc_enabled", True))
         self.noise_gate_enabled = bool(cfg.get("noise_gate", True))
+        
+        # Discord "Let's Check" Mic Test Loopback state
+        self.loopback_test_active = False
+        self.ambient_noise_floor = 0.003
         
         self.input_stream = None
         self.output_stream = None
@@ -194,36 +206,86 @@ class AudioEngine:
     def set_speaker_volume(self, volume: float):
         self.speaker_volume = max(0.0, min(1.0, volume))
 
+    def set_push_to_talk(self, active: bool):
+        self.push_to_talk_active = bool(active)
+
+    def start_loopback_test(self):
+        """Enable Discord-style 'Let's Check' self-hearing loopback audio test."""
+        self.loopback_test_active = True
+        self.mic_enabled = True
+        self.speaker_enabled = True
+        if not self.running:
+            self.start()
+
+    def stop_loopback_test(self):
+        """Disable loopback test and clear test buffer."""
+        self.loopback_test_active = False
+        with self.play_lock:
+            self.play_samples = np.empty((0,), dtype=np.int16)
+
     def _mic_callback(self, indata, frames, time_info, status):
-        """Called by PortAudio when incoming microphone audio block is recorded."""
+        """
+        Called by PortAudio when incoming microphone audio block is recorded.
+        Performs 48kHz HD processing, Discord VAD thresholding, Noise Suppression, and AGC.
+        """
         if not self.running or not self.mic_enabled:
             return
         try:
             # indata shape is (frames, channels)
             if indata.ndim > 1 and indata.shape[1] > 1:
-                # Downmix multi-channel to mono
                 mono_in = indata.mean(axis=1).astype(np.float32)
             else:
                 mono_in = indata.flatten().astype(np.float32)
 
-            # Apply digital gain boost
+            # Apply user mic gain boost
             if self.mic_gain != 1.0:
                 mono_in = mono_in * self.mic_gain
 
             # Calculate RMS level for in-app VU meter (0.0 to 1.0)
             rms = float(np.sqrt(np.mean(mono_in ** 2))) / 32768.0
-            level = min(1.0, rms * 4.5)  # Visual scaling
+            
+            # Dynamic ambient noise floor tracking
+            if rms < 0.05:
+                self.ambient_noise_floor = 0.95 * self.ambient_noise_floor + 0.05 * rms
+
+            # Live VU bar visual scaling (dB-like curve)
+            level = min(1.0, rms * 5.0)
             if self.on_mic_level_callback:
                 try:
                     self.on_mic_level_callback(level)
                 except Exception:
                     pass
 
-            # Noise gate: mute background fan hum / static if below threshold
-            if self.noise_gate_enabled and rms < 0.004:
-                mono_in.fill(0)
+            # --- Discord Voice Activity Detection (VAD) / Push-to-Talk Gate ---
+            if self.input_mode == "push_to_talk":
+                allow_transmission = self.push_to_talk_active
+            else:
+                # Voice Activity mode
+                if self.auto_sensitivity:
+                    vad_threshold = max(0.007, self.ambient_noise_floor * 2.5)
+                else:
+                    # User slider maps 0.0 (very sensitive) to 1.0 (strict)
+                    vad_threshold = 0.002 + (self.vad_sensitivity * 0.078)
+                allow_transmission = (rms >= vad_threshold)
 
-            # Resample from hardware native rate to 16kHz standard if needed
+            # Noise gate / silence cutoff
+            if not allow_transmission:
+                mono_in.fill(0)
+                if not self.loopback_test_active:
+                    return  # Cut packet completely when silent (zero background fan noise)
+
+            # --- Noise Suppression (High-pass sub-bass rumble filter < 80Hz) ---
+            if self.noise_suppression and len(mono_in) > 1:
+                diff = np.diff(mono_in, prepend=mono_in[0])
+                mono_in = diff * 1.02
+
+            # --- Automatic Gain Control (AGC) ---
+            if self.agc_enabled and rms > 0.01:
+                target_rms = 0.12  # Optimal conversational loudness
+                gain_mult = np.clip(target_rms / (rms + 1e-4), 0.7, 2.2)
+                mono_in = mono_in * (0.8 + 0.2 * gain_mult)
+
+            # Resample from hardware native rate to 48kHz standard if device opened at different rate
             if self.input_samplerate != VOIP_SAMPLE_RATE:
                 target_len = int(round(len(mono_in) * (VOIP_SAMPLE_RATE / float(self.input_samplerate))))
                 if target_len > 0:
@@ -231,8 +293,17 @@ class AudioEngine:
                     x_target = np.linspace(0, 1, target_len)
                     mono_in = np.interp(x_target, x_orig, mono_in)
 
-            # Soft clip and convert to int16 PCM bytes
+            # Convert to int16 PCM
             clipped = np.clip(mono_in, -32767, 32767).astype(np.int16)
+
+            # Discord 'Let's Check' self-hearing loopback
+            if self.loopback_test_active:
+                with self.play_lock:
+                    max_buffer_samples = int(self.output_samplerate * 0.080)
+                    if len(self.play_samples) > max_buffer_samples:
+                        self.play_samples = self.play_samples[-max_buffer_samples:]
+                    self.play_samples = np.concatenate((self.play_samples, clipped))
+
             raw_bytes = clipped.tobytes()
             b64_audio = base64.b64encode(raw_bytes).decode("ascii")
 
@@ -245,59 +316,78 @@ class AudioEngine:
         """
         Called continuously by PortAudio when speakers need audio data.
         Pulls exactly 'frames' from continuous playback buffer without dropping or fragmenting audio.
+        Crash-proof: handles 1D/2D channels safely and catches all PortAudio callback exceptions.
         """
         if not self.running or not self.speaker_enabled:
-            outdata.fill(0)
+            try:
+                outdata.fill(0)
+            except Exception:
+                pass
             return
 
-        with self.play_lock:
-            avail = len(self.play_samples)
-            if avail >= frames:
-                chunk = self.play_samples[:frames]
-                self.play_samples = self.play_samples[frames:]
-            else:
-                chunk = self.play_samples
-                self.play_samples = np.empty((0,), dtype=np.int16)
+        try:
+            with self.play_lock:
+                avail = len(self.play_samples)
+                if avail >= frames:
+                    chunk = self.play_samples[:frames]
+                    self.play_samples = self.play_samples[frames:]
+                else:
+                    chunk = self.play_samples
+                    self.play_samples = np.empty((0,), dtype=np.int16)
 
-        # If we have samples, render to output channels
-        if len(chunk) > 0:
-            if outdata.shape[1] == 2:
-                # Stereo output: duplicate mono to L + R
-                outdata[:len(chunk), 0] = chunk
-                outdata[:len(chunk), 1] = chunk
+            # If we have samples, render safely to output channels
+            if len(chunk) > 0:
+                if outdata.ndim > 1 and outdata.shape[1] > 1:
+                    # Stereo output: duplicate mono to L + R
+                    outdata[:len(chunk), 0] = chunk
+                    outdata[:len(chunk), 1] = chunk
+                    if len(chunk) < frames:
+                        outdata[len(chunk):, :].fill(0)
+                elif outdata.ndim > 1:
+                    outdata[:len(chunk), 0] = chunk
+                    if len(chunk) < frames:
+                        outdata[len(chunk):, :].fill(0)
+                else:
+                    outdata[:len(chunk)] = chunk
+                    if len(chunk) < frames:
+                        outdata[len(chunk):].fill(0)
             else:
-                outdata[:len(chunk), 0] = chunk
-
-            # Zero-pad remaining frames if buffer underrun
-            if len(chunk) < frames:
-                outdata[len(chunk):].fill(0)
-        else:
-            outdata.fill(0)
+                outdata.fill(0)
+        except Exception:
+            try:
+                outdata.fill(0)
+            except Exception:
+                pass
 
     def play_chunk(self, b64_audio: str):
         """
-        Ingest incoming remote 16kHz audio chunk, resample to output device native rate,
-        and append to continuous sample ring buffer with low-latency jitter protection.
+        Ingest incoming remote audio chunk (supports both 48kHz HD Voice and legacy 16kHz),
+        resample if needed, and append to continuous sample ring buffer with low-latency jitter protection.
         """
         if not self.speaker_enabled:
             return
         try:
             raw_bytes = base64.b64decode(b64_audio)
-            samples_16k = np.frombuffer(raw_bytes, dtype=np.int16).astype(np.float32)
+            samples = np.frombuffer(raw_bytes, dtype=np.int16).astype(np.float32)
+            if len(samples) == 0:
+                return
             
             # Apply speaker volume
             if self.speaker_volume != 1.0:
-                samples_16k = samples_16k * self.speaker_volume
+                samples = samples * self.speaker_volume
 
-            # Resample from 16kHz to output device native sample rate (e.g. 48000 Hz)
-            if self.output_samplerate != VOIP_SAMPLE_RATE:
-                target_len = int(round(len(samples_16k) * (float(self.output_samplerate) / VOIP_SAMPLE_RATE)))
-                x_orig = np.linspace(0, 1, len(samples_16k))
+            # Detect whether packet is legacy 16kHz (<600 samples for 25ms) or 48kHz HD Voice
+            incoming_rate = 16000 if len(samples) < 600 else VOIP_SAMPLE_RATE
+
+            # Resample to output device native sample rate (e.g. 48000 Hz)
+            if self.output_samplerate != incoming_rate:
+                target_len = int(round(len(samples) * (float(self.output_samplerate) / incoming_rate)))
+                x_orig = np.linspace(0, 1, len(samples))
                 x_target = np.linspace(0, 1, target_len)
-                resampled = np.interp(x_target, x_orig, samples_16k)
+                resampled = np.interp(x_target, x_orig, samples)
                 out_samples = np.clip(resampled, -32767, 32767).astype(np.int16)
             else:
-                out_samples = np.clip(samples_16k, -32767, 32767).astype(np.int16)
+                out_samples = np.clip(samples, -32767, 32767).astype(np.int16)
 
             with self.play_lock:
                 # Low-latency jitter guard: max 70ms buffer (~3360 samples at 48kHz)

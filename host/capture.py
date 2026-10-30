@@ -129,8 +129,8 @@ class WindowsScreenCapturer:
         raw_bytes = (ctypes.c_char * buffer_size).from_address(self.ppv_bits.value)
         # Direct zero-copy uint32 NumPy view (height, width)
         arr_u32 = np.frombuffer(raw_bytes, dtype=np.uint32).reshape((self.height, self.width))
-        # Zero-copy PIL image view
-        img = Image.frombuffer('RGBA', (self.width, self.height), raw_bytes, 'raw', 'BGRA', 0, 1)
+        # Zero-copy direct RGB PIL image view (reads 32-bit BGRX into RGB without RGBA conversion overhead)
+        img = Image.frombuffer('RGB', (self.width, self.height), raw_bytes, 'raw', 'BGRX', 0, 1)
         return img, arr_u32
 
     def grab(self) -> Image.Image:

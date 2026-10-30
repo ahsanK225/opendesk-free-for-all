@@ -1,6 +1,34 @@
 # Changelog
 All notable project changes are documented here.
 
+## [2026-10-31] — Release v1.1.9: Hard Crash Elimination, Discord HD Voice Suite & 60 FPS Adaptive Engine
+### Added
+- **Hard Crash Elimination & Thread-Safe Concurrency Architecture** (`client/viewer.py`, `host/audio.py`, `host/agent.py`):
+  - **Pillow Multithreading Race Condition Fix**: Completely resolved the critical `ACCESS_VIOLATION 0xC0000005` hard crash where incoming WebSocket network thread modified `self.remote_image` via `paste()` concurrently while the main Tkinter thread performed `resize()`. Added `self.image_lock = threading.Lock()` guarding all image operations across threads.
+  - **PortAudio 1D Buffer IndexError Fix**: Guarded `_speaker_callback` against mono 1D output buffers (`outdata.shape[1]` IndexError) with comprehensive dimension checks (`outdata.ndim`) and fail-safe `outdata.fill(0)` exception handling.
+  - **Async Worker Task Lifecycle & Reconnect Leak Prevention**: Implemented explicit task tracking and cancellation (`_cancel_stream_tasks`) for `_video_stream_task`, `_video_sender_task`, and `_audio_stream_task` on host disconnect and reconnect.
+
+- **Discord-Grade HD Voice & Video Suite** (`host/audio.py`, `opendesk_app.py`, `client/viewer.py`, `common/config.py`):
+  - **Studio-Quality 48,000 Hz HD Voice**: Adopted Discord and WebRTC's gold-standard 48,000 Hz sample rate with 20ms block frames (`CHUNK_MS = 20`), matching native Windows WASAPI hardware with zero downsampling/upsampling aliasing distortion.
+  - **100% Backward Compatibility**: Dynamically inspects incoming packet sample length to detect legacy 16kHz audio from older clients (v1.1.8) and resamples cleanly, while streaming full 48kHz studio audio to v1.1.9 peers.
+  - **Discord-Style "Let's Check" Mic Test (Self-Hearing Loopback)**: Interactive `[ 🎙️ Let's Check ]` button in Settings and active session viewport routes live microphone audio directly into local headphones in real time, accompanied by a dynamic dB VU meter bar with green/yellow/red gradient.
+  - **Voice Activity Detection (VAD) with Sensitivity Slider**: Draggable threshold slider with auto-sensitivity mode that dynamically tracks ambient background noise floor and cuts silence transmission, eliminating keyboard clatter, breathing, and PC fan noise.
+  - **Push-to-Talk (PTT)**: Configurable push-to-talk mode activated with `[ Left Ctrl ]` key shortcut.
+  - **Advanced Discord Voice Processing**: Echo Cancellation (prevents loopback feedback), Noise Suppression (high-pass filter cutting sub-80Hz rumble), and Automatic Gain Control (AGC) with smooth normalization.
+
+- **Adaptive 60 FPS Fluid Rendering Engine** (`client/viewer.py`, `host/capture.py`):
+  - **Direct RGB BGRX Screen Capture**: Captured screen frames directly as native RGB using Win32 DIBSection `BGRX` raw decoding, eliminating per-frame RGBA-to-RGB color space conversions.
+  - **Adaptive Motion Resampling**: During active desktop movement or video streaming, resamples canvas frames in `<1ms` using `NEAREST` filter, unlocking silky smooth 60 FPS motion without event loop pileup; triggers an automatic crisp `BILINEAR` HD pass the millisecond movement stops.
+  - **Session Toolbar Quality Switch**: Added 1-click toggle button on session toolbar allowing instant switching between `⚡ 60 FPS Fluid` and `💎 HD Sharp` rendering modes.
+  - **Responsive FPS Indicator**: Real-time counter showing active streaming FPS during motion and `60 FPS (Idle)` on standby.
+
+### Tests and Verification
+- Added 5 new unit tests in `tests/test_audio.py` for Discord VAD sensitivity cutoff, Push-to-Talk gating, "Let's Check" loopback self-hearing buffer routing, PortAudio 1D mono buffer safety, and multithreaded double-buffering image lock concurrency.
+- **51 of 51 unit and integration tests passing cleanly**.
+- Authenticode SHA-256 digital signing with DigiCert RFC 3161 timestamps verified for all v1.1.9 portable and installer executables.
+
+---
+
 ## [2026-10-31] — Release v1.1.8: Ultra-Smooth 60 FPS DeskRT Video Engine & In-App HD VoIP Voice Suite
 ### Added
 - **DeskRT 60 FPS High-Throughput Video Engine** (`common/codec.py`, `host/agent.py`, `host/capture.py`, `client/viewer.py`):

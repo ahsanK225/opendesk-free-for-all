@@ -136,14 +136,21 @@ def set_auto_update_enabled(enabled: bool):
     save_config(cfg)
 
 def get_audio_settings() -> Dict[str, Any]:
-    """Retrieve saved audio configuration (input/output devices, gain, volumes)."""
+    """Retrieve saved audio configuration (input/output devices, gain, volumes, Discord-grade voice suite)."""
     cfg = load_config()
     audio = cfg.get("audio", {})
     return {
         "input_device": audio.get("input_device", ""),
         "output_device": audio.get("output_device", ""),
-        "mic_gain": float(audio.get("mic_gain", 1.2)),
+        "mic_gain": float(audio.get("mic_gain", 1.0)),
         "speaker_volume": float(audio.get("speaker_volume", 1.0)),
+        "input_mode": audio.get("input_mode", "voice_activity"),  # "voice_activity" | "push_to_talk"
+        "vad_sensitivity": float(audio.get("vad_sensitivity", 0.25)),  # 0.0 to 1.0
+        "auto_sensitivity": bool(audio.get("auto_sensitivity", True)),
+        "ptt_key": audio.get("ptt_key", "Control_L"),
+        "noise_suppression": bool(audio.get("noise_suppression", True)),
+        "echo_cancellation": bool(audio.get("echo_cancellation", True)),
+        "agc_enabled": bool(audio.get("agc_enabled", True)),
         "noise_gate": bool(audio.get("noise_gate", True))
     }
 

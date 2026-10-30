@@ -1,17 +1,18 @@
 {
-  "version": "1.1.8",
+  "version": "1.1.9",
   "release_date": "2026-10-31",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.8/OpenDesk_v1.1.8_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.8/OpenDesk_Setup_v1.1.8_Installer.exe",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.9/OpenDesk_v1.1.9_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.9/OpenDesk_Setup_v1.1.9_Installer.exe",
   "changelog": [
-    "DeskRT 60 FPS Delta Engine: Zero-copy uint32 vectorized diff and dirty bounding box clustering eliminating frame drop bottlenecks",
-    "Ultra-Low Latency VoIP Engine: Continuous playback sample ring buffer fixing sample slicing, stuttering, and robotic audio distortions",
-    "Smart WASAPI Audio Selection: Automatic physical headset/microphone detection prioritizing low-latency WASAPI devices over virtual cables",
-    "In-App Voice & Audio Controls: Dedicated in-app Audio Settings panel with live VU meter test, mic gain slider, and session toolbar volume control",
-    "AnyDesk-style Incoming Session Request Dialog with audio chime alert and Topmost visibility",
-    "Granular Session Permissions: Allow/Deny Remote Mouse & Keyboard control, Voice Audio, Clipboard Sync, and File Transfer",
-    "Dynamic Display Modes: Fit Screen, Stretch to Fill (No Black Bars), and 1:1 Original Native Resolution",
-    "Multi-Level Viewport Zoom Controls (50% to 300%) with Ctrl+MouseWheel centered zoom and middle/shift-drag panning",
-    "Digitally Signed Binaries with Authenticode SHA-256 and DigiCert RFC 3161 Timestamps"
+    "Critical Crash Elimination: Thread-safe double buffering and image_lock preventing Pillow C multithreaded access violations (0xC0000005)",
+    "PortAudio Crash Proofing: Safe 1D/2D channel handling preventing unhandled IndexError in sounddevice callback threads",
+    "Leak-Free Session Lifecycle: Full async task cancellation and queue flushing upon peer reconnect or session close",
+    "Discord-Grade 48kHz HD Audio: Native studio-quality 48,000 Hz VoIP with zero resampling aliasing distortion and backward compatibility",
+    "Discord Voice Suite: Voice Activity Detection (VAD) with decibel threshold slider, Push-to-Talk, and live VU meter",
+    "Let's Check Loopback Mic Test: Real-time self-hearing test loop directly from microphone to headphones",
+    "Advanced Voice Processing: Echo Cancellation, Noise Suppression (Fan/Hum filter), and Automatic Gain Control (AGC)",
+    "Adaptive 60 FPS Fluid Rendering Engine: Sub-millisecond motion resampling during desktop movement with instant stationary HD clarity",
+    "Session Toolbar Quality Switch: 1-click toggle between ⚡ 60 FPS Fluid and 💎 HD Sharp display modes",
+    "Authenticode Signed Binaries: Digitally signed with SHA-256 and DigiCert RFC 3161 timestamps"
   ]
 }

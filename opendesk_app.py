@@ -853,7 +853,7 @@ class OpenDeskGUI:
                                             font=("Segoe UI", 8), bg="#12151e", fg="#64748b")
         self.bottom_status_label.pack(side="left", padx=14, pady=4)
 
-        tk.Label(bottom_bar, text=f"DeskRT 60FPS Delta Engine • 16kHz HD Voice • v{APP_VERSION} (Digitally Signed)",
+        tk.Label(bottom_bar, text=f"DeskRT 60FPS Delta Engine • 48kHz Discord HD Voice • v{APP_VERSION} (Digitally Signed)",
                  font=("Segoe UI", 8), bg="#12151e", fg="#64748b").pack(side="right", padx=14, pady=4)
 
     # =========================================================================
@@ -1082,82 +1082,92 @@ class OpenDeskGUI:
     def _open_settings(self):
         settings_win = tk.Toplevel(self.root)
         settings_win.title("OpenDesk Settings & Voice Configuration")
-        settings_win.geometry("580x640")
-        settings_win.minsize(540, 580)
+        settings_win.geometry("620x760")
+        settings_win.minsize(580, 680)
         settings_win.configure(bg="#141822")
         settings_win.grab_set()
 
-        tk.Label(settings_win, text="⚙️ OpenDesk Settings & Audio Configuration", font=("Segoe UI", 12, "bold"),
-                 bg="#141822", fg="#f1f5f9").pack(anchor="w", padx=20, pady=(16, 6))
+        tk.Label(settings_win, text="⚙️ OpenDesk Settings & Discord HD Voice Suite", font=("Segoe UI", 12, "bold"),
+                 bg="#141822", fg="#f1f5f9").pack(anchor="w", padx=20, pady=(14, 4))
 
         # --- Section 1: Relay WebSocket Configuration ---
         tk.Label(settings_win, text="🌐 Relay WebSocket Server URL:", font=("Segoe UI", 9, "bold"),
-                 bg="#141822", fg="#ef4444").pack(anchor="w", padx=20, pady=(6, 2))
+                 bg="#141822", fg="#ef4444").pack(anchor="w", padx=20, pady=(4, 2))
         entry_box = tk.Entry(settings_win, font=("Consolas", 10), bg="#202534", fg="#f1f5f9",
                              insertbackground="#ef4444", bd=1, relief="solid")
-        entry_box.pack(fill="x", padx=20, pady=(2, 8), ipady=3)
+        entry_box.pack(fill="x", padx=20, pady=(2, 6), ipady=3)
         entry_box.insert(0, self.relay_url)
 
-        # --- Section 2: In-App Audio & VoIP Hardware Devices ---
-        tk.Label(settings_win, text="🎙️ Audio & Voice Communication (In-App VoIP Hardware):", font=("Segoe UI", 9, "bold"),
-                 bg="#141822", fg="#ef4444").pack(anchor="w", padx=20, pady=(8, 2))
+        # --- Section 2: Discord-Grade Voice & Audio Suite ---
+        tk.Label(settings_win, text="🎧 Voice & Video Settings (Discord-Grade HD Audio):", font=("Segoe UI", 9, "bold"),
+                 bg="#141822", fg="#ef4444").pack(anchor="w", padx=20, pady=(6, 2))
 
         audio_card = tk.Frame(settings_win, bg="#1a1e2b", bd=1, relief="solid", highlightbackground="#282e3f")
-        audio_card.pack(fill="x", padx=20, pady=4)
+        audio_card.pack(fill="x", padx=20, pady=2)
 
         devs = get_available_audio_devices()
         in_names = [d["name"] for d in devs.get("inputs", [])] or ["Default System Microphone"]
         out_names = [d["name"] for d in devs.get("outputs", [])] or ["Default System Speaker"]
         audio_cfg = get_audio_settings()
 
-        # Input Microphone Dropdown
-        tk.Label(audio_card, text="Microphone Input Device:", font=("Segoe UI", 8, "bold"),
-                 bg="#1a1e2b", fg="#94a3b8").pack(anchor="w", padx=14, pady=(8, 2))
-        in_combo = ttk.Combobox(audio_card, values=in_names, state="readonly", font=("Segoe UI", 9))
-        in_combo.pack(fill="x", padx=14, pady=(0, 6))
+        # Input & Output Device Dropdowns (2 columns)
+        dev_row = tk.Frame(audio_card, bg="#1a1e2b")
+        dev_row.pack(fill="x", padx=14, pady=(6, 4))
+
+        in_box = tk.Frame(dev_row, bg="#1a1e2b")
+        in_box.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        tk.Label(in_box, text="INPUT DEVICE", font=("Segoe UI", 8, "bold"), bg="#1a1e2b", fg="#94a3b8").pack(anchor="w")
+        in_combo = ttk.Combobox(in_box, values=in_names, state="readonly", font=("Segoe UI", 9))
+        in_combo.pack(fill="x", pady=(2, 0))
         saved_in = audio_cfg.get("input_device", "")
         if saved_in in in_names:
             in_combo.set(saved_in)
         elif in_names:
             in_combo.current(0)
 
-        # Output Speaker Dropdown
-        tk.Label(audio_card, text="Speaker / Headset Output Device:", font=("Segoe UI", 8, "bold"),
-                 bg="#1a1e2b", fg="#94a3b8").pack(anchor="w", padx=14, pady=(2, 2))
-        out_combo = ttk.Combobox(audio_card, values=out_names, state="readonly", font=("Segoe UI", 9))
-        out_combo.pack(fill="x", padx=14, pady=(0, 6))
+        out_box = tk.Frame(dev_row, bg="#1a1e2b")
+        out_box.pack(side="right", fill="x", expand=True, padx=(6, 0))
+        tk.Label(out_box, text="OUTPUT DEVICE", font=("Segoe UI", 8, "bold"), bg="#1a1e2b", fg="#94a3b8").pack(anchor="w")
+        out_combo = ttk.Combobox(out_box, values=out_names, state="readonly", font=("Segoe UI", 9))
+        out_combo.pack(fill="x", pady=(2, 0))
         saved_out = audio_cfg.get("output_device", "")
         if saved_out in out_names:
             out_combo.set(saved_out)
         elif out_names:
             out_combo.current(0)
 
-        # Sliders Row (Mic Gain & Speaker Volume)
+        # Volume Sliders Row (Input Volume & Output Volume)
         sliders_row = tk.Frame(audio_card, bg="#1a1e2b")
-        sliders_row.pack(fill="x", padx=14, pady=(2, 6))
+        sliders_row.pack(fill="x", padx=14, pady=(2, 4))
 
         gain_box = tk.Frame(sliders_row, bg="#1a1e2b")
-        gain_box.pack(side="left", fill="x", expand=True, padx=(0, 8))
-        tk.Label(gain_box, text="Microphone Gain / Boost:", font=("Segoe UI", 8), bg="#1a1e2b", fg="#94a3b8").pack(anchor="w")
+        gain_box.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        tk.Label(gain_box, text="INPUT VOLUME", font=("Segoe UI", 8, "bold"), bg="#1a1e2b", fg="#94a3b8").pack(anchor="w")
         gain_scale = tk.Scale(gain_box, from_=50, to=200, orient="horizontal",
                               bg="#1a1e2b", fg="#38bdf8", troughcolor="#141822", highlightthickness=0, bd=0)
-        gain_scale.set(int(audio_cfg.get("mic_gain", 1.25) * 100))
+        gain_scale.set(int(audio_cfg.get("mic_gain", 1.0) * 100))
         gain_scale.pack(fill="x", pady=2)
 
         vol_box = tk.Frame(sliders_row, bg="#1a1e2b")
-        vol_box.pack(side="right", fill="x", expand=True, padx=(8, 0))
-        tk.Label(vol_box, text="Speaker Volume:", font=("Segoe UI", 8), bg="#1a1e2b", fg="#94a3b8").pack(anchor="w")
+        vol_box.pack(side="right", fill="x", expand=True, padx=(6, 0))
+        tk.Label(vol_box, text="OUTPUT VOLUME", font=("Segoe UI", 8, "bold"), bg="#1a1e2b", fg="#94a3b8").pack(anchor="w")
         vol_scale = tk.Scale(vol_box, from_=0, to=100, orient="horizontal",
                              bg="#1a1e2b", fg="#38bdf8", troughcolor="#141822", highlightthickness=0, bd=0)
         vol_scale.set(int(audio_cfg.get("speaker_volume", 1.0) * 100))
         vol_scale.pack(fill="x", pady=2)
 
-        # Live Microphone VU Meter Test Row
-        test_row = tk.Frame(audio_card, bg="#1a1e2b")
-        test_row.pack(fill="x", padx=14, pady=(4, 10))
+        # Discord-Style "Let's Check" Mic Test (Pipes local mic to headphones in real-time)
+        test_frame = tk.Frame(audio_card, bg="#141822", bd=1, relief="solid", highlightbackground="#2d3345")
+        test_frame.pack(fill="x", padx=14, pady=6)
+
+        tk.Label(test_frame, text="MIC TEST — Having mic issues? Click to hear yourself in real-time:",
+                 font=("Segoe UI", 8), bg="#141822", fg="#94a3b8").pack(anchor="w", padx=10, pady=(6, 2))
+
+        test_row = tk.Frame(test_frame, bg="#141822")
+        test_row.pack(fill="x", padx=10, pady=(2, 8))
 
         test_engine_ref = [None]
-        test_canvas = tk.Canvas(test_row, height=18, bg="#13161f", highlightthickness=1, highlightbackground="#2d3345")
+        test_canvas = tk.Canvas(test_row, height=18, bg="#0d1117", highlightthickness=1, highlightbackground="#2d3345")
         test_canvas.pack(side="left", fill="x", expand=True, padx=(0, 10))
         vu_bar = test_canvas.create_rectangle(0, 0, 0, 18, fill="#10b981", outline="")
 
@@ -1165,7 +1175,7 @@ class OpenDeskGUI:
             if test_canvas.winfo_exists():
                 cw = max(1, test_canvas.winfo_width())
                 w = max(0, min(cw, int(level * cw)))
-                color = "#ef4444" if level > 0.85 else "#10b981"
+                color = "#ef4444" if level > 0.85 else ("#f59e0b" if level > 0.65 else "#10b981")
                 test_canvas.coords(vu_bar, 0, 0, w, 18)
                 test_canvas.itemconfig(vu_bar, fill=color)
 
@@ -1173,34 +1183,91 @@ class OpenDeskGUI:
             if test_engine_ref[0] is None:
                 try:
                     chosen_mic = in_combo.get()
+                    chosen_spk = out_combo.get()
                     chosen_gain = float(gain_scale.get()) / 100.0
+                    chosen_vol = float(vol_scale.get()) / 100.0
                     engine = AudioEngine(on_mic_level_callback=on_test_level)
                     engine.preferred_input = chosen_mic
+                    engine.preferred_output = chosen_spk
                     engine.set_gain(chosen_gain)
-                    engine.speaker_enabled = False
-                    engine.start()
+                    engine.set_speaker_volume(chosen_vol)
+                    engine.start_loopback_test()
                     test_engine_ref[0] = engine
-                    test_btn.config(text="⏹️ Stop Test", bg="#ef4444", fg="#ffffff")
+                    test_btn.config(text="⏹️ Stop Testing", bg="#ef4444", fg="#ffffff")
                 except Exception as e:
-                    messagebox.showerror("Audio Test Error", f"Could not initialize microphone: {e}")
+                    messagebox.showerror("Audio Test Error", f"Could not initialize loopback mic test: {e}")
             else:
                 try:
+                    test_engine_ref[0].stop_loopback_test()
                     test_engine_ref[0].stop()
                 except Exception:
                     pass
                 test_engine_ref[0] = None
-                test_btn.config(text="🎙️ Test Mic", bg="#202534", fg="#f1f5f9")
+                test_btn.config(text="🎙️ Let's Check", bg="#202534", fg="#f1f5f9")
                 if test_canvas.winfo_exists():
                     test_canvas.coords(vu_bar, 0, 0, 0, 18)
 
-        test_btn = tk.Button(test_row, text="🎙️ Test Mic", font=("Segoe UI", 8, "bold"),
+        test_btn = tk.Button(test_row, text="🎙️ Let's Check", font=("Segoe UI", 8, "bold"),
                              bg="#202534", fg="#f1f5f9", activebackground="#ef4444", activeforeground="#ffffff",
-                             bd=0, padx=12, pady=4, cursor="hand2", command=toggle_mic_test)
+                             bd=0, padx=14, pady=4, cursor="hand2", command=toggle_mic_test)
         test_btn.pack(side="right")
+
+        # Discord-Style Input Mode (Voice Activity vs Push to Talk)
+        input_mode_var = tk.StringVar(value=audio_cfg.get("input_mode", "voice_activity"))
+        auto_vad_var = tk.BooleanVar(value=audio_cfg.get("auto_sensitivity", True))
+
+        mode_row = tk.Frame(audio_card, bg="#1a1e2b")
+        mode_row.pack(fill="x", padx=14, pady=(4, 2))
+        tk.Label(mode_row, text="INPUT MODE:", font=("Segoe UI", 8, "bold"), bg="#1a1e2b", fg="#94a3b8").pack(side="left")
+
+        rb1 = tk.Radiobutton(mode_row, text="Voice Activity", variable=input_mode_var, value="voice_activity",
+                             bg="#1a1e2b", fg="#f1f5f9", selectcolor="#141822", activebackground="#1a1e2b",
+                             activeforeground="#f1f5f9", font=("Segoe UI", 8))
+        rb1.pack(side="left", padx=8)
+
+        rb2 = tk.Radiobutton(mode_row, text="Push to Talk [Ctrl]", variable=input_mode_var, value="push_to_talk",
+                             bg="#1a1e2b", fg="#f1f5f9", selectcolor="#141822", activebackground="#1a1e2b",
+                             activeforeground="#f1f5f9", font=("Segoe UI", 8))
+        rb2.pack(side="left", padx=8)
+
+        # VAD Sensitivity Controls
+        vad_box = tk.Frame(audio_card, bg="#1a1e2b")
+        vad_box.pack(fill="x", padx=14, pady=(2, 4))
+        
+        vad_chk = tk.Checkbutton(vad_box, text="Automatically determine input sensitivity (Discord Standard)",
+                                 variable=auto_vad_var, bg="#1a1e2b", fg="#94a3b8", selectcolor="#141822",
+                                 activebackground="#1a1e2b", activeforeground="#f1f5f9", font=("Segoe UI", 8))
+        vad_chk.pack(anchor="w")
+
+        vad_scale = tk.Scale(vad_box, from_=0, to=100, orient="horizontal",
+                             bg="#1a1e2b", fg="#10b981", troughcolor="#141822", highlightthickness=0, bd=0)
+        vad_scale.set(int(audio_cfg.get("vad_sensitivity", 0.25) * 100))
+        vad_scale.pack(fill="x", pady=2)
+
+        # Discord Voice Processing Checkboxes
+        echo_var = tk.BooleanVar(value=audio_cfg.get("echo_cancellation", True))
+        noise_var = tk.BooleanVar(value=audio_cfg.get("noise_suppression", True))
+        agc_var = tk.BooleanVar(value=audio_cfg.get("agc_enabled", True))
+
+        proc_row = tk.Frame(audio_card, bg="#1a1e2b")
+        proc_row.pack(fill="x", padx=14, pady=(2, 8))
+
+        tk.Checkbutton(proc_row, text="Echo Cancellation", variable=echo_var,
+                       bg="#1a1e2b", fg="#94a3b8", selectcolor="#141822", activebackground="#1a1e2b",
+                       activeforeground="#f1f5f9", font=("Segoe UI", 8)).pack(side="left", padx=(0, 10))
+
+        tk.Checkbutton(proc_row, text="Noise Suppression (Fan/Hum)", variable=noise_var,
+                       bg="#1a1e2b", fg="#94a3b8", selectcolor="#141822", activebackground="#1a1e2b",
+                       activeforeground="#f1f5f9", font=("Segoe UI", 8)).pack(side="left", padx=(0, 10))
+
+        tk.Checkbutton(proc_row, text="Auto Gain Control (AGC)", variable=agc_var,
+                       bg="#1a1e2b", fg="#94a3b8", selectcolor="#141822", activebackground="#1a1e2b",
+                       activeforeground="#f1f5f9", font=("Segoe UI", 8)).pack(side="left")
 
         def on_settings_close():
             if test_engine_ref[0] is not None:
                 try:
+                    test_engine_ref[0].stop_loopback_test()
                     test_engine_ref[0].stop()
                 except Exception:
                     pass
@@ -1211,13 +1278,13 @@ class OpenDeskGUI:
 
         # --- Section 3: Software Updates & Maintenance ---
         tk.Label(settings_win, text="🔄 Software Updates & Maintenance:", font=("Segoe UI", 9, "bold"),
-                 bg="#141822", fg="#ef4444").pack(anchor="w", padx=20, pady=(10, 2))
+                 bg="#141822", fg="#ef4444").pack(anchor="w", padx=20, pady=(6, 2))
 
         upd_card = tk.Frame(settings_win, bg="#1a1e2b", bd=1, relief="solid", highlightbackground="#282e3f")
-        upd_card.pack(fill="x", padx=20, pady=4)
+        upd_card.pack(fill="x", padx=20, pady=2)
 
         info_row = tk.Frame(upd_card, bg="#1a1e2b")
-        info_row.pack(fill="x", padx=12, pady=(8, 4))
+        info_row.pack(fill="x", padx=12, pady=(6, 2))
         tk.Label(info_row, text=f"Installed Version: v{APP_VERSION} (Authenticode Signed)", font=("Segoe UI", 9, "bold"),
                  bg="#1a1e2b", fg="#f1f5f9").pack(side="left")
 
@@ -1233,22 +1300,30 @@ class OpenDeskGUI:
         chk = tk.Checkbutton(upd_card, text="Automatically check for updates on startup", variable=auto_upd_var,
                              bg="#1a1e2b", fg="#94a3b8", selectcolor="#141822", activebackground="#1a1e2b",
                              activeforeground="#f1f5f9", font=("Segoe UI", 8), command=on_toggle_auto)
-        chk.pack(anchor="w", padx=12, pady=(2, 8))
+        chk.pack(anchor="w", padx=12, pady=(2, 6))
 
         def save_and_reconnect():
             if test_engine_ref[0] is not None:
                 try:
+                    test_engine_ref[0].stop_loopback_test()
                     test_engine_ref[0].stop()
                 except Exception:
                     pass
                 test_engine_ref[0] = None
 
-            # 1. Save persistent audio settings
+            # 1. Save persistent audio settings with full Discord suite
             new_audio = {
                 "input_device": in_combo.get(),
                 "output_device": out_combo.get(),
                 "mic_gain": float(gain_scale.get()) / 100.0,
                 "speaker_volume": float(vol_scale.get()) / 100.0,
+                "input_mode": input_mode_var.get(),
+                "vad_sensitivity": float(vad_scale.get()) / 100.0,
+                "auto_sensitivity": auto_vad_var.get(),
+                "ptt_key": "Control_L",
+                "noise_suppression": noise_var.get(),
+                "echo_cancellation": echo_var.get(),
+                "agc_enabled": agc_var.get(),
                 "noise_gate": True
             }
             save_audio_settings(new_audio)

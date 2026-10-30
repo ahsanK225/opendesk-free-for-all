@@ -63,7 +63,8 @@ class EmbeddedSessionView(tk.Frame):
         self._send_queue = None
         self.granted_permissions = {"input": True, "audio": True, "clipboard": True, "file_transfer": True}
 
-        # Display & Video State
+        # Display & Video State (Thread-safe Double Buffering & 60 FPS Adaptive Engine)
+        self.image_lock = threading.Lock()
         self.remote_width = 1920
         self.remote_height = 1080
         self.remote_image: Optional[Image.Image] = None
@@ -73,6 +74,9 @@ class EmbeddedSessionView(tk.Frame):
         self.offset_x = 0
         self.offset_y = 0
         self._render_pending = False
+        self.perf_mode = "fluid"     # "fluid" (Adaptive 60 FPS) or "sharp" (Always Bilinear)
+        self.last_packet_time = time.time()
+        self._idle_hd_after_id = None
 
         # Display Modes & Zoom / Pan State
         self.view_mode = "fit"       # "fit" (Aspect Ratio), "stretch" (Fill Screen), "original" (1:1 Native)
@@ -186,6 +190,12 @@ class EmbeddedSessionView(tk.Frame):
         self.mode_menu.add_command(label="   1:1 Original Size (Pixel-to-Pixel)", command=lambda: self.set_view_mode("original"))
         self.mode_btn.config(menu=self.mode_menu)
         self.mode_btn.pack(side="left", padx=3)
+
+        # Performance Mode Toggle (⚡ 60 FPS Fluid vs 💎 HD Sharp)
+        self.perf_btn = tk.Button(actions_frame, text="⚡ 60 FPS", font=("Segoe UI", 8, "bold"),
+                                  bg="#1e2230", fg="#10b981", activebackground="#252a3a", activeforeground="#34d399",
+                                  bd=0, padx=7, pady=3, cursor="hand2", command=self._toggle_perf_mode)
+        self.perf_btn.pack(side="left", padx=3)
 
         # Zoom Controls (- / 100% / +)
         self.zoom_out_btn = tk.Button(actions_frame, text="🔍 -", font=("Segoe UI", 8, "bold"),
@@ -490,6 +500,12 @@ class EmbeddedSessionView(tk.Frame):
         self._send_payload(MessageType.INPUT_MOUSE_SCROLL, {"delta_x": 0, "delta_y": delta_y})
 
     def _on_key_press(self, event):
+        # Discord-Style Push-to-Talk activation
+        if hasattr(self, "audio_engine") and self.audio_engine:
+            if self.audio_engine.input_mode == "push_to_talk":
+                if event.keysym == self.audio_engine.ptt_key or event.keysym in ("Control_L", "Control_R"):
+                    self.audio_engine.set_push_to_talk(True)
+
         if not self.in_session or not self.granted_permissions.get("input", True):
             return
         # Intercept Ctrl+V to sync local clipboard to remote host automatically
@@ -501,6 +517,12 @@ class EmbeddedSessionView(tk.Frame):
         self._send_payload(MessageType.INPUT_KEY_DOWN, {"code": code, "key": event.char})
 
     def _on_key_release(self, event):
+        # Discord-Style Push-to-Talk deactivation
+        if hasattr(self, "audio_engine") and self.audio_engine:
+            if self.audio_engine.input_mode == "push_to_talk":
+                if event.keysym == self.audio_engine.ptt_key or event.keysym in ("Control_L", "Control_R"):
+                    self.audio_engine.set_push_to_talk(False)
+
         if not self.in_session or not self.granted_permissions.get("input", True):
             return
         code = self._map_tk_keysym_to_js(event.keysym)
@@ -562,14 +584,14 @@ class EmbeddedSessionView(tk.Frame):
     def _open_quick_audio_settings(self):
         """Open quick audio device configuration modal directly from session viewport."""
         top = tk.Toplevel(self)
-        top.title("Session Audio & Microphone Settings")
-        top.geometry("450x330")
-        top.minsize(420, 300)
+        top.title("Discord HD Voice & Microphone Settings")
+        top.geometry("480x480")
+        top.minsize(440, 440)
         top.configure(bg="#141822")
         top.grab_set()
 
-        tk.Label(top, text="🎙️ Session Audio & Microphone Settings", font=("Segoe UI", 11, "bold"),
-                 bg="#141822", fg="#f1f5f9").pack(anchor="w", padx=16, pady=(14, 10))
+        tk.Label(top, text="🎧 Discord HD Voice & Hardware Settings", font=("Segoe UI", 11, "bold"),
+                 bg="#141822", fg="#f1f5f9").pack(anchor="w", padx=16, pady=(12, 6))
 
         devs = get_available_audio_devices()
         in_names = [d["name"] for d in devs.get("inputs", [])] or ["Default System Microphone"]
@@ -578,10 +600,10 @@ class EmbeddedSessionView(tk.Frame):
         cfg = get_audio_settings()
 
         # Input device
-        tk.Label(top, text="Microphone Input Device:", font=("Segoe UI", 9, "bold"),
+        tk.Label(top, text="MICROPHONE INPUT DEVICE:", font=("Segoe UI", 8, "bold"),
                  bg="#141822", fg="#ef4444").pack(anchor="w", padx=16, pady=(4, 2))
         in_combo = ttk.Combobox(top, values=in_names, state="readonly", font=("Segoe UI", 9))
-        in_combo.pack(fill="x", padx=16, pady=(0, 8))
+        in_combo.pack(fill="x", padx=16, pady=(0, 6))
         curr_in = cfg.get("input_device", "")
         if curr_in in in_names:
             in_combo.set(curr_in)
@@ -589,37 +611,114 @@ class EmbeddedSessionView(tk.Frame):
             in_combo.current(0)
 
         # Output device
-        tk.Label(top, text="Speaker / Headset Output Device:", font=("Segoe UI", 9, "bold"),
+        tk.Label(top, text="SPEAKER / HEADSET OUTPUT DEVICE:", font=("Segoe UI", 8, "bold"),
                  bg="#141822", fg="#ef4444").pack(anchor="w", padx=16, pady=(4, 2))
         out_combo = ttk.Combobox(top, values=out_names, state="readonly", font=("Segoe UI", 9))
-        out_combo.pack(fill="x", padx=16, pady=(0, 8))
+        out_combo.pack(fill="x", padx=16, pady=(0, 6))
         curr_out = cfg.get("output_device", "")
         if curr_out in out_names:
             out_combo.set(curr_out)
         elif out_names:
             out_combo.current(0)
 
-        # Mic Gain slider
-        tk.Label(top, text="Microphone Gain Boost:", font=("Segoe UI", 9),
-                 bg="#141822", fg="#94a3b8").pack(anchor="w", padx=16, pady=(2, 2))
-        gain_scale = tk.Scale(top, from_=50, to=200, orient="horizontal",
+        # Input Volume & Output Volume Sliders
+        sliders_f = tk.Frame(top, bg="#141822")
+        sliders_f.pack(fill="x", padx=16, pady=4)
+
+        b1 = tk.Frame(sliders_f, bg="#141822")
+        b1.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        tk.Label(b1, text="INPUT VOLUME", font=("Segoe UI", 8, "bold"), bg="#141822", fg="#94a3b8").pack(anchor="w")
+        gain_scale = tk.Scale(b1, from_=50, to=200, orient="horizontal",
                               bg="#141822", fg="#38bdf8", troughcolor="#202534", highlightthickness=0, bd=0)
         gain_scale.set(int(self.audio_engine.mic_gain * 100))
-        gain_scale.pack(fill="x", padx=16, pady=(0, 10))
+        gain_scale.pack(fill="x", pady=2)
+
+        b2 = tk.Frame(sliders_f, bg="#141822")
+        b2.pack(side="right", fill="x", expand=True, padx=(6, 0))
+        tk.Label(b2, text="OUTPUT VOLUME", font=("Segoe UI", 8, "bold"), bg="#141822", fg="#94a3b8").pack(anchor="w")
+        vol_scale = tk.Scale(b2, from_=0, to=100, orient="horizontal",
+                             bg="#141822", fg="#38bdf8", troughcolor="#202534", highlightthickness=0, bd=0)
+        vol_scale.set(int(self.audio_engine.speaker_volume * 100))
+        vol_scale.pack(fill="x", pady=2)
+
+        # Discord-Style "Let's Check" Mic Test
+        test_frame = tk.Frame(top, bg="#1a1e2b", bd=1, relief="solid", highlightbackground="#2d3345")
+        test_frame.pack(fill="x", padx=16, pady=6)
+
+        tk.Label(test_frame, text="MIC TEST (Click to hear your live voice):",
+                 font=("Segoe UI", 8, "bold"), bg="#1a1e2b", fg="#94a3b8").pack(anchor="w", padx=10, pady=(4, 2))
+
+        test_row = tk.Frame(test_frame, bg="#1a1e2b")
+        test_row.pack(fill="x", padx=10, pady=(2, 6))
+
+        quick_canvas = tk.Canvas(test_row, height=16, bg="#0d1117", highlightthickness=1, highlightbackground="#2d3345")
+        quick_canvas.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        q_vu = quick_canvas.create_rectangle(0, 0, 0, 16, fill="#10b981", outline="")
+
+        def on_quick_level(level: float):
+            if quick_canvas.winfo_exists():
+                cw = max(1, quick_canvas.winfo_width())
+                w = max(0, min(cw, int(level * cw)))
+                c = "#ef4444" if level > 0.85 else ("#f59e0b" if level > 0.65 else "#10b981")
+                quick_canvas.coords(q_vu, 0, 0, w, 16)
+                quick_canvas.itemconfig(q_vu, fill=c)
+
+        is_testing = [False]
+        def toggle_quick_test():
+            if not is_testing[0]:
+                is_testing[0] = True
+                self.audio_engine.on_mic_level_callback = on_quick_level
+                self.audio_engine.preferred_input = in_combo.get()
+                self.audio_engine.preferred_output = out_combo.get()
+                self.audio_engine.set_gain(float(gain_scale.get()) / 100.0)
+                self.audio_engine.set_speaker_volume(float(vol_scale.get()) / 100.0)
+                self.audio_engine.start_loopback_test()
+                q_test_btn.config(text="⏹️ Stop", bg="#ef4444", fg="#ffffff")
+            else:
+                is_testing[0] = False
+                self.audio_engine.stop_loopback_test()
+                self.audio_engine.on_mic_level_callback = self._on_mic_level
+                q_test_btn.config(text="🎙️ Let's Check", bg="#202534", fg="#f1f5f9")
+                if quick_canvas.winfo_exists():
+                    quick_canvas.coords(q_vu, 0, 0, 0, 16)
+
+        q_test_btn = tk.Button(test_row, text="🎙️ Let's Check", font=("Segoe UI", 8, "bold"),
+                               bg="#202534", fg="#f1f5f9", activebackground="#ef4444", activeforeground="#ffffff",
+                               bd=0, padx=10, pady=3, cursor="hand2", command=toggle_quick_test)
+        q_test_btn.pack(side="right")
+
+        # VAD Sensitivity slider & Mode
+        vad_box = tk.Frame(top, bg="#141822")
+        vad_box.pack(fill="x", padx=16, pady=2)
+        tk.Label(vad_box, text="VOICE ACTIVITY SENSITIVITY (VAD):", font=("Segoe UI", 8, "bold"), bg="#141822", fg="#94a3b8").pack(anchor="w")
+        q_vad_scale = tk.Scale(vad_box, from_=0, to=100, orient="horizontal",
+                               bg="#141822", fg="#10b981", troughcolor="#202534", highlightthickness=0, bd=0)
+        q_vad_scale.set(int(self.audio_engine.vad_sensitivity * 100))
+        q_vad_scale.pack(fill="x", pady=2)
 
         def save_quick_audio():
+            if is_testing[0]:
+                toggle_quick_test()
+
             new_in = in_combo.get()
             new_out = out_combo.get()
             new_gain = float(gain_scale.get()) / 100.0
+            new_vol = float(vol_scale.get()) / 100.0
+            new_vad = float(q_vad_scale.get()) / 100.0
             
             cfg["input_device"] = new_in
             cfg["output_device"] = new_out
             cfg["mic_gain"] = new_gain
+            cfg["speaker_volume"] = new_vol
+            cfg["vad_sensitivity"] = new_vad
             save_audio_settings(cfg)
 
             self.audio_engine.preferred_input = new_in
             self.audio_engine.preferred_output = new_out
             self.audio_engine.set_gain(new_gain)
+            self.audio_engine.set_speaker_volume(new_vol)
+            self.audio_engine.vad_sensitivity = new_vad
+            self.vol_scale.set(int(new_vol * 100))
 
             # If audio active, restart stream with new devices
             if self.audio_active:
@@ -628,12 +727,19 @@ class EmbeddedSessionView(tk.Frame):
 
             top.destroy()
 
+        def on_quick_close():
+            if is_testing[0]:
+                toggle_quick_test()
+            top.destroy()
+
+        top.protocol("WM_DELETE_WINDOW", on_quick_close)
+
         btn_row = tk.Frame(top, bg="#141822")
-        btn_row.pack(fill="x", padx=16, pady=12)
+        btn_row.pack(fill="x", padx=16, pady=10)
         tk.Button(btn_row, text="Apply Changes", font=("Segoe UI", 9, "bold"), bg="#ef4444", fg="#ffffff",
                   bd=0, padx=14, pady=5, cursor="hand2", command=save_quick_audio).pack(side="left")
         tk.Button(btn_row, text="Cancel", font=("Segoe UI", 9), bg="#202534", fg="#f1f5f9",
-                  bd=0, padx=12, pady=5, cursor="hand2", command=top.destroy).pack(side="right")
+                  bd=0, padx=12, pady=5, cursor="hand2", command=on_quick_close).pack(side="right")
 
     def _toggle_voice(self):
         if not self.in_session:
@@ -687,6 +793,38 @@ class EmbeddedSessionView(tk.Frame):
         except Exception:
             self._render_pending = False
 
+    def _toggle_perf_mode(self):
+        """Toggle between ⚡ 60 FPS Fluid (motion-accelerated) and 💎 HD Sharp (always bilinear)."""
+        if self.perf_mode == "fluid":
+            self.perf_mode = "sharp"
+            self.perf_btn.config(text="💎 HD Sharp", fg="#38bdf8")
+        else:
+            self.perf_mode = "fluid"
+            self.perf_btn.config(text="⚡ 60 FPS", fg="#10b981")
+        self._trigger_render()
+
+    def _render_stationary_hd(self):
+        """Perform a single crystal-clear BILINEAR pass when motion ceases."""
+        self._idle_hd_after_id = None
+        if not self._safe_exists():
+            return
+        with self.image_lock:
+            if not self.remote_image:
+                return
+            dw = self.display_width
+            dh = self.display_height
+            rw = max(1, self.remote_width)
+            rh = max(1, self.remote_height)
+            if dw == rw and dh == rh:
+                return
+            try:
+                resized = self.remote_image.resize((dw, dh), Image.Resampling.BILINEAR)
+                self.tk_photo = ImageTk.PhotoImage(resized)
+                if self.canvas_img_id is not None:
+                    self.canvas.itemconfig(self.canvas_img_id, image=self.tk_photo)
+            except Exception:
+                pass
+
     def destroy(self):
         if hasattr(self, "_render_after_id") and self._render_after_id:
             try:
@@ -694,6 +832,12 @@ class EmbeddedSessionView(tk.Frame):
             except Exception:
                 pass
             self._render_after_id = None
+        if hasattr(self, "_idle_hd_after_id") and self._idle_hd_after_id:
+            try:
+                self.after_cancel(self._idle_hd_after_id)
+            except Exception:
+                pass
+            self._idle_hd_after_id = None
         super().destroy()
 
     def _safe_render_frame(self):
@@ -707,65 +851,85 @@ class EmbeddedSessionView(tk.Frame):
 
     def _render_frame(self):
         self._render_pending = False
-        if not self.remote_image or not self.winfo_exists():
+        if not self._safe_exists():
             return
-        cw = max(1, self.canvas.winfo_width())
-        ch = max(1, self.canvas.winfo_height())
-        rw = max(1, self.remote_width)
-        rh = max(1, self.remote_height)
 
-        if self.view_mode == "stretch":
-            # Stretch to fill canvas completely (eliminates black bars)
-            dw = max(1, int(cw * self.zoom_level))
-            dh = max(1, int(ch * self.zoom_level))
-            self.offset_x = (cw - dw) // 2
-            self.offset_y = (ch - dh) // 2
-            self.canvas_scale = dw / float(rw)
-        elif self.view_mode == "original":
-            # 1:1 Native Resolution (Pixel-for-pixel match)
-            dw = max(1, int(rw * self.zoom_level))
-            dh = max(1, int(rh * self.zoom_level))
-            self.offset_x = (cw - dw) // 2
-            self.offset_y = (ch - dh) // 2
-            self.canvas_scale = self.zoom_level
-        else:  # "fit" (Default - Auto-Adapt Aspect Ratio)
-            base_scale = min(cw / float(rw), ch / float(rh))
-            self.canvas_scale = base_scale * self.zoom_level
-            dw = max(1, int(rw * self.canvas_scale))
-            dh = max(1, int(rh * self.canvas_scale))
-            self.offset_x = (cw - dw) // 2
-            self.offset_y = (ch - dh) // 2
+        with self.image_lock:
+            if not self.remote_image:
+                return
+            cw = max(1, self.canvas.winfo_width())
+            ch = max(1, self.canvas.winfo_height())
+            rw = max(1, self.remote_width)
+            rh = max(1, self.remote_height)
 
-        self.display_width = dw
-        self.display_height = dh
-        self._clamp_pan()
+            if self.view_mode == "stretch":
+                dw = max(1, int(cw * self.zoom_level))
+                dh = max(1, int(ch * self.zoom_level))
+                self.offset_x = (cw - dw) // 2
+                self.offset_y = (ch - dh) // 2
+                self.canvas_scale = dw / float(rw)
+            elif self.view_mode == "original":
+                dw = max(1, int(rw * self.zoom_level))
+                dh = max(1, int(rh * self.zoom_level))
+                self.offset_x = (cw - dw) // 2
+                self.offset_y = (ch - dh) // 2
+                self.canvas_scale = self.zoom_level
+            else:  # "fit" (Default - Auto-Adapt Aspect Ratio)
+                base_scale = min(cw / float(rw), ch / float(rh))
+                self.canvas_scale = base_scale * self.zoom_level
+                dw = max(1, int(rw * self.canvas_scale))
+                dh = max(1, int(rh * self.canvas_scale))
+                self.offset_x = (cw - dw) // 2
+                self.offset_y = (ch - dh) // 2
 
-        final_x = self.offset_x + self.pan_x
-        final_y = self.offset_y + self.pan_y
+            self.display_width = dw
+            self.display_height = dh
+            self._clamp_pan()
 
-        # Fast Resample with PIL (zero-copy when 1:1)
-        if dw == rw and dh == rh:
-            resized = self.remote_image
-        else:
-            resized = self.remote_image.resize((dw, dh), Image.Resampling.BILINEAR)
-        self.tk_photo = ImageTk.PhotoImage(resized)
+            final_x = self.offset_x + self.pan_x
+            final_y = self.offset_y + self.pan_y
 
-        # High-performance Tkinter canvas blitting: reuse canvas image ID without destroying items
-        if self.canvas_img_id is None:
-            self.canvas_img_id = self.canvas.create_image(final_x, final_y, anchor="nw", image=self.tk_photo)
-        else:
-            self.canvas.coords(self.canvas_img_id, final_x, final_y)
-            self.canvas.itemconfig(self.canvas_img_id, image=self.tk_photo)
+            # Adaptive Motion Resampling: 1ms ultra-fast resample during active motion,
+            # followed by crisp stationary HD pass when movement stops
+            if dw == rw and dh == rh:
+                resized = self.remote_image
+            else:
+                now = time.time()
+                is_active_motion = (now - self.last_packet_time < 0.200)
+                if self.perf_mode == "fluid" and is_active_motion:
+                    # Ultra-fast nearest resample (<1ms) unlocks silky smooth 60 FPS motion
+                    resized = self.remote_image.resize((dw, dh), Image.Resampling.NEAREST)
+                    # Schedule automatic stationary HD pass
+                    if self._idle_hd_after_id:
+                        try:
+                            self.after_cancel(self._idle_hd_after_id)
+                        except Exception:
+                            pass
+                    self._idle_hd_after_id = self.after(180, self._render_stationary_hd)
+                else:
+                    resized = self.remote_image.resize((dw, dh), Image.Resampling.BILINEAR)
 
-        # Update FPS
+            self.tk_photo = ImageTk.PhotoImage(resized)
+
+            # High-performance Tkinter canvas blitting: reuse canvas image ID without destroying items
+            if self.canvas_img_id is None:
+                self.canvas_img_id = self.canvas.create_image(final_x, final_y, anchor="nw", image=self.tk_photo)
+            else:
+                self.canvas.coords(self.canvas_img_id, final_x, final_y)
+                self.canvas.itemconfig(self.canvas_img_id, image=self.tk_photo)
+
+        # Update FPS Stats
         self.frame_count += 1
         now = time.time()
         if now - self.last_fps_time >= 1.0:
-            self.fps = max(self.frame_count, self.recv_frame_count)
+            active_fps = max(self.frame_count, self.recv_frame_count)
             self.frame_count = 0
             self.recv_frame_count = 0
             self.last_fps_time = now
-            self.fps_label.config(text=f"{self.fps} FPS")
+            if active_fps > 0:
+                self.fps_label.config(text=f"{active_fps} FPS", fg="#38bdf8")
+            else:
+                self.fps_label.config(text="60 FPS (Idle)", fg="#10b981")
 
     # --- Network WebSocket Engine ---
     def _send_payload(self, msg_type: str, payload: Dict[str, Any]):
@@ -880,26 +1044,37 @@ class EmbeddedSessionView(tk.Frame):
 
         elif mtype == MessageType.VIDEO_FULL:
             self.recv_frame_count += 1
+            self.last_packet_time = time.time()
             w = payload.get("width", 1920)
             h = payload.get("height", 1080)
             b64_img = payload.get("image", "")
             if b64_img:
                 raw_bytes = base64.b64decode(b64_img)
                 img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
-                self.remote_width = w
-                self.remote_height = h
-                self.remote_image = img
+                with self.image_lock:
+                    self.remote_width = w
+                    self.remote_height = h
+                    self.remote_image = img
                 if self._safe_exists():
                     self.after(0, self._trigger_render)
 
         elif mtype == MessageType.VIDEO_DELTA:
             self.recv_frame_count += 1
-            if self.remote_image:
-                tiles = payload.get("tiles", [])
+            self.last_packet_time = time.time()
+            tiles = payload.get("tiles", [])
+            if tiles:
+                # 1. Decode tiles outside lock
+                decoded_tiles = []
                 for t in tiles:
                     raw_bytes = base64.b64decode(t["image"])
                     tile_img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
-                    self.remote_image.paste(tile_img, (t["x"], t["y"]))
+                    decoded_tiles.append((tile_img, (t["x"], t["y"])))
+                
+                # 2. Thread-safe paste to remote buffer under lock (completely eliminates 0xC0000005 crash)
+                with self.image_lock:
+                    if self.remote_image:
+                        for tile_img, pos in decoded_tiles:
+                            self.remote_image.paste(tile_img, pos)
                 if self._safe_exists():
                     self.after(0, self._trigger_render)
 

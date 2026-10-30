@@ -83,39 +83,31 @@ def main():
     token = get_github_token()
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
-    tag = "v1.1.8"
-    title = "OpenDesk v1.1.8 - Ultra-Smooth 60 FPS DeskRT Engine & In-App HD VoIP Voice"
-    body = """## What's New in OpenDesk v1.1.8
+    tag = "v1.1.9"
+    title = "OpenDesk v1.1.9 - Hard Crash Elimination, Discord HD Voice Suite & 60 FPS Adaptive Engine"
+    body = """## What's New in OpenDesk v1.1.9
 
-- **⚡ DeskRT 60 FPS High-Throughput Video Engine**:
-  - Zero-copy uint32 vectorized dirty screen difference (<1.5ms).
-  - Clustered dirty bounding box merging: reduces JPEG compression and WebSocket serialization overhead by 70%.
-  - Decoupled capture and network loops with drop-oldest frame buffer: eliminates TCP/TLS backpressure from throttling capture frame rates.
-  - High-performance Tkinter canvas blitting with single image item reuse and non-starving redraw scheduling.
-  - Completely resolves low FPS and stream stuttering, achieving smooth 30-60 FPS desktop streaming.
+- **🛡️ Critical Crash Elimination (Pillow 0xC0000005 & PortAudio IndexError Fix)**:
+  - Multithreaded thread-safe double buffering with `image_lock`: completely eliminates Pillow C access violations caused by concurrent tile pasting during canvas resizing.
+  - Safe 1D/2D PortAudio channel indexing: catches callback exceptions and guards mono speaker streams against index errors.
+  - Async task lifecycle tracking: cleanly cancels old worker loops upon peer reconnect to prevent task leakage and CPU thrashing.
 
-- **🎙️ Low-Latency VoIP Audio Pipeline & Stuttering Fix**:
-  - Continuous sample ring buffer in `AudioEngine`: fixes the critical PortAudio buffer slicing bug that discarded samples and caused robotic distortion.
-  - Native hardware sample rate support (48kHz / 44.1kHz WASAPI): ultra-low 3ms hardware latency with zero driver distortion.
-  - Digital Automatic Gain Control (AGC) with volume boost and noise gate for loud, crystal-clear speech.
-  - Real-time conversational delay kept under 50ms with jitter purging.
+- **🎧 Discord-Grade HD Voice & Video Suite**:
+  - Studio-grade 48,000 Hz VoIP standard matching Discord and WebRTC (eliminates resampling aliasing distortion).
+  - 100% backward compatibility with legacy 16kHz peers.
+  - Discord-style "Let's Check" Mic Test: real-time self-hearing loopback test directly through headphones with animated dB VU meter.
+  - Voice Activity Detection (VAD) with decibel sensitivity threshold slider and ambient noise floor auto-calibration.
+  - Push-to-Talk (PTT) mode with customizable shortcut key ([Left Ctrl]).
+  - Advanced Voice Processing: Echo Cancellation, Noise Suppression (Fan/Hum filter), and Automatic Gain Control (AGC).
 
-- **🎚️ Embedded In-App Voice & Audio Controls**:
-  - Dedicated Audio Configuration in OpenDesk Settings:
-    - Microphone Device Selector dropdown (WASAPI physical headsets auto-prioritized).
-    - Speaker / Headset Device Selector dropdown.
-    - Microphone Gain / Boost slider (50% to 200%).
-    - Speaker Volume slider (0% to 100%).
-    - Live interactive "Test Mic" button with animated real-time green VU level meter.
-  - Session Top Toolbar Audio Widget:
-    - One-click Mic Mute / Unmute button.
-    - Live voice activity indicator / mini VU meter beside the mic button.
-    - Speaker volume slider directly in toolbar.
-    - Quick audio settings launcher.
-  - Persistent audio configuration saved in `~/.opendesk/config.json`.
+- **⚡ Adaptive 60 FPS Fluid Rendering Engine**:
+  - Direct RGB BGRX Win32 DIB screen capture: eliminates per-frame RGBA-to-RGB color space conversion overhead.
+  - Sub-millisecond motion resampling (`NEAREST`) during active window movement and video playback, followed by automatic crystal-clear stationary `BILINEAR` HD pass.
+  - Session toolbar 1-click quality switch: toggle between `⚡ 60 FPS Fluid` and `💎 HD Sharp` display modes.
+  - Responsive FPS counter with clear active rates and standby status.
 
 - **🛡️ Authenticode Digital Signatures**:
-  - All executables and installer signed with SHA-256 Authenticode and DigiCert RFC 3161 timestamps expiring 2037.
+  - All installer and portable binaries signed with Authenticode SHA-256 and DigiCert RFC 3161 timestamps.
 """
     rel = create_or_get_release(token, tag, title, body)
     upload_url = rel['upload_url']
@@ -124,8 +116,8 @@ def main():
     print("Existing assets in release:", existing_asset_names)
 
     files_to_upload = [
-        (os.path.join(base_dir, 'OpenDesk_v1.1.8_Portable.exe'), 'OpenDesk_v1.1.8_Portable.exe'),
-        (os.path.join(base_dir, 'OpenDesk_Setup_v1.1.8_Installer.exe'), 'OpenDesk_Setup_v1.1.8_Installer.exe')
+        (os.path.join(base_dir, 'OpenDesk_v1.1.9_Portable.exe'), 'OpenDesk_v1.1.9_Portable.exe'),
+        (os.path.join(base_dir, 'OpenDesk_Setup_v1.1.9_Installer.exe'), 'OpenDesk_Setup_v1.1.9_Installer.exe')
     ]
 
     for fpath, aname in files_to_upload:

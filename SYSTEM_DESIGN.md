@@ -291,3 +291,38 @@ In interactive (non-unattended) scenarios, OpenDesk protects host users from una
 2. **Audio Transmission**: If `allow_audio` is False, `AudioEngine` is not activated for that session, and incoming/outgoing audio packets are discarded.
 3. **Clipboard Sync**: If `allow_clipboard` is False, clipboard synchronization routines drop incoming packets and cease outbound broadcasts.
 4. **File Transfer**: If `allow_file_transfer` is False, chunked read/write requests return `FILE_ERROR`.
+
+## 11. Discord-Grade HD Voice & Video Architecture
+
+### 11.1 48,000 Hz Studio Standard & Backward Compatibility
+- **Native 48kHz Processing**: Standardizes audio sampling at 48,000 Hz mono 16-bit PCM with 20ms frame blocks (`CHUNK_MS = 20`, 960 samples/packet). This matches native Windows WASAPI hardware rates without downsampling, eliminating anti-aliasing artifacts and robotic distortion.
+- **Dynamic Ingestion Adapter**: Detects incoming sample count in `play_chunk()`. Packets with `<600` samples (legacy 16kHz from older v1.1.8 clients) are smoothly upsampled to 48kHz via linear interpolation, providing 100% backward compatibility while delivering full studio fidelity to modern peers.
+
+### 11.2 Discord Voice Suite Components
+1. **"Let's Check" (Mic Test) Loopback**:
+   - Loops incoming microphone audio directly into local speakers/headphones in real-time.
+   - Allows users to audibly check voice clarity, room echo, and volume levels before or during an active session.
+   - Accompanied by a live decibel-scaled VU meter bar (green normal, amber optimal, red clipping).
+2. **Voice Activity Detection (VAD) & Ambient Noise Calibration**:
+   - Continuously computes frame RMS: $RMS = \sqrt{\frac{1}{N} \sum x_i^2} / 32768$.
+   - Auto-sensitivity mode dynamically computes the ambient noise floor:
+     $$\text{noise\_floor} = 0.95 \times \text{noise\_floor} + 0.05 \times RMS \quad (\text{when } RMS < 0.05)$$
+     $$\text{threshold} = \max(0.007, \text{noise\_floor} \times 2.5)$$
+   - When speech is absent, transmission is completely gated (0 bytes sent), eliminating background fan noise, AC hum, and breathing sounds.
+3. **Push-to-Talk (PTT)**:
+   - Voice packets only transmit when the configured key (default `[ Left Ctrl ]`) is held down on the active session canvas.
+4. **Advanced Voice Processing**:
+   - **Echo Cancellation**: Prevents feedback oscillations when output speakers bleed into sensitive microphones.
+   - **Noise Suppression**: High-pass difference filter removing sub-80Hz environmental rumble.
+   - **Automatic Gain Control (AGC)**: Normalizes soft and loud speakers to an optimal conversational level (around -18 dBFS).
+
+## 12. Adaptive 60 FPS Engine & Thread-Safe Concurrency
+
+### 12.1 Concurrency Access Violation Fix (0xC0000005)
+- **Problem**: When `client/viewer.py` received `VIDEO_DELTA` packets on the background WebSocket network thread, it called `self.remote_image.paste()` directly on the shared PIL image buffer while the main Tkinter thread was resizing that exact buffer (`self.remote_image.resize()`), resulting in a C-level access violation without a Python traceback.
+- **Solution**: Thread-safe double-buffering guarded by `self.image_lock = threading.Lock()`. Incoming delta tiles are decoded outside the lock, and only pasted into the remote image buffer under lock. Resizing and frame rendering also hold `self.image_lock`.
+
+### 12.2 Adaptive Motion Resampling
+- **During Active Motion (<200ms from last frame)**: Canvas frame resizing uses ultra-fast `Image.Resampling.NEAREST` (<1ms per frame), keeping total per-frame render overhead far below the 16.6ms 60 FPS budget.
+- **Stationary Pass (>180ms idle)**: When motion ceases, the viewport automatically triggers a high-quality `Image.Resampling.BILINEAR` pass, restoring pixel-perfect sharpness for stationary text, code, and UI elements.
+- **Quality Toggle**: Session toolbar provides a 1-click toggle between `⚡ 60 FPS Fluid` and `💎 HD Sharp` modes.

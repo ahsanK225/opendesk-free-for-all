@@ -64,6 +64,23 @@ class HostAgent:
         self._audio_queue = asyncio.Queue()
         self._video_queue = asyncio.Queue(maxsize=1)
 
+        # Worker Task references for clean lifecycle without leaks
+        self._video_stream_task: Optional[asyncio.Task] = None
+        self._video_sender_task: Optional[asyncio.Task] = None
+        self._audio_stream_task: Optional[asyncio.Task] = None
+
+    def _cancel_stream_tasks(self):
+        """Cancel active streaming tasks safely on session change or disconnect."""
+        for t in (self._video_stream_task, self._video_sender_task, self._audio_stream_task):
+            if t and not t.done():
+                try:
+                    t.cancel()
+                except Exception:
+                    pass
+        self._video_stream_task = None
+        self._video_sender_task = None
+        self._audio_stream_task = None
+
     def _on_mic_audio_chunk(self, b64_data: str):
         """Callback when local host microphone records an audio block."""
         if not self.running or not self.active_session:
@@ -214,10 +231,11 @@ class HostAgent:
                 "client_id": client_id,
                 "permissions": permissions
             })
-            asyncio.create_task(self._video_stream_loop())
-            asyncio.create_task(self._video_sender_worker())
+            self._cancel_stream_tasks()
+            self._video_stream_task = asyncio.create_task(self._video_stream_loop())
+            self._video_sender_task = asyncio.create_task(self._video_sender_worker())
             if allow_audio:
-                asyncio.create_task(self._audio_stream_loop())
+                self._audio_stream_task = asyncio.create_task(self._audio_stream_loop())
         else:
             print(f"[Host] Session declined for client [{client_id}].")
             await self._send_packet(MessageType.SESSION_REJECT, {
@@ -260,16 +278,18 @@ class HostAgent:
             self.codec.reset()
             self.input_controller.enabled = True
             self.audio_engine.start()
-            # Start streaming loops
-            asyncio.create_task(self._video_stream_loop())
-            asyncio.create_task(self._video_sender_worker())
-            asyncio.create_task(self._audio_stream_loop())
+            # Start streaming loops cleanly
+            self._cancel_stream_tasks()
+            self._video_stream_task = asyncio.create_task(self._video_stream_loop())
+            self._video_sender_task = asyncio.create_task(self._video_sender_worker())
+            self._audio_stream_task = asyncio.create_task(self._audio_stream_loop())
 
         elif mtype == MessageType.SESSION_END:
             print("[Host] Client disconnected.")
             self.active_session = False
             self.codec.reset()
             self.audio_engine.stop()
+            self._cancel_stream_tasks()
 
         # --- Input Events ---
         elif mtype == MessageType.INPUT_MOUSE_MOVE:
