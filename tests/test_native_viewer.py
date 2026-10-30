@@ -15,6 +15,11 @@ class TestNativeViewer(unittest.TestCase):
 
     def tearDown(self):
         try:
+            for after_id in self.root.tk.eval('after info').split():
+                try:
+                    self.root.after_cancel(after_id)
+                except Exception:
+                    pass
             self.root.destroy()
         except Exception:
             pass

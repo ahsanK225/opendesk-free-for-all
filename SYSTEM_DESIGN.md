@@ -328,4 +328,28 @@ In interactive (non-unattended) scenarios, OpenDesk protects host users from una
 ### 12.2 Adaptive Motion Resampling
 - **During Active Motion (<200ms from last frame)**: Canvas frame resizing uses ultra-fast `Image.Resampling.NEAREST` (<1ms per frame), keeping total per-frame render overhead far below the 16.6ms 60 FPS budget.
 - **Stationary Pass (>180ms idle)**: When motion ceases, the viewport automatically triggers a high-quality `Image.Resampling.BILINEAR` pass, restoring pixel-perfect sharpness for stationary text, code, and UI elements.
+
+## 13. Client-Side Titlebar Integration (CSD) & Thread-Safe UI Dispatch Queue
+
+### 13.1 Thread-Safe UI Dispatch Queue (`post_ui`)
+- **Problem**: In Python 3.12+, Tkinter strictly enforces that `widget.after()` or command callbacks cannot be registered from background worker threads. When background services (`run_agent`, Cloudflare reader, update check, or WebSocket receiver) called `root.after()`, concurrent access to Tcl's internal command hash table raised `RuntimeError: main thread is not in main loop` or corrupted the C runtime, causing `ucrtbase.dll 0xc0000409` fast-fail crashes after 2–5 seconds on startup or during remote connection with friends.
+- **Solution**: Implemented a thread-safe message queue (`self._ui_queue = queue.Queue()`) in both `OpenDeskGUI` and `EmbeddedSessionView`. Background threads enqueue UI callbacks via `self.post_ui(fn, *args, **kwargs)`, and a single recurring timer (`_process_ui_queue`) drains and executes the callbacks safely on the main GUI thread every 16ms.
+
+### 13.2 Seamless Client-Side Decoration (CSD) Titlebar
+- **Problem**: Standard Windows applications display an external OS title bar with white/gray window controls above the application body.
+- **Solution**: Removed external OS title bar while preserving native resize borders, Aero snap, and taskbar integration:
+  - Dynamically retrieves the true OS top-level window frame handle: `hwnd = int(self.root.wm_frame(), 16)`.
+  - Enables Windows 10/11 Immersive Dark Mode via DWM attribute (`DWMWA_USE_IMMERSIVE_DARK_MODE = 20`).
+  - Strips `WS_CAPTION` (`0x00C00000`) while preserving `WS_THICKFRAME`, `WS_MINIMIZEBOX`, `WS_MAXIMIZEBOX`, and `WS_SYSMENU`.
+  - Hooks `<Map>` and `<Configure>` events to maintain frameless style across window state transitions.
+  - Seamlessly integrates Minimize (`―`), Maximize/Restore (`🗖`/`🗗`), and Close (`✕`) buttons directly inside the dark top tab bar.
+  - Implements native Win32 `SC_MOVE` + `HTCAPTION` dragging and double-click maximize toggle.
+
+### 13.3 Instant Hang-Proof App Close
+- **Problem**: Synchronous shutdown of background network threads, PortAudio streams, and Cloudflare subprocesses during `_on_close` previously blocked the GUI event loop, causing Windows "Not Responding" hang dialogs.
+- **Solution**: Multi-stage instantaneous exit:
+  1. Hides the application window immediately via `self.root.withdraw()` (0ms perceived lag).
+  2. Spawns a detached background daemon worker to cleanly terminate sub-processes and close sockets.
+  3. Destroys Tkinter root widgets.
+  4. Calls `os._exit(0)` for clean, immediate kernel-level termination without thread-join deadlocks.
 - **Quality Toggle**: Session toolbar provides a 1-click toggle between `⚡ 60 FPS Fluid` and `💎 HD Sharp` modes.

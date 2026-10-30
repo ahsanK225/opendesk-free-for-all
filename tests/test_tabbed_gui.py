@@ -24,6 +24,11 @@ class TestTabbedGUI(unittest.TestCase):
         self.patcher.stop()
         self.temp_dir.cleanup()
         try:
+            for after_id in self.root.tk.eval('after info').split():
+                try:
+                    self.root.after_cancel(after_id)
+                except Exception:
+                    pass
             self.root.destroy()
         except Exception:
             pass
@@ -67,6 +72,7 @@ class TestTabbedGUI(unittest.TestCase):
             app._show_update_banner({"version": "1.3.0", "release_date": "2026-11-01", "changelog": "Test"})
             self.assertTrue(app.banner_frame.winfo_ismapped() or len(app.banner_frame.winfo_children()) > 0)
             app.banner_frame.pack_forget()
+            app.destroy()
 
         finally:
             OpenDeskGUI._start_services = original_start
@@ -122,6 +128,7 @@ class TestTabbedGUI(unittest.TestCase):
 
             button_texts = [b.cget("text") for b in all_buttons]
             self.assertTrue(any("Connect" in txt for txt in button_texts), f"Connect button not found in {button_texts}")
+            app.destroy()
         finally:
             OpenDeskGUI._start_services = original_start
 
@@ -137,6 +144,8 @@ class TestTabbedGUI(unittest.TestCase):
                 decision_result.append((cid, accepted, perms))
 
             app._on_incoming_connection_request("client_999", "999 888 777", mock_decision)
+            # Drain post_ui queue
+            app._process_ui_queue()
             self.root.update()
 
             # Find opened dialog
@@ -147,6 +156,7 @@ class TestTabbedGUI(unittest.TestCase):
 
             # Destroy dialog (simulate user reject / close)
             dialog.destroy()
+            app.destroy()
         finally:
             OpenDeskGUI._start_services = original_start
 
@@ -162,6 +172,7 @@ class TestTabbedGUI(unittest.TestCase):
             self.assertEqual(app.min_btn.cget("text"), "―")
             self.assertEqual(app.max_btn.cget("text"), "🗖")
             self.assertEqual(app.close_btn.cget("text"), "✕")
+            app.destroy()
         finally:
             OpenDeskGUI._start_services = original_start
 

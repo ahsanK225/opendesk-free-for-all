@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import time
 import urllib.request
 import subprocess
 
@@ -55,9 +56,20 @@ def main():
             'Content-Length': str(len(data))
         }
         u_req = urllib.request.Request(f"{base_upload_url}?name={aname}", data=data, headers=u_headers, method='POST')
-        with urllib.request.urlopen(u_req) as u_resp:
-            u_data = json.loads(u_resp.read())
-            print(f"✓ Successfully uploaded {aname} -> {u_data.get('browser_download_url')}")
+        
+        uploaded = False
+        for attempt in range(1, 4):
+            try:
+                with urllib.request.urlopen(u_req, timeout=120) as u_resp:
+                    u_data = json.loads(u_resp.read())
+                    print(f"✓ Successfully uploaded {aname} -> {u_data.get('browser_download_url')}")
+                    uploaded = True
+                    break
+            except Exception as e:
+                print(f"[Attempt {attempt}/3] Upload error for {aname}: {e}. Retrying in 3 seconds...")
+                time.sleep(3)
+        if not uploaded:
+            raise RuntimeError(f"Failed to upload {aname} after 3 attempts")
 
     print("\nVerifying live download URLs...")
     for aname, _ in files:

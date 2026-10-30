@@ -113,8 +113,8 @@ opendesk/
 ```
 
 ## 4. Component Responsibilities
-- **`opendesk_app.py`**: AnyDesk 8 multi-tab desktop application. Provides top tab strip (`[ 🏠 New Connection ]`, dynamic `[ 💻 <ID> ✕ ]` tabs, `+` button), left navigation sidebar, Home dashboard with This Desk card, quick connect search bar, unattended password setup, recent sessions & favorites discovery grid, and embedded in-tab session viewports.
-- **`client/viewer.py`**: Contains `EmbeddedSessionView(tk.Frame)` and `NativeSessionViewer(tk.Toplevel)`. Renders real-time DeskRT video frames onto Tkinter canvas, scales coordinates, forwards mouse/keyboard input, synchronizes clipboard, handles 16kHz audio, and manages fullscreen and shortcuts.
+- **`opendesk_app.py`**: AnyDesk 8 multi-tab desktop application. Provides top tab strip (`[ 🏠 New Connection ]`, dynamic `[ 💻 <ID> ✕ ]` tabs, `+` button), left navigation sidebar, Home dashboard with This Desk card, quick connect search bar, unattended password setup, recent sessions & favorites discovery grid, embedded in-tab session viewports, integrated modern client-side titlebar controls (Minimize `―`, Maximize `🗖`, Close `✕`), 0ms instant exit teardown, and thread-safe UI message queue (`post_ui`).
+- **`client/viewer.py`**: Contains `EmbeddedSessionView(tk.Frame)` and `NativeSessionViewer(tk.Toplevel)`. Renders real-time DeskRT video frames onto Tkinter canvas, scales coordinates, forwards mouse/keyboard input, synchronizes clipboard, handles Discord HD audio, thread-safe UI message queue (`post_ui`), and manages fullscreen and shortcuts.
 - **`host/agent.py`**: Core host engine. Captures screens, encodes delta frames, streams audio, injects input, synchronizes clipboard, and coordinates file transfers.
 - **`common/config.py`**: Persistent configuration store for 9-digit host ID, recent sessions history, aliases, favorite devices, unattended password access, and automatic update preferences.
 - **`common/rendezvous.py`**: Global rendezvous directory client and heartbeat service. Maps 9-digit OpenDesk IDs to live Cloudflare Tunnel endpoints worldwide, enabling instant AnyDesk-style cross-network discovery.

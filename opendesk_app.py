@@ -18,6 +18,7 @@ import sys
 import os
 import socket
 import threading
+import queue
 import asyncio
 import time
 import webbrowser
@@ -137,17 +138,60 @@ class OpenDeskGUI:
         # Active Sidebar Section
         self.active_nav_section = "home"
 
+        # Thread-safe UI dispatch queue for background threads
+        self._ui_queue: queue.Queue = queue.Queue()
+        self._ui_queue_timer = None
+        self._is_closing = False
+
         self._setup_window()
         self._build_top_tab_bar()
         self._build_update_banner()
         self._build_main_body()
         self._build_bottom_status_bar()
 
+        # Start UI event pump on main thread
+        self._process_ui_queue()
+
         # Initialize Home Tab
         self._create_home_tab()
 
         # Start Services
         self._start_services()
+
+    def post_ui(self, fn, *args, **kwargs):
+        """Thread-safe dispatch from background worker threads to Tkinter main thread."""
+        if not getattr(self, "_is_closing", False):
+            self._ui_queue.put((fn, args, kwargs))
+
+    def destroy(self):
+        """Stops UI timers and cleans up Tkinter resources cleanly."""
+        self._is_closing = True
+        if getattr(self, "_ui_queue_timer", None):
+            try:
+                self.root.after_cancel(self._ui_queue_timer)
+            except Exception:
+                pass
+        self._ui_queue_timer = None
+
+    def _process_ui_queue(self):
+        """Drains pending UI updates on the main Tkinter thread without cross-thread Tcl locks."""
+        if getattr(self, "_is_closing", False):
+            return
+        try:
+            while not self._ui_queue.empty():
+                fn, args, kwargs = self._ui_queue.get_nowait()
+                try:
+                    fn(*args, **kwargs)
+                except Exception as e:
+                    print(f"[OpenDesk UI Queue] Error executing {getattr(fn, '__name__', str(fn))}: {e}")
+        except Exception:
+            pass
+        finally:
+            try:
+                if self.root and self.root.winfo_exists() and not getattr(self, "_is_closing", False):
+                    self._ui_queue_timer = self.root.after(16, self._process_ui_queue)
+            except Exception:
+                pass
 
     def _setup_window(self):
         self.root.title("OpenDesk - AnyDesk Free For All Edition")
@@ -159,8 +203,26 @@ class OpenDeskGUI:
             self.root.eval('tk::PlaceWindow . center')
         except Exception:
             pass
+
         # Seamless Client-Side Decoration: integrate window controls inside app on Windows
         self._apply_custom_frameless_window()
+        # Bind Map event and configure event to preserve frameless CSD and sync maximize button
+        self.root.bind("<Map>", lambda e: self._apply_custom_frameless_window() if e.widget == self.root else None)
+        self.root.bind("<Configure>", self._on_window_configure)
+        try:
+            if self.root and self.root.winfo_exists() and not getattr(self, "_is_closing", False):
+                self.root.after(50, self._apply_custom_frameless_window)
+                self.root.after(200, self._apply_custom_frameless_window)
+        except Exception:
+            pass
+
+    def _on_window_configure(self, event):
+        if event.widget == self.root and hasattr(self, "max_btn"):
+            try:
+                is_maximized = self.root.state() == "zoomed"
+                self.max_btn.config(text="🗗" if is_maximized else "🗖")
+            except Exception:
+                pass
 
     def _apply_custom_frameless_window(self):
         """
@@ -175,7 +237,12 @@ class OpenDeskGUI:
                 return
             import ctypes
             self.root.update_idletasks()
-            hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id()) or self.root.winfo_id()
+            try:
+                hwnd = int(self.root.wm_frame(), 16)
+            except Exception:
+                hwnd = 0
+            if not hwnd:
+                hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id()) or self.root.winfo_id()
 
             # 1. Enable Windows 10/11 Immersive Dark Mode for DWM borders
             try:
@@ -193,9 +260,10 @@ class OpenDeskGUI:
             WS_THICKFRAME = 0x00040000
             WS_MINIMIZEBOX = 0x00020000
             WS_MAXIMIZEBOX = 0x00010000
+            WS_SYSMENU = 0x00080000
 
             style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
-            new_style = (style & ~WS_CAPTION) | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
+            new_style = (style & ~WS_CAPTION) | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU
             ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, new_style)
 
             SWP_NOZORDER = 0x0004
@@ -212,6 +280,18 @@ class OpenDeskGUI:
     def _start_window_drag(self, event):
         """Native Windows silky-smooth window dragging with Aero snap support."""
         if sys.platform == "win32":
+            try:
+                import ctypes
+                try:
+                    hwnd = int(self.root.wm_frame(), 16)
+                except Exception:
+                    hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id()) or self.root.winfo_id()
+                ctypes.windll.user32.ReleaseCapture()
+                ctypes.windll.user32.SendMessageW(hwnd, 0x0112, 0xF012, 0)
+                if hasattr(self, "max_btn"):
+                    self.max_btn.config(text="🗗" if self.root.state() == "zoomed" else "🗖")
+            except Exception:
+                pass
             try:
                 import ctypes
                 hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id()) or self.root.winfo_id()
@@ -430,40 +510,43 @@ class OpenDeskGUI:
                     def on_delta_prog(downloaded, total, cur_file, idx, total_files):
                         pct = int((downloaded / total) * 100) if total > 0 else 50
                         txt = f"Downloading delta ({idx}/{total_files}): {cur_file} ({downloaded/1024:.1f} KB / {total/1024:.1f} KB)"
-                        dialog.after(0, lambda: [
-                            progress_bar.configure(value=pct),
-                            status_lbl.configure(text=txt, fg="#f1f5f9")
+                        self.post_ui(lambda: [
+                            progress_bar.configure(value=pct) if progress_bar.winfo_exists() else None,
+                            status_lbl.configure(text=txt, fg="#f1f5f9") if status_lbl.winfo_exists() else None
                         ])
 
                     inc = IncrementalUpdater(install_dir=get_install_dir(), manifest_url="", current_version=APP_VERSION)
                     success, staging_or_err = inc.download_delta(diff_plan, progress_callback=on_delta_prog, cancel_flag=lambda: cancel_flag[0])
 
                     if success and not cancel_flag[0]:
-                        dialog.after(0, lambda: [
-                            status_lbl.configure(text="✓ SHA-256 hashes verified! Applying staged files...", fg="#22c55e"),
+                        self.post_ui(lambda: [
+                            status_lbl.configure(text="✓ SHA-256 hashes verified! Applying staged files...", fg="#22c55e") if status_lbl.winfo_exists() else None,
                         ])
                         apply_ok, msg = inc.apply_staged_update(diff_plan, staging_or_err)
                         if apply_ok:
-                            dialog.after(0, lambda: [
-                                status_lbl.configure(text="✓ Update applied! Relaunching in 1 second...", fg="#22c55e"),
-                                dialog.after(800, lambda: apply_update_and_restart(sys.executable))
+                            def restart_soon():
+                                time.sleep(0.8)
+                                apply_update_and_restart(sys.executable)
+                            self.post_ui(lambda: [
+                                status_lbl.configure(text="✓ Update applied! Relaunching in 1 second...", fg="#22c55e") if status_lbl.winfo_exists() else None,
                             ])
+                            threading.Thread(target=restart_soon, daemon=True).start()
                         else:
-                            dialog.after(0, lambda: [
-                                status_lbl.configure(text=f"Failed to apply: {msg}", fg="#ef4444"),
-                                apply_btn.configure(state="normal", text="Retry Update")
+                            self.post_ui(lambda: [
+                                status_lbl.configure(text=f"Failed to apply: {msg}", fg="#ef4444") if status_lbl.winfo_exists() else None,
+                                apply_btn.configure(state="normal", text="Retry Update") if apply_btn.winfo_exists() else None
                             ])
                     elif not cancel_flag[0]:
-                        dialog.after(0, lambda: [
-                            status_lbl.configure(text=f"Download failed: {staging_or_err}", fg="#ef4444"),
-                            apply_btn.configure(state="normal", text="Retry Update")
+                        self.post_ui(lambda: [
+                            status_lbl.configure(text=f"Download failed: {staging_or_err}", fg="#ef4444") if status_lbl.winfo_exists() else None,
+                            apply_btn.configure(state="normal", text="Retry Update") if apply_btn.winfo_exists() else None
                         ])
                     return
 
                 # Fallback full binary download
                 download_url = update_info.get("download_url", "")
                 if not download_url:
-                    messagebox.showerror("Error", "Download URL not found in update manifest.", parent=dialog)
+                    self.post_ui(lambda: messagebox.showerror("Error", "Download URL not found in update manifest.", parent=dialog) if dialog.winfo_exists() else None)
                     return
 
                 temp_dir = tempfile.gettempdir()
@@ -475,25 +558,28 @@ class OpenDeskGUI:
                         mb_dl = downloaded / (1024 * 1024)
                         mb_tot = total / (1024 * 1024)
                         txt = f"Downloading: {mb_dl:.1f} MB / {mb_tot:.1f} MB ({pct}%)"
-                        dialog.after(0, lambda: [
-                            progress_bar.configure(value=pct),
-                            status_lbl.configure(text=txt, fg="#f1f5f9")
+                        self.post_ui(lambda: [
+                            progress_bar.configure(value=pct) if progress_bar.winfo_exists() else None,
+                            status_lbl.configure(text=txt, fg="#f1f5f9") if status_lbl.winfo_exists() else None
                         ])
 
                 err_holder = []
                 success = download_update_file(download_url, temp_exe, on_progress, cancel_flag=lambda: cancel_flag[0], error_holder=err_holder)
 
                 if success and not cancel_flag[0]:
-                    dialog.after(0, lambda: [
-                        status_lbl.configure(text="✓ Download complete! Relaunching into new version in 1 second...", fg="#22c55e"),
-                        dialog.after(800, lambda: apply_update_and_restart(temp_exe))
+                    def restart_exe():
+                        time.sleep(0.8)
+                        apply_update_and_restart(temp_exe)
+                    self.post_ui(lambda: [
+                        status_lbl.configure(text="✓ Download complete! Relaunching into new version in 1 second...", fg="#22c55e") if status_lbl.winfo_exists() else None,
                     ])
+                    threading.Thread(target=restart_exe, daemon=True).start()
                 elif not cancel_flag[0]:
                     err_msg = err_holder[0] if err_holder else "Download failed. Please check internet connection."
-                    dialog.after(0, lambda: [
-                        status_lbl.configure(text=f"Failed: {err_msg}", fg="#ef4444"),
-                        apply_btn.configure(state="normal", text="📥 Retry Download"),
-                        browser_btn.pack(side="left", padx=6)
+                    self.post_ui(lambda: [
+                        status_lbl.configure(text=f"Failed: {err_msg}", fg="#ef4444") if status_lbl.winfo_exists() else None,
+                        apply_btn.configure(state="normal", text="📥 Retry Download") if apply_btn.winfo_exists() else None,
+                        browser_btn.pack(side="left", padx=6) if browser_btn.winfo_exists() else None
                     ])
 
             threading.Thread(target=run_dl, daemon=True).start()
@@ -574,7 +660,7 @@ class OpenDeskGUI:
                 else:
                     messagebox.showwarning("Update Check", "Unable to reach the update server. Please check your internet connection.", parent=parent_win)
 
-            check_win.after(0, on_done)
+            self.post_ui(on_done)
 
         threading.Thread(target=do_check, daemon=True).start()
 
@@ -1117,7 +1203,7 @@ class OpenDeskGUI:
     def _on_incoming_connection_request(self, client_id: str, display_id: str, on_decision: Callable):
         """Dispatches incoming AnyDesk connection request dialog to Tkinter UI main thread."""
         if self.root and self.root.winfo_exists():
-            self.root.after(0, lambda: self._show_incoming_connection_dialog(client_id, display_id, on_decision))
+            self.post_ui(self._show_incoming_connection_dialog, client_id, display_id, on_decision)
         else:
             on_decision(client_id, False, {})
 
@@ -1540,7 +1626,7 @@ class OpenDeskGUI:
                 while True:
                     if self.host_agent.assigned_id:
                         self.assigned_id = self.host_agent.assigned_id
-                        self.root.after(0, self._on_agent_online)
+                        self.post_ui(self._on_agent_online)
                         break
                     await asyncio.sleep(0.2)
 
@@ -1563,7 +1649,7 @@ class OpenDeskGUI:
                 if get_auto_update_enabled():
                     info = check_for_updates(current_version=APP_VERSION)
                     if info and info.get("available"):
-                        self.root.after(0, lambda: self._show_update_banner(info))
+                        self.post_ui(self._show_update_banner, info)
             except Exception as e:
                 print(f"[OpenDesk] Background update check notice: {e}")
 
@@ -1580,7 +1666,7 @@ class OpenDeskGUI:
 
     def _on_tunnel_url_ready(self, url: str):
         self.public_url = url
-        self.root.after(0, self._update_tunnel_ui)
+        self.post_ui(self._update_tunnel_ui)
         if self.assigned_id and url:
             threading.Thread(target=lambda: publish_host_rendezvous(self.assigned_id, url), daemon=True).start()
             if self.rendezvous_heartbeat is None:
@@ -1603,6 +1689,13 @@ class OpenDeskGUI:
         Immediately hides the window (0ms perceived lag), stops services in background,
         destroys Tkinter, and calls os._exit(0) to eliminate Python/PortAudio thread deadlocks.
         """
+        self._is_closing = True
+        if hasattr(self, "_ui_queue_timer") and self._ui_queue_timer:
+            try:
+                self.root.after_cancel(self._ui_queue_timer)
+            except Exception:
+                pass
+
         # 1. Immediately hide window so user sees instant close with zero freeze
         try:
             self.root.withdraw()

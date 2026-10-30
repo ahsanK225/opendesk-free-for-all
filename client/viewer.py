@@ -20,6 +20,7 @@ import json
 import base64
 import asyncio
 import threading
+import queue
 import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import Optional, Dict, Any, Callable
@@ -106,9 +107,36 @@ class EmbeddedSessionView(tk.Frame):
         self.canvas_img_id = None
         self._fps_after_id = None
 
+        # Thread-safe UI dispatch queue for background WebSocket / decode threads
+        self._ui_queue: queue.Queue = queue.Queue()
+        self._is_closed = False
+
         self._build_ui()
         self._start_connection()
+        self._process_ui_queue()
         self._fps_after_id = self.after(1000, self._tick_fps)
+
+    def post_ui(self, fn, *args, **kwargs):
+        """Thread-safe UI callback dispatch to Tkinter main thread."""
+        if not getattr(self, "_is_closed", False):
+            self._ui_queue.put((fn, args, kwargs))
+
+    def _process_ui_queue(self):
+        """Drains pending UI updates on the main Tkinter thread without cross-thread Tcl locks."""
+        if getattr(self, "_is_closed", False):
+            return
+        try:
+            while not self._ui_queue.empty():
+                fn, args, kwargs = self._ui_queue.get_nowait()
+                try:
+                    fn(*args, **kwargs)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        finally:
+            if not getattr(self, "_is_closed", False) and self._safe_exists():
+                self._ui_queue_timer = self.after(16, self._process_ui_queue)
 
     def _build_ui(self):
         # --- Top Session Toolbar ---
@@ -827,6 +855,12 @@ class EmbeddedSessionView(tk.Frame):
                 pass
 
     def destroy(self):
+        if hasattr(self, "_ui_queue_timer") and self._ui_queue_timer:
+            try:
+                self.after_cancel(self._ui_queue_timer)
+            except Exception:
+                pass
+            self._ui_queue_timer = None
         if hasattr(self, "_fps_after_id") and self._fps_after_id:
             try:
                 self.after_cancel(self._fps_after_id)
@@ -965,10 +999,9 @@ class EmbeddedSessionView(tk.Frame):
                 # 0. Automatically resolve remote host ID if relay is set to auto or not explicitly provided
                 effective_relay = self.relay_url
                 if not effective_relay or effective_relay == "auto":
-                    if self.winfo_exists():
-                        self.after(0, lambda: self.status_badge.config(
-                            text=f"● Resolving [{self.target_id}]...", bg="#252a38", fg="#e0af68"
-                        ))
+                    self.post_ui(lambda: self.status_badge.config(
+                        text=f"● Resolving [{self.target_id}]...", bg="#252a38", fg="#e0af68"
+                    ) if self._safe_exists() else None)
                     resolved_url = None
                     try:
                         resolved_url = resolve_host_rendezvous(self.target_id)
@@ -980,17 +1013,15 @@ class EmbeddedSessionView(tk.Frame):
                         scheme = "ws" if "127.0.0.1" in clean_host or "localhost" in clean_host else "wss"
                         effective_relay = f"{scheme}://{clean_host}/ws"
                     else:
-                        if self._safe_exists():
-                            self.after(0, lambda: self._on_connection_error(
-                                f"Host [{self.target_id}] is offline or ID not found in global registry.\n\n"
-                                f"Ensure the remote OpenDesk app is running on the host machine and connected to the internet."
-                            ))
+                        self.post_ui(lambda: self._on_connection_error(
+                            f"Host [{self.target_id}] is offline or ID not found in global registry.\n\n"
+                            f"Ensure the remote OpenDesk app is running on the host machine and connected to the internet."
+                        ) if self._safe_exists() else None)
                         return
 
-                if self._safe_exists():
-                    self.after(0, lambda: self.status_badge.config(
-                        text=f"● Connecting [{self.target_id}]...", bg="#252a38", fg="#e0af68"
-                    ))
+                self.post_ui(lambda: self.status_badge.config(
+                    text=f"● Connecting [{self.target_id}]...", bg="#252a38", fg="#e0af68"
+                ) if self._safe_exists() else None)
 
                 async with aiohttp.ClientSession() as session:
                     self.session = session
@@ -1012,8 +1043,7 @@ class EmbeddedSessionView(tk.Frame):
                                     break
                     except Exception as e:
                         print(f"[Viewer] Connection error: {e}")
-                        if self._safe_exists():
-                            self.after(0, lambda: self._on_connection_error(str(e)))
+                        self.post_ui(lambda: self._on_connection_error(str(e)) if self._safe_exists() else None)
 
             self.loop.run_until_complete(main_ws())
 
@@ -1035,22 +1065,18 @@ class EmbeddedSessionView(tk.Frame):
             if status == "ok":
                 self.in_session = True
                 self.granted_permissions = payload.get("permissions", {}) or {"input": True, "audio": True, "clipboard": True, "file_transfer": True}
-                if self._safe_exists():
-                    self.after(0, self._on_session_connected)
+                self.post_ui(self._on_session_connected)
             elif status == "waiting_approval":
-                if self._safe_exists():
-                    self.after(0, lambda: self.status_badge.config(
-                        text=f"● Waiting for [{self.target_id}] to accept...",
-                        bg="#252a38", fg="#38bdf8"
-                    ))
+                self.post_ui(lambda: self.status_badge.config(
+                    text=f"● Waiting for [{self.target_id}] to accept...",
+                    bg="#252a38", fg="#38bdf8"
+                ) if self._safe_exists() else None)
             elif status == "rejected":
                 msg = payload.get("message", "Connection request was declined by the remote user.")
-                if self._safe_exists():
-                    self.after(0, lambda: self._on_connection_error(f"Connection Declined:\n\n{msg}"))
+                self.post_ui(lambda: self._on_connection_error(f"Connection Declined:\n\n{msg}") if self._safe_exists() else None)
             else:
                 msg = payload.get("message", "Could not connect to host.")
-                if self._safe_exists():
-                    self.after(0, lambda: self._on_connection_error(msg))
+                self.post_ui(lambda: self._on_connection_error(msg) if self._safe_exists() else None)
 
         elif mtype == MessageType.VIDEO_FULL:
             self.recv_frame_count += 1
@@ -1065,8 +1091,7 @@ class EmbeddedSessionView(tk.Frame):
                     self.remote_width = w
                     self.remote_height = h
                     self.remote_image = img
-                if self._safe_exists():
-                    self.after(0, self._trigger_render)
+                self.post_ui(self._trigger_render)
 
         elif mtype == MessageType.VIDEO_DELTA:
             self.recv_frame_count += 1
@@ -1085,8 +1110,7 @@ class EmbeddedSessionView(tk.Frame):
                     if self.remote_image:
                         for tile_img, pos in decoded_tiles:
                             self.remote_image.paste(tile_img, pos)
-                if self._safe_exists():
-                    self.after(0, self._trigger_render)
+                self.post_ui(self._trigger_render)
 
         elif mtype == MessageType.CLIPBOARD_TEXT:
             text = payload.get("text", "")
@@ -1099,8 +1123,7 @@ class EmbeddedSessionView(tk.Frame):
                 self.audio_engine.play_chunk(data)
 
         elif mtype == MessageType.SESSION_END:
-            if self.winfo_exists():
-                self.after(0, self._on_remote_disconnected)
+            self.post_ui(self._on_remote_disconnected)
 
     def _on_session_connected(self):
         perms = getattr(self, "granted_permissions", {})
@@ -1125,12 +1148,30 @@ class EmbeddedSessionView(tk.Frame):
 
     def close(self):
         """Cleanly terminate the session, audio, network, and trigger close callback."""
+        self._is_closed = True
         self.running = False
         self.in_session = False
+        if hasattr(self, "_ui_queue_timer") and self._ui_queue_timer:
+            try:
+                self.after_cancel(self._ui_queue_timer)
+            except Exception:
+                pass
+            self._ui_queue_timer = None
+        if hasattr(self, "_fps_after_id") and self._fps_after_id:
+            try:
+                self.after_cancel(self._fps_after_id)
+            except Exception:
+                pass
         if hasattr(self, "_render_after_id") and self._render_after_id:
             try:
                 self.after_cancel(self._render_after_id)
             except Exception:
+                pass
+        if hasattr(self, "_idle_hd_after_id") and self._idle_hd_after_id:
+            try:
+                self.after_cancel(self._idle_hd_after_id)
+            except Exception:
+                pass
                 pass
         try:
             self.audio_engine.stop()
