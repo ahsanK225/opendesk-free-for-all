@@ -104,9 +104,11 @@ class EmbeddedSessionView(tk.Frame):
         self.last_fps_time = time.time()
         self.rtt_ms = 0
         self.canvas_img_id = None
+        self._fps_after_id = None
 
         self._build_ui()
         self._start_connection()
+        self._fps_after_id = self.after(1000, self._tick_fps)
 
     def _build_ui(self):
         # --- Top Session Toolbar ---
@@ -136,7 +138,7 @@ class EmbeddedSessionView(tk.Frame):
         voice_group = tk.Frame(actions_frame, bg="#161922")
         voice_group.pack(side="left", padx=3)
 
-        self.voice_btn = tk.Button(voice_group, text="🎙️ Mic: OFF", font=("Segoe UI", 8, "bold"),
+        self.voice_btn = tk.Button(voice_group, text="🎙️ Voice: READY", font=("Segoe UI", 8, "bold"),
                                    bg="#24283b", fg="#c0caf5", activebackground="#2f344d", activeforeground="#7aa2f7",
                                    bd=0, padx=7, pady=3, cursor="hand2", command=self._toggle_voice)
         self.voice_btn.pack(side="left")
@@ -745,13 +747,12 @@ class EmbeddedSessionView(tk.Frame):
         if not self.in_session:
             return
         self.audio_active = not self.audio_active
+        self.audio_engine.mic_enabled = self.audio_active
         if self.audio_active:
-            self.audio_engine.mic_enabled = True
             self.audio_engine.start()
-            self.voice_btn.config(text="🎙️ Mic: ON", bg="#1f382a", fg="#10b981")
+            self.voice_btn.config(text="🎙️ Voice: ON", bg="#1f382a", fg="#10b981")
         else:
-            self.audio_engine.mic_enabled = False
-            self.voice_btn.config(text="🎙️ Mic: OFF", bg="#24283b", fg="#c0caf5")
+            self.voice_btn.config(text="🎙️ Voice: MUTED", bg="#3d2a1f", fg="#e0af68")
             # Clear VU meter
             if hasattr(self, "vu_canvas") and self.vu_canvas.winfo_exists():
                 self.vu_canvas.coords(self.vu_bar_id, 0, 0, 0, 13)
@@ -826,6 +827,12 @@ class EmbeddedSessionView(tk.Frame):
                 pass
 
     def destroy(self):
+        if hasattr(self, "_fps_after_id") and self._fps_after_id:
+            try:
+                self.after_cancel(self._fps_after_id)
+            except Exception:
+                pass
+            self._fps_after_id = None
         if hasattr(self, "_render_after_id") and self._render_after_id:
             try:
                 self.after_cancel(self._render_after_id)
@@ -839,6 +846,19 @@ class EmbeddedSessionView(tk.Frame):
                 pass
             self._idle_hd_after_id = None
         super().destroy()
+
+    def _tick_fps(self):
+        """Periodic 1-second timer ensuring real-time FPS reporting never freezes on idle."""
+        self._fps_after_id = None
+        if not self._safe_exists():
+            return
+        active_fps = self.recv_frame_count
+        self.recv_frame_count = 0
+        if active_fps > 0:
+            self.fps_label.config(text=f"{active_fps} FPS", fg="#38bdf8")
+        else:
+            self.fps_label.config(text="60 FPS (Standby)", fg="#10b981")
+        self._fps_after_id = self.after(1000, self._tick_fps)
 
     def _safe_render_frame(self):
         self._render_pending = False
@@ -918,18 +938,8 @@ class EmbeddedSessionView(tk.Frame):
                 self.canvas.coords(self.canvas_img_id, final_x, final_y)
                 self.canvas.itemconfig(self.canvas_img_id, image=self.tk_photo)
 
-        # Update FPS Stats
+        # Update frame counter
         self.frame_count += 1
-        now = time.time()
-        if now - self.last_fps_time >= 1.0:
-            active_fps = max(self.frame_count, self.recv_frame_count)
-            self.frame_count = 0
-            self.recv_frame_count = 0
-            self.last_fps_time = now
-            if active_fps > 0:
-                self.fps_label.config(text=f"{active_fps} FPS", fg="#38bdf8")
-            else:
-                self.fps_label.config(text="60 FPS (Idle)", fg="#10b981")
 
     # --- Network WebSocket Engine ---
     def _send_payload(self, msg_type: str, payload: Dict[str, Any]):
@@ -1099,7 +1109,11 @@ class EmbeddedSessionView(tk.Frame):
         else:
             self.status_badge.config(text=f"● Connected [{self.target_id}]", bg="#1f382a", fg="#9ece6a")
         if perms.get("audio", True):
+            self.audio_active = True
+            self.audio_engine.mic_enabled = True
             self.audio_engine.start()
+            if hasattr(self, "voice_btn") and self.voice_btn.winfo_exists():
+                self.voice_btn.config(text="🎙️ Voice: ON", bg="#1f382a", fg="#10b981")
 
     def _on_connection_error(self, err_msg: str):
         messagebox.showerror("Connection Error", f"Unable to establish session with [{self.target_id}]:\n\n{err_msg}")

@@ -846,15 +846,43 @@ class OpenDeskGUI:
     # BOTTOM STATUS BAR
     # =========================================================================
     def _build_bottom_status_bar(self):
-        bottom_bar = tk.Frame(self.root, bg="#12151e", height=30)
+        bottom_bar = tk.Frame(self.root, bg="#12151e", height=32)
         bottom_bar.pack(fill="x", side="bottom")
 
         self.bottom_status_label = tk.Label(bottom_bar, text=f"Local Relay: http://localhost:{self.port}",
                                             font=("Segoe UI", 8), bg="#12151e", fg="#64748b")
         self.bottom_status_label.pack(side="left", padx=14, pady=4)
 
+        # Center: In-App Embedded Discord HD Voice Controls ("App Ke Ander Hi")
+        voice_center = tk.Frame(bottom_bar, bg="#12151e")
+        voice_center.pack(side="left", padx=16)
+
+        tk.Label(voice_center, text="🎧 Discord HD Voice:", font=("Segoe UI", 8, "bold"),
+                 bg="#12151e", fg="#38bdf8").pack(side="left", padx=(0, 4))
+
+        self.b_test_mic_btn = tk.Button(voice_center, text="🎙️ Let's Check Mic", font=("Segoe UI", 8),
+                                        bg="#1a1e2b", fg="#10b981", activebackground="#24283b",
+                                        bd=0, padx=8, pady=2, cursor="hand2", command=self._toggle_bottom_mic_test)
+        self.b_test_mic_btn.pack(side="left", padx=4)
+
+        tk.Button(voice_center, text="⚙️ Audio Settings", font=("Segoe UI", 8),
+                  bg="#1a1e2b", fg="#94a3b8", activebackground="#24283b",
+                  bd=0, padx=8, pady=2, cursor="hand2", command=self._open_settings).pack(side="left", padx=4)
+
         tk.Label(bottom_bar, text=f"DeskRT 60FPS Delta Engine • 48kHz Discord HD Voice • v{APP_VERSION} (Digitally Signed)",
                  font=("Segoe UI", 8), bg="#12151e", fg="#64748b").pack(side="right", padx=14, pady=4)
+
+    def _toggle_bottom_mic_test(self):
+        """In-app Discord loopback mic test directly on the main window status bar."""
+        if not self.host_agent or not hasattr(self.host_agent, "audio_engine"):
+            return
+        engine = self.host_agent.audio_engine
+        if not engine.loopback_test_active:
+            engine.start_loopback_test()
+            self.b_test_mic_btn.config(text="⏹️ Stop Mic Test", bg="#ef4444", fg="#ffffff")
+        else:
+            engine.stop_loopback_test()
+            self.b_test_mic_btn.config(text="🎙️ Let's Check Mic", bg="#1a1e2b", fg="#10b981")
 
     # =========================================================================
     # SESSION CONNECTION & TAB EMBEDDING
@@ -1016,6 +1044,13 @@ class OpenDeskGUI:
                     dialog.destroy()
                 except Exception:
                     pass
+                if accepted:
+                    clean_id = self._format_id(display_id)
+                    self.bottom_status_label.config(
+                        text=f"🟢 Remote Client Connected [{clean_id}] • 🎙️ Discord HD Voice: Active",
+                        fg="#10b981"
+                    )
+                    self.status_badge.config(text=f"● IN SESSION [{clean_id}]", bg="#1f382a", fg="#10b981")
                 on_decision(client_id, accepted, perms)
 
         dialog.protocol("WM_DELETE_WINDOW", lambda: respond(False))

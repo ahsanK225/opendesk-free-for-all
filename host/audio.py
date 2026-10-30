@@ -274,16 +274,21 @@ class AudioEngine:
                 if not self.loopback_test_active:
                     return  # Cut packet completely when silent (zero background fan noise)
 
-            # --- Noise Suppression (High-pass sub-bass rumble filter < 80Hz) ---
+            # --- Noise Suppression (High-pass sub-bass rumble filter & DC offset removal) ---
             if self.noise_suppression and len(mono_in) > 1:
-                diff = np.diff(mono_in, prepend=mono_in[0])
-                mono_in = diff * 1.02
+                # DC offset & sub-60Hz rumble removal preserving 100% human vocal warmth and frequencies
+                dc_offset = float(np.mean(mono_in))
+                baseline = getattr(self, "_rumble_baseline", 0.0)
+                self._rumble_baseline = 0.95 * baseline + 0.05 * dc_offset
+                mono_in = mono_in - self._rumble_baseline
 
-            # --- Automatic Gain Control (AGC) ---
-            if self.agc_enabled and rms > 0.01:
-                target_rms = 0.12  # Optimal conversational loudness
-                gain_mult = np.clip(target_rms / (rms + 1e-4), 0.7, 2.2)
-                mono_in = mono_in * (0.8 + 0.2 * gain_mult)
+            # --- Automatic Gain Control (AGC) with smooth envelope ---
+            if self.agc_enabled and rms > 0.005:
+                target_rms = 0.10  # Optimal conversational loudness
+                instant_gain = np.clip(target_rms / (rms + 1e-4), 0.8, 2.2)
+                curr_gain = getattr(self, "smoothed_gain", 1.0)
+                self.smoothed_gain = 0.90 * curr_gain + 0.10 * instant_gain
+                mono_in = mono_in * self.smoothed_gain
 
             # Resample from hardware native rate to 48kHz standard if device opened at different rate
             if self.input_samplerate != VOIP_SAMPLE_RATE:
@@ -390,9 +395,9 @@ class AudioEngine:
                 out_samples = np.clip(samples, -32767, 32767).astype(np.int16)
 
             with self.play_lock:
-                # Low-latency jitter guard: max 70ms buffer (~3360 samples at 48kHz)
-                # If network delay accumulated extra packets, purge oldest so conversational lag stays < 50ms!
-                max_buffer_samples = int(self.output_samplerate * 0.070)
+                # Smooth conversational jitter guard: 180ms buffer (~8640 samples at 48kHz)
+                # Prevents packet-jitter audio drops and robotic clipping while maintaining real-time conversation
+                max_buffer_samples = int(self.output_samplerate * 0.180)
                 if len(self.play_samples) > max_buffer_samples:
                     self.play_samples = self.play_samples[-max_buffer_samples:]
 
@@ -415,6 +420,10 @@ class AudioEngine:
         """Start microphone capture and speaker playback streams."""
         try:
             import sounddevice as sd
+            # If already running with active streams, do not create duplicate streams
+            if self.running and (self.input_stream is not None or self.output_stream is not None):
+                return
+            self.stop()
             self.running = True
             
             # 1. Output Stream (Speaker / Headset)

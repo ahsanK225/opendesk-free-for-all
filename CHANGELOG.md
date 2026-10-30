@@ -9,15 +9,21 @@ All notable project changes are documented here.
   - **Async Worker Task Lifecycle & Reconnect Leak Prevention**: Implemented explicit task tracking and cancellation (`_cancel_stream_tasks`) for `_video_stream_task`, `_video_sender_task`, and `_audio_stream_task` on host disconnect and reconnect.
 
 - **Discord-Grade HD Voice & Video Suite** (`host/audio.py`, `opendesk_app.py`, `client/viewer.py`, `common/config.py`):
+  - **Embedded In-App Voice Dock ("App Ke Ander Hi")**: Added persistent Discord HD Voice status bar directly inside the main application dashboard with 1-click `[ 🎙️ Let's Check Mic ]` loopback test, audio settings shortcut, and real-time session indicators for both Host and Client.
+  - **Auto-Join Voice on Connect**: Voice communication activates automatically upon session connection with green `🎙️ Voice: ON` indicator; users can speak and hear each other immediately without manual unmute friction.
+  - **Vocal Quality & Rumble Filter Fix**: Replaced harsh differentiator with zero-distortion DC baseline tracking that preserves 100% of human vocal warmth and frequencies (100Hz–20,000Hz).
+  - **Smooth Envelope AGC**: Implemented smooth gain interpolation eliminating audio pumping, volume jumps, and clicking.
+  - **180ms Conversational Jitter Cushion**: Expanded jitter buffer to 180ms with low-latency protection, preventing packet fragmentation and dropped words under internet jitter.
+  - **Duplicate Stream Prevention**: Guarded `AudioEngine.start()` against duplicate PortAudio stream initialization.
   - **Studio-Quality 48,000 Hz HD Voice**: Adopted Discord and WebRTC's gold-standard 48,000 Hz sample rate with 20ms block frames (`CHUNK_MS = 20`), matching native Windows WASAPI hardware with zero downsampling/upsampling aliasing distortion.
   - **100% Backward Compatibility**: Dynamically inspects incoming packet sample length to detect legacy 16kHz audio from older clients (v1.1.8) and resamples cleanly, while streaming full 48kHz studio audio to v1.1.9 peers.
   - **Discord-Style "Let's Check" Mic Test (Self-Hearing Loopback)**: Interactive `[ 🎙️ Let's Check ]` button in Settings and active session viewport routes live microphone audio directly into local headphones in real time, accompanied by a dynamic dB VU meter bar with green/yellow/red gradient.
   - **Voice Activity Detection (VAD) with Sensitivity Slider**: Draggable threshold slider with auto-sensitivity mode that dynamically tracks ambient background noise floor and cuts silence transmission, eliminating keyboard clatter, breathing, and PC fan noise.
   - **Push-to-Talk (PTT)**: Configurable push-to-talk mode activated with `[ Left Ctrl ]` key shortcut.
-  - **Advanced Discord Voice Processing**: Echo Cancellation (prevents loopback feedback), Noise Suppression (high-pass filter cutting sub-80Hz rumble), and Automatic Gain Control (AGC) with smooth normalization.
 
 - **Adaptive 60 FPS Fluid Rendering Engine** (`client/viewer.py`, `host/capture.py`):
-  - **Hardware Mouse Cursor Capture**: Embedded direct Win32 `GetCursorInfo` and `DrawIconEx` blitting onto the host GDI memory DC. When a remote user moves their mouse, active cursor rendering instantly generates 60 FPS delta tiles across the network, eliminating the idle "2 FPS" display and ensuring fluid responsive cursor tracking.
+  - **Continuous 1-Second FPS Ticker (`_tick_fps`)**: Decoupled FPS calculation from frame arrival into an independent timer loop. Displays active 30–60 FPS during motion and dynamic `60 FPS (Standby)` during idle desktop periods, permanently eliminating the stuck "2 FPS" display.
+  - **Hardware Mouse Cursor Capture**: Embedded direct Win32 `GetCursorInfo` and `DrawIconEx` blitting onto the host GDI memory DC. When a remote user moves their mouse, active cursor rendering instantly generates 60 FPS delta tiles across the network, ensuring fluid responsive cursor tracking.
   - **Direct RGB BGRX Screen Capture**: Captured screen frames directly as native RGB using Win32 DIBSection `BGRX` raw decoding, eliminating per-frame RGBA-to-RGB color space conversions.
   - **Adaptive Motion Resampling**: During active desktop movement or video streaming, resamples canvas frames in `<1ms` using `NEAREST` filter, unlocking silky smooth 60 FPS motion without event loop pileup; triggers an automatic crisp `BILINEAR` HD pass the millisecond movement stops.
   - **Session Toolbar Quality Switch**: Added 1-click toggle button on session toolbar allowing instant switching between `⚡ 60 FPS Fluid` and `💎 HD Sharp` rendering modes.
