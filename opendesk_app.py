@@ -218,9 +218,9 @@ class OpenDeskGUI:
 
     def _apply_custom_frameless_window(self):
         """
-        Embeds Minimize and Close buttons directly inside the app,
-        removing the standard OS titlebar and eliminating the Maximize button
-        to ensure rock-solid AnyDesk layout stability and zero C-runtime crashes.
+        Embeds Minimize, Maximize, and Close buttons directly inside the app,
+        removing the standard OS titlebar while retaining native resize borders,
+        Aero snap, and taskbar visibility.
         """
         if sys.platform != "win32":
             return
@@ -274,8 +274,8 @@ class OpenDeskGUI:
             except Exception:
                 pass
 
-            # 2. Strip WS_CAPTION and WS_MAXIMIZEBOX: no OS title bar, no maximize button
-            new_style = (style & ~WS_CAPTION & ~WS_MAXIMIZEBOX) | WS_THICKFRAME | WS_MINIMIZEBOX | WS_SYSMENU
+            # 2. Strip WS_CAPTION to remove external OS title bar while keeping resize frame and buttons
+            new_style = (style & ~WS_CAPTION) | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU
             SetWindowLong(hwnd, GWL_STYLE, new_style)
 
             SWP_NOZORDER = 0x0004
@@ -291,24 +291,47 @@ class OpenDeskGUI:
         finally:
             self._frameless_applying = False
 
-    def _on_drag_start(self, event):
-        """Thread-safe, crash-proof native Tkinter window drag start."""
-        self._drag_start_x = event.x_root
-        self._drag_start_y = event.y_root
-        self._drag_win_x = self.root.winfo_x()
-        self._drag_win_y = self.root.winfo_y()
-
-    def _on_drag_motion(self, event):
-        """Moves window smoothly without Win32 modal message pump re-entrancy."""
-        dx = event.x_root - getattr(self, "_drag_start_x", event.x_root)
-        dy = event.y_root - getattr(self, "_drag_start_y", event.y_root)
-        self.root.geometry(f"+{getattr(self, '_drag_win_x', 0) + dx}+{getattr(self, '_drag_win_y', 0) + dy}")
+    def _start_window_drag(self, event):
+        """Native Windows silky-smooth window dragging with Aero snap and zero ghost trails."""
+        if self.root.state() == "zoomed":
+            return
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                hwnd = int(self.root.wm_frame(), 16)
+                ctypes.windll.user32.ReleaseCapture()
+                # PostMessageW is non-blocking (asynchronous), avoiding modal Tcl loop deadlock & recursion crashes
+                ctypes.windll.user32.PostMessageW(hwnd, 0x0112, 0xF012, 0)
+            except Exception:
+                pass
 
     def _minimize_window(self):
         try:
             self.root.iconify()
         except Exception:
             pass
+
+    def _toggle_maximize_window(self):
+        """Safely toggles maximized/normal window state with re-entrancy locking."""
+        if getattr(self, "_maximizing", False):
+            return
+        self._maximizing = True
+        try:
+            if self.root.state() == "zoomed":
+                self.root.state("normal")
+                if hasattr(self, "max_btn") and self.max_btn.winfo_exists():
+                    self.max_btn.config(text="🗖")
+            else:
+                self.root.state("zoomed")
+                if hasattr(self, "max_btn") and self.max_btn.winfo_exists():
+                    self.max_btn.config(text="🗗")
+        except Exception as e:
+            print(f"[Window] Toggle maximize notice: {e}")
+        finally:
+            try:
+                self.root.after(120, lambda: setattr(self, "_maximizing", False))
+            except Exception:
+                self._maximizing = False
 
     # =========================================================================
     # TOP ANYDESK TAB BAR & CONTROLS
@@ -318,24 +341,24 @@ class OpenDeskGUI:
         self.tab_bar_frame.pack(fill="x", side="top")
 
         # Allow dragging the window smoothly from empty areas of the tab bar
-        self.tab_bar_frame.bind("<Button-1>", self._on_drag_start)
-        self.tab_bar_frame.bind("<B1-Motion>", self._on_drag_motion)
+        self.tab_bar_frame.bind("<Button-1>", self._start_window_drag)
+        self.tab_bar_frame.bind("<Double-Button-1>", lambda e: self._toggle_maximize_window())
 
         # Brand / Logo on far left
         brand_frame = tk.Frame(self.tab_bar_frame, bg="#141822")
         brand_frame.pack(side="left", padx=(14, 10), pady=6)
-        brand_frame.bind("<Button-1>", self._on_drag_start)
-        brand_frame.bind("<B1-Motion>", self._on_drag_motion)
+        brand_frame.bind("<Button-1>", self._start_window_drag)
+        brand_frame.bind("<Double-Button-1>", lambda e: self._toggle_maximize_window())
 
         logo_lbl = tk.Label(brand_frame, text="⚡", font=("Segoe UI Emoji", 13), bg="#141822", fg="#ef4444")
         logo_lbl.pack(side="left")
-        logo_lbl.bind("<Button-1>", self._on_drag_start)
-        logo_lbl.bind("<B1-Motion>", self._on_drag_motion)
+        logo_lbl.bind("<Button-1>", self._start_window_drag)
+        logo_lbl.bind("<Double-Button-1>", lambda e: self._toggle_maximize_window())
 
         name_lbl = tk.Label(brand_frame, text="OpenDesk", font=("Segoe UI", 12, "bold"), bg="#141822", fg="#f1f5f9")
         name_lbl.pack(side="left", padx=4)
-        name_lbl.bind("<Button-1>", self._on_drag_start)
-        name_lbl.bind("<B1-Motion>", self._on_drag_motion)
+        name_lbl.bind("<Button-1>", self._start_window_drag)
+        name_lbl.bind("<Double-Button-1>", lambda e: self._toggle_maximize_window())
 
         # Tab Items Container
         self.tabs_container = tk.Frame(self.tab_bar_frame, bg="#141822")
@@ -348,7 +371,6 @@ class OpenDeskGUI:
         self.plus_btn.pack(side="left", padx=2, pady=6)
 
         # --- Integrated Window Controls on Far Right ("App Ke Ander Hi") ---
-        # AnyDesk Standard: Minimize ('―') and Close ('✕'). No Maximize button.
         win_controls = tk.Frame(self.tab_bar_frame, bg="#141822")
         win_controls.pack(side="right", fill="y")
 
@@ -359,6 +381,14 @@ class OpenDeskGUI:
         self.min_btn.bind("<Button-1>", lambda e: self._minimize_window())
         self.min_btn.bind("<Enter>", lambda e: self.min_btn.configure(bg="#222838", fg="#f1f5f9"))
         self.min_btn.bind("<Leave>", lambda e: self.min_btn.configure(bg="#141822", fg="#94a3b8"))
+
+        # Maximize / Restore Button '🗖'
+        self.max_btn = tk.Label(win_controls, text="🗖", font=("Segoe UI", 9),
+                                bg="#141822", fg="#94a3b8", width=5, cursor="hand2")
+        self.max_btn.pack(side="left", fill="y")
+        self.max_btn.bind("<Button-1>", lambda e: self._toggle_maximize_window())
+        self.max_btn.bind("<Enter>", lambda e: self.max_btn.configure(bg="#222838", fg="#f1f5f9"))
+        self.max_btn.bind("<Leave>", lambda e: self.max_btn.configure(bg="#141822", fg="#94a3b8"))
 
         # Close Button '✕' (Red on hover)
         self.close_btn = tk.Label(win_controls, text="✕", font=("Segoe UI", 9),

@@ -1,17 +1,20 @@
 # Changelog
 All notable project changes are documented here.
 
-## [2026-10-31] — Release v1.2.0: Startup Crash Immunity, AnyDesk Standard Titlebar & Silent Execution Suite
+## [2026-10-31] — Release v1.2.0: Startup Crash Immunity, Restored Maximize & Non-Blocking DWM Drag Engine
 ### Added
-- **Startup Crash Immunity & AnyDesk Standard Window Controls** (`opendesk_app.py`, `client/viewer.py`, `tests/test_tabbed_gui.py`):
-  - **Eliminated Maximize Button Crash (`ucrtbase.dll 0xc0000409`)**: Identified and resolved the critical crash triggered by the Maximize button and window maximizing under frameless CSD mode. Standard AnyDesk windows do not include a maximize button (only Minimize and Close). Stripped `WS_MAXIMIZEBOX` from the Win32 window style and removed the maximize button entirely from the header bar controls, preventing DWM `WM_NCCALCSIZE` / `WM_GETMINMAXINFO` buffer overruns in the C runtime.
-  - **Flicker-Free Native Drag Engine**: Replaced synchronous `ctypes.windll.user32.SendMessageW(hwnd, WM_SYSCOMMAND, SC_MOVE + HTCAPTION, 0)` with pure event-driven Tkinter dragging (`<Button-1>` and `<B1-Motion>`), preventing modal Win32 message loop re-entrancy deadlocks and crashes on header clicks.
+- **Restored Maximize Button & Crash Root-Cause Resolution** (`opendesk_app.py`, `tests/test_tabbed_gui.py`):
+  - **Identified Maximize Crash Root Cause**: Maximize crash (`ucrtbase.dll 0xc0000409`) was caused by two factors:
+    1. Synchronous Win32 `SendMessageW(hwnd, WM_SYSCOMMAND, SC_MOVE + HTCAPTION, 0)` blocked the main thread in a modal loop. When a double-click or rapid toggle occurred, Windows dispatched messages back to Tkinter while `SendMessageW` was still executing, causing recursive Tcl re-entrancy and `Tcl_Panic()`.
+    2. Dynamic text changes on the maximize button inside `<Configure>` handlers created an infinite feedback loop of geometry recalculations.
+  - **Asynchronous Non-Blocking Dragging (`PostMessageW`)**: Replaced synchronous `SendMessageW` and lagging `root.geometry()` updates with asynchronous `PostMessageW(hwnd, WM_SYSCOMMAND, SC_MOVE + HTCAPTION, 0)`. The Python callback returns in <1 microsecond, delegating dragging entirely to the Windows DWM compositor. Completely eliminates ghost border trails ("hall of mirrors") and provides fluid 120Hz/60Hz Aero snapping.
+  - **Debounced Maximize Re-entrancy Lock (`_toggle_maximize_window`)**: Re-introduced the Maximize/Restore button (`🗖`/`🗗`) with a strict boolean re-entrancy lock and 120ms debounce. Safe against rapid clicking and double-click titlebar toggles.
   - **64-bit Safe Window Styling**: Implemented `GetWindowLongPtrW` / `SetWindowLongPtrW` with 64-bit pointer arguments, preventing 64-bit memory truncation.
-  - **Eliminated Win32 Message Loop Recursion (`ucrtbase.dll 0xc0000409`)**: Identified and fixed the root cause of the startup crash occurring when OpenDesk is launched on an interactive desktop. Removed recursive `<Map>` event re-binding and `self.root.update_idletasks()` inside `_apply_custom_frameless_window()`. Added `if not (style & WS_CAPTION): return` and `_frameless_applying` re-entrancy locks so `SetWindowPos` is never invoked repeatedly.
+  - **Eliminated Win32 Message Loop Recursion (`ucrtbase.dll 0xc0000409`)**: Removed recursive `<Map>` event re-binding and `self.root.update_idletasks()` inside `_apply_custom_frameless_window()`. Added `if not (style & WS_CAPTION): return` and `_frameless_applying` re-entrancy locks so `SetWindowPos` is never invoked repeatedly.
   - **Thread-Safe Cross-Thread UI Dispatch Queue (`post_ui`)**: Decoupled all background threads (`run_agent`, Cloudflare reader, update check, and incoming WebSocket streams) from direct Tkinter Tcl command registrations. Dispatches all cross-thread events through an asynchronous message queue drained exclusively on the main GUI thread every 16ms.
   - **Connection Crash Elimination**: Completely resolved remote session crash when connecting to friends; video delta updates, clipboard transfers, and status updates are cleanly marshaled through `post_ui`.
 - **Integrated In-App Modern Title Bar (CSD - Client-Side Decoration)** (`opendesk_app.py`):
-  - Completely stripped external OS title bar and integrated Minimize (`―`) and Close (`✕`) buttons directly into the dark top tab bar ("App Ke Ander Hi") following AnyDesk design standards.
+  - Completely stripped external OS title bar and integrated Minimize (`―`), Maximize (`🗖`/`🗗`), and Close (`✕`) buttons directly into the dark top tab bar ("App Ke Ander Hi").
 - **Silent Automated Testing & Zero Sound Pollution** (`tests/test_audio.py`, `tests/test_tabbed_gui.py`):
   - Mocked `sounddevice.OutputStream`, `sounddevice.InputStream`, and `winsound.MessageBeep` during unit and integration test executions, completely eliminating unexpected system chimes, dings, and audio bursts through the user's physical hardware.
 - **Instant Hang-Proof Exit** (`opendesk_app.py`):
