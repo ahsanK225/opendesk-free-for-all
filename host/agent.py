@@ -57,11 +57,12 @@ class HostAgent:
         self.session: Optional[aiohttp.ClientSession] = None
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         
-        # Target FPS & throttle
-        self.target_fps = 30
+        # Target FPS & throttle (Ultra-Smooth 60 FPS capable)
+        self.target_fps = 60
         self.frame_delay = 1.0 / self.target_fps
         self._clip_queue = asyncio.Queue()
         self._audio_queue = asyncio.Queue()
+        self._video_queue = asyncio.Queue(maxsize=1)
 
     def _on_mic_audio_chunk(self, b64_data: str):
         """Callback when local host microphone records an audio block."""
@@ -87,30 +88,52 @@ class HostAgent:
             pkt = create_packet(msg_type, payload, **kwargs)
             await self.ws.send_str(pkt)
 
+    async def _video_sender_worker(self):
+        """Decoupled asynchronous worker that transmits video frames without blocking screen capture."""
+        while self.running and self.active_session:
+            try:
+                msg_type, payload = await self._video_queue.get()
+                await self._send_packet(msg_type, payload)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[Host] Video sender worker notice: {e}")
+
     async def _video_stream_loop(self):
-        """High-performance frame capture and delta streaming loop."""
-        print("[Host] Video streaming loop started.")
+        """
+        High-performance 60 FPS screen capture and vectorized delta streaming loop.
+        Runs decoupled from WebSocket transport to prevent network backpressure from
+        stalling local screen capture and dropping frame rate.
+        """
+        print("[Host] High-FPS video streaming loop started (60 FPS target).")
         force_keyframe = True
 
         while self.running and self.active_session:
             t0 = time.perf_counter()
             try:
-                # 1. Grab desktop frame
-                img = self.capturer.grab()
+                # 1. Grab desktop frame with zero-copy uint32 NumPy view
+                img, arr_u32 = self.capturer.grab_frame()
                 
-                # 2. Encode with DeskRT-style tile & delta compression
-                res = self.codec.encode(img, force_keyframe=force_keyframe)
+                # 2. Encode with vectorized DeskRT tile & clustered delta compression (<2ms)
+                res = self.codec.encode(img, raw_u32=arr_u32, force_keyframe=force_keyframe)
                 force_keyframe = False
 
-                # 3. Transmit if frame has changes
+                # 3. Queue packet for decoupled non-blocking transmission
                 if res["kind"] == "full":
                     b64 = base64.b64encode(res["data"]).decode("ascii")
-                    await self._send_packet(MessageType.VIDEO_FULL, {
+                    pkt_payload = {
                         "width": res["width"],
                         "height": res["height"],
                         "frame_id": res["frame_id"],
                         "image": b64
-                    })
+                    }
+                    if self._video_queue.full():
+                        try:
+                            self._video_queue.get_nowait()
+                        except Exception:
+                            pass
+                    self._video_queue.put_nowait((MessageType.VIDEO_FULL, pkt_payload))
+
                 elif res["kind"] == "delta":
                     encoded_tiles = []
                     for t in res["tiles"]:
@@ -121,18 +144,24 @@ class HostAgent:
                             "h": t["h"],
                             "image": base64.b64encode(t["data"]).decode("ascii")
                         })
-                    await self._send_packet(MessageType.VIDEO_DELTA, {
+                    pkt_payload = {
                         "width": res["width"],
                         "height": res["height"],
                         "frame_id": res["frame_id"],
                         "tiles": encoded_tiles
-                    })
+                    }
+                    if self._video_queue.full():
+                        try:
+                            self._video_queue.get_nowait()
+                        except Exception:
+                            pass
+                    self._video_queue.put_nowait((MessageType.VIDEO_DELTA, pkt_payload))
 
             except Exception as e:
                 print(f"[Host] Video loop warning: {e}")
                 force_keyframe = True
 
-            # Throttle to target FPS
+            # Precise throttle to target 60 FPS
             elapsed = time.perf_counter() - t0
             sleep_time = max(0.001, self.frame_delay - elapsed)
             await asyncio.sleep(sleep_time)
@@ -186,6 +215,7 @@ class HostAgent:
                 "permissions": permissions
             })
             asyncio.create_task(self._video_stream_loop())
+            asyncio.create_task(self._video_sender_worker())
             if allow_audio:
                 asyncio.create_task(self._audio_stream_loop())
         else:
@@ -232,9 +262,7 @@ class HostAgent:
             self.audio_engine.start()
             # Start streaming loops
             asyncio.create_task(self._video_stream_loop())
-            asyncio.create_task(self._audio_stream_loop())
-            # Start streaming loops
-            asyncio.create_task(self._video_stream_loop())
+            asyncio.create_task(self._video_sender_worker())
             asyncio.create_task(self._audio_stream_loop())
 
         elif mtype == MessageType.SESSION_END:

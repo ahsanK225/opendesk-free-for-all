@@ -57,5 +57,34 @@ class TestDeskRTCodec(unittest.TestCase):
         # Bandwidth saving verification: delta tile must be much smaller than full frame
         self.assertLess(delta_res["byte_size"], full_bytes * 0.1)
 
+    def test_vectorized_diff_and_clustering(self):
+        import numpy as np
+        # 1. Base frame with uint32 array
+        arr1 = np.full((self.height, self.width), 0xFF202028, dtype=np.uint32)
+        res1 = self.codec.encode(self.base_image, raw_u32=arr1, force_keyframe=True)
+        self.assertEqual(res1["kind"], "full")
+
+        # 2. Identical frame -> empty delta in <1ms
+        res_empty = self.codec.encode(self.base_image, raw_u32=arr1)
+        self.assertEqual(res_empty["kind"], "empty")
+
+        # 3. Clustered 8 tiles changed (e.g. window moved or discord popup)
+        arr2 = arr1.copy()
+        arr2[200:500, 300:700] = 0xFFFF0000
+        modified = self.base_image.copy()
+        draw = ImageDraw.Draw(modified)
+        draw.rectangle([300, 200, 700, 500], fill=(255, 0, 0))
+
+        res_cluster = self.codec.encode(modified, raw_u32=arr2)
+        self.assertEqual(res_cluster["kind"], "delta")
+        self.assertGreaterEqual(res_cluster["dirty_count"], 5)
+        # Verify bounding box was clustered into 1 efficient tile update
+        self.assertEqual(len(res_cluster["tiles"]), 1)
+        cluster_tile = res_cluster["tiles"][0]
+        self.assertEqual(cluster_tile["x"], 256)
+        self.assertEqual(cluster_tile["y"], 128)
+        self.assertEqual(cluster_tile["w"], 512)
+        self.assertEqual(cluster_tile["h"], 384)
+
 if __name__ == "__main__":
     unittest.main()

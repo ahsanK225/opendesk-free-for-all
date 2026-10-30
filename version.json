@@ -1,17 +1,17 @@
 {
-  "version": "1.1.7",
-  "release_date": "2026-10-30",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.7/OpenDesk_v1.1.7_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.7/OpenDesk_Setup_v1.1.7_Installer.exe",
+  "version": "1.1.8",
+  "release_date": "2026-10-31",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.8/OpenDesk_v1.1.8_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.8/OpenDesk_Setup_v1.1.8_Installer.exe",
   "changelog": [
+    "DeskRT 60 FPS Delta Engine: Zero-copy uint32 vectorized diff and dirty bounding box clustering eliminating frame drop bottlenecks",
+    "Ultra-Low Latency VoIP Engine: Continuous playback sample ring buffer fixing sample slicing, stuttering, and robotic audio distortions",
+    "Smart WASAPI Audio Selection: Automatic physical headset/microphone detection prioritizing low-latency WASAPI devices over virtual cables",
+    "In-App Voice & Audio Controls: Dedicated in-app Audio Settings panel with live VU meter test, mic gain slider, and session toolbar volume control",
     "AnyDesk-style Incoming Session Request Dialog with audio chime alert and Topmost visibility",
     "Granular Session Permissions: Allow/Deny Remote Mouse & Keyboard control, Voice Audio, Clipboard Sync, and File Transfer",
-    "Fixed Favorites & Recent cards layout: Connect ➜ button is always clearly visible and unclipped across all Windows display scaling",
-    "Enhanced Update Downloader with accurate HTTP error reporting and 1-click browser fallback to GitHub Releases",
     "Dynamic Display Modes: Fit Screen, Stretch to Fill (No Black Bars), and 1:1 Original Native Resolution",
     "Multi-Level Viewport Zoom Controls (50% to 300%) with Ctrl+MouseWheel centered zoom and middle/shift-drag panning",
-    "100% Backward Compatibility with older host versions via mathematical coordinate normalization",
-    "Smart Incremental Auto-Updater with SHA-256 Differential Delta Verification and atomic rollback protection",
     "Digitally Signed Binaries with Authenticode SHA-256 and DigiCert RFC 3161 Timestamps"
   ]
 }

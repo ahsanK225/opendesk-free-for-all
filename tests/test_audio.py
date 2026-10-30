@@ -63,5 +63,45 @@ class TestAudioEngine(unittest.TestCase):
         engine.mic_enabled = False
         self.assertFalse(engine.mic_enabled)
 
+    def test_available_audio_devices(self):
+        from opendesk.host.audio import get_available_audio_devices, find_best_input_device_id
+        devs = get_available_audio_devices()
+        self.assertIn("inputs", devs)
+        self.assertIn("outputs", devs)
+        self.assertIsInstance(devs["inputs"], list)
+        self.assertIsInstance(devs["outputs"], list)
+
+    def test_audio_digital_gain_and_level_callback(self):
+        levels = []
+        def on_level(lvl):
+            levels.append(lvl)
+
+        engine = AudioEngine(on_mic_level_callback=on_level)
+        engine.running = True
+        engine.set_gain(1.5)
+        self.assertEqual(engine.mic_gain, 1.5)
+
+        # Feed synthetic audio into mic callback
+        indata = np.full((400, 1), 10000, dtype=np.int16)
+        engine._mic_callback(indata, 400, None, None)
+        self.assertGreater(len(levels), 0)
+        self.assertGreater(levels[0], 0.0)
+
+    def test_continuous_playback_ring_buffer(self):
+        engine = AudioEngine()
+        engine.running = True
+        engine.speaker_enabled = True
+        
+        # Ingest 16kHz audio chunk
+        test_audio = np.full(400, 5000, dtype=np.int16).tobytes()
+        b64_audio = base64.b64encode(test_audio).decode("ascii")
+        engine.play_chunk(b64_audio)
+        
+        # Pull frames via speaker callback
+        outdata = np.zeros((200, 2), dtype=np.int16)
+        engine._speaker_callback(outdata, 200, None, None)
+        # Verify samples were rendered to output channels
+        self.assertFalse(np.all(outdata == 0))
+
 if __name__ == "__main__":
     unittest.main()

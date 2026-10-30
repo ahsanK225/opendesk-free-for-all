@@ -29,12 +29,14 @@ import aiohttp
 try:
     from opendesk.common.protocol import MessageType, create_packet, parse_packet
     from opendesk.common.rendezvous import resolve_host_rendezvous, parse_connect_target
-    from opendesk.host.audio import AudioEngine
+    from opendesk.common.config import get_audio_settings, save_audio_settings
+    from opendesk.host.audio import AudioEngine, get_available_audio_devices
     from opendesk.host.clipboard import WindowsClipboard
 except ImportError:
     from common.protocol import MessageType, create_packet, parse_packet
     from common.rendezvous import resolve_host_rendezvous, parse_connect_target
-    from host.audio import AudioEngine
+    from common.config import get_audio_settings, save_audio_settings
+    from host.audio import AudioEngine, get_available_audio_devices
     from host.clipboard import WindowsClipboard
 
 
@@ -87,14 +89,17 @@ class EmbeddedSessionView(tk.Frame):
 
         # Subsystems
         self.clipboard = WindowsClipboard(on_change_callback=self._on_local_clipboard_changed)
-        self.audio_engine = AudioEngine(on_mic_chunk_callback=self._on_mic_chunk)
+        self.audio_engine = AudioEngine(on_mic_chunk_callback=self._on_mic_chunk,
+                                       on_mic_level_callback=self._on_mic_level)
         self.audio_active = False
 
-        # Stats
+        # Stats & High-FPS Display
         self.frame_count = 0
+        self.recv_frame_count = 0
         self.fps = 0
         self.last_fps_time = time.time()
         self.rtt_ms = 0
+        self.canvas_img_id = None
 
         self._build_ui()
         self._start_connection()
@@ -106,14 +111,14 @@ class EmbeddedSessionView(tk.Frame):
 
         brand_frame = tk.Frame(self.toolbar, bg="#161922")
         brand_frame.pack(side="left", padx=12, pady=5)
-        tk.Label(brand_frame, text="⚡ DeskRT", font=("Segoe UI", 10, "bold"), bg="#161922", fg="#ef4444").pack(side="left")
+        tk.Label(brand_frame, text="⚡ DeskRT 60FPS", font=("Segoe UI", 10, "bold"), bg="#161922", fg="#ef4444").pack(side="left")
 
         # Status & Performance Badges
         self.status_badge = tk.Label(self.toolbar, text=f"● Connecting [{self.target_id}]...",
                                      font=("Segoe UI", 9, "bold"), bg="#252a38", fg="#e0af68", padx=8, pady=3)
         self.status_badge.pack(side="left", padx=6)
 
-        self.fps_label = tk.Label(self.toolbar, text="0 FPS", font=("Segoe UI", 8), bg="#161922", fg="#94a3b8")
+        self.fps_label = tk.Label(self.toolbar, text="0 FPS", font=("Segoe UI", 8, "bold"), bg="#161922", fg="#38bdf8")
         self.fps_label.pack(side="left", padx=4)
 
         self.rtt_label = tk.Label(self.toolbar, text="<10ms", font=("Segoe UI", 8), bg="#161922", fg="#94a3b8")
@@ -123,10 +128,35 @@ class EmbeddedSessionView(tk.Frame):
         actions_frame = tk.Frame(self.toolbar, bg="#161922")
         actions_frame.pack(side="right", padx=10, pady=5)
 
-        self.voice_btn = tk.Button(actions_frame, text="🎙️ Voice: OFF", font=("Segoe UI", 8, "bold"),
+        # --- In-App Embedded Voice Controls (AnyDesk VoIP Style) ---
+        voice_group = tk.Frame(actions_frame, bg="#161922")
+        voice_group.pack(side="left", padx=3)
+
+        self.voice_btn = tk.Button(voice_group, text="🎙️ Mic: OFF", font=("Segoe UI", 8, "bold"),
                                    bg="#24283b", fg="#c0caf5", activebackground="#2f344d", activeforeground="#7aa2f7",
-                                   bd=0, padx=8, pady=3, cursor="hand2", command=self._toggle_voice)
-        self.voice_btn.pack(side="left", padx=3)
+                                   bd=0, padx=7, pady=3, cursor="hand2", command=self._toggle_voice)
+        self.voice_btn.pack(side="left")
+
+        # Live Animated Voice Activity VU Meter (Green pulse on speech)
+        self.vu_canvas = tk.Canvas(voice_group, width=24, height=13, bg="#13161f", highlightthickness=1, highlightbackground="#2d3345")
+        self.vu_canvas.pack(side="left", padx=(2, 4))
+        self.vu_bar_id = self.vu_canvas.create_rectangle(0, 0, 0, 13, fill="#10b981", outline="")
+
+        # Speaker Volume Slider
+        vol_frame = tk.Frame(actions_frame, bg="#161922")
+        vol_frame.pack(side="left", padx=2)
+        tk.Label(vol_frame, text="🔊", font=("Segoe UI", 8), bg="#161922", fg="#94a3b8").pack(side="left")
+        self.vol_scale = tk.Scale(vol_frame, from_=0, to=100, orient="horizontal", showvalue=0, length=48,
+                                  bg="#161922", fg="#38bdf8", troughcolor="#202534", highlightthickness=0, bd=0,
+                                  command=self._on_speaker_volume_change)
+        self.vol_scale.set(int(self.audio_engine.speaker_volume * 100))
+        self.vol_scale.pack(side="left", padx=1)
+
+        # Quick Audio Settings Modal
+        self.audio_cfg_btn = tk.Button(actions_frame, text="⚙️ Audio", font=("Segoe UI", 8),
+                                       bg="#24283b", fg="#94a3b8", activebackground="#2f344d", activeforeground="#f1f5f9",
+                                       bd=0, padx=6, pady=3, cursor="hand2", command=self._open_quick_audio_settings)
+        self.audio_cfg_btn.pack(side="left", padx=2)
 
         clip_btn = tk.Button(actions_frame, text="📋 Push Clipboard", font=("Segoe UI", 8),
                              bg="#24283b", fg="#c0caf5", activebackground="#2f344d", activeforeground="#7aa2f7",
@@ -514,6 +544,97 @@ class EmbeddedSessionView(tk.Frame):
         if self.in_session and self.audio_active:
             self._send_payload(MessageType.AUDIO_CHUNK, {"data": b64_chunk})
 
+    def _on_mic_level(self, level: float):
+        """Update live mini VU meter in the session toolbar."""
+        if hasattr(self, "vu_canvas") and self.vu_canvas.winfo_exists():
+            w = max(0, min(24, int(level * 24)))
+            color = "#ef4444" if level > 0.85 else "#10b981"
+            self.vu_canvas.coords(self.vu_bar_id, 0, 0, w, 13)
+            self.vu_canvas.itemconfig(self.vu_bar_id, fill=color)
+
+    def _on_speaker_volume_change(self, val):
+        try:
+            vol = float(val) / 100.0
+            self.audio_engine.set_speaker_volume(vol)
+        except Exception:
+            pass
+
+    def _open_quick_audio_settings(self):
+        """Open quick audio device configuration modal directly from session viewport."""
+        top = tk.Toplevel(self)
+        top.title("Session Audio & Microphone Settings")
+        top.geometry("450x330")
+        top.minsize(420, 300)
+        top.configure(bg="#141822")
+        top.grab_set()
+
+        tk.Label(top, text="🎙️ Session Audio & Microphone Settings", font=("Segoe UI", 11, "bold"),
+                 bg="#141822", fg="#f1f5f9").pack(anchor="w", padx=16, pady=(14, 10))
+
+        devs = get_available_audio_devices()
+        in_names = [d["name"] for d in devs.get("inputs", [])] or ["Default System Microphone"]
+        out_names = [d["name"] for d in devs.get("outputs", [])] or ["Default System Speaker"]
+
+        cfg = get_audio_settings()
+
+        # Input device
+        tk.Label(top, text="Microphone Input Device:", font=("Segoe UI", 9, "bold"),
+                 bg="#141822", fg="#ef4444").pack(anchor="w", padx=16, pady=(4, 2))
+        in_combo = ttk.Combobox(top, values=in_names, state="readonly", font=("Segoe UI", 9))
+        in_combo.pack(fill="x", padx=16, pady=(0, 8))
+        curr_in = cfg.get("input_device", "")
+        if curr_in in in_names:
+            in_combo.set(curr_in)
+        elif in_names:
+            in_combo.current(0)
+
+        # Output device
+        tk.Label(top, text="Speaker / Headset Output Device:", font=("Segoe UI", 9, "bold"),
+                 bg="#141822", fg="#ef4444").pack(anchor="w", padx=16, pady=(4, 2))
+        out_combo = ttk.Combobox(top, values=out_names, state="readonly", font=("Segoe UI", 9))
+        out_combo.pack(fill="x", padx=16, pady=(0, 8))
+        curr_out = cfg.get("output_device", "")
+        if curr_out in out_names:
+            out_combo.set(curr_out)
+        elif out_names:
+            out_combo.current(0)
+
+        # Mic Gain slider
+        tk.Label(top, text="Microphone Gain Boost:", font=("Segoe UI", 9),
+                 bg="#141822", fg="#94a3b8").pack(anchor="w", padx=16, pady=(2, 2))
+        gain_scale = tk.Scale(top, from_=50, to=200, orient="horizontal",
+                              bg="#141822", fg="#38bdf8", troughcolor="#202534", highlightthickness=0, bd=0)
+        gain_scale.set(int(self.audio_engine.mic_gain * 100))
+        gain_scale.pack(fill="x", padx=16, pady=(0, 10))
+
+        def save_quick_audio():
+            new_in = in_combo.get()
+            new_out = out_combo.get()
+            new_gain = float(gain_scale.get()) / 100.0
+            
+            cfg["input_device"] = new_in
+            cfg["output_device"] = new_out
+            cfg["mic_gain"] = new_gain
+            save_audio_settings(cfg)
+
+            self.audio_engine.preferred_input = new_in
+            self.audio_engine.preferred_output = new_out
+            self.audio_engine.set_gain(new_gain)
+
+            # If audio active, restart stream with new devices
+            if self.audio_active:
+                self.audio_engine.stop()
+                self.audio_engine.start()
+
+            top.destroy()
+
+        btn_row = tk.Frame(top, bg="#141822")
+        btn_row.pack(fill="x", padx=16, pady=12)
+        tk.Button(btn_row, text="Apply Changes", font=("Segoe UI", 9, "bold"), bg="#ef4444", fg="#ffffff",
+                  bd=0, padx=14, pady=5, cursor="hand2", command=save_quick_audio).pack(side="left")
+        tk.Button(btn_row, text="Cancel", font=("Segoe UI", 9), bg="#202534", fg="#f1f5f9",
+                  bd=0, padx=12, pady=5, cursor="hand2", command=top.destroy).pack(side="right")
+
     def _toggle_voice(self):
         if not self.in_session:
             return
@@ -521,10 +642,13 @@ class EmbeddedSessionView(tk.Frame):
         if self.audio_active:
             self.audio_engine.mic_enabled = True
             self.audio_engine.start()
-            self.voice_btn.config(text="🎙️ Voice: ON", bg="#1f382a", fg="#9ece6a")
+            self.voice_btn.config(text="🎙️ Mic: ON", bg="#1f382a", fg="#10b981")
         else:
             self.audio_engine.mic_enabled = False
-            self.voice_btn.config(text="🎙️ Voice: OFF", bg="#24283b", fg="#c0caf5")
+            self.voice_btn.config(text="🎙️ Mic: OFF", bg="#24283b", fg="#c0caf5")
+            # Clear VU meter
+            if hasattr(self, "vu_canvas") and self.vu_canvas.winfo_exists():
+                self.vu_canvas.coords(self.vu_bar_id, 0, 0, 0, 13)
 
     def _toggle_fullscreen(self):
         top = self.winfo_toplevel()
@@ -545,20 +669,38 @@ class EmbeddedSessionView(tk.Frame):
         if self.remote_image:
             self._trigger_render()
 
-    def _trigger_render(self):
-        """Debounce canvas redraws to prevent Tkinter event queue starvation and 'Not Responding' freezes."""
-        if self._render_pending or not self.winfo_exists():
-            return
-        self._render_pending = True
+    def _safe_exists(self) -> bool:
         try:
-            self._render_after_id = self.after_idle(self._safe_render_frame)
+            return bool(self.winfo_exists())
+        except Exception:
+            return False
+
+    def _trigger_render(self):
+        """Schedule immediate fast non-blocking canvas redraw without event starvation."""
+        if self._render_pending:
+            return
+        try:
+            if not self._safe_exists():
+                return
+            self._render_pending = True
+            self._render_after_id = self.after(1, self._safe_render_frame)
         except Exception:
             self._render_pending = False
 
+    def destroy(self):
+        if hasattr(self, "_render_after_id") and self._render_after_id:
+            try:
+                self.after_cancel(self._render_after_id)
+            except Exception:
+                pass
+            self._render_after_id = None
+        super().destroy()
+
     def _safe_render_frame(self):
         self._render_pending = False
+        self._render_after_id = None
         try:
-            if self.winfo_exists():
+            if self._safe_exists():
                 self._render_frame()
         except Exception:
             pass
@@ -601,19 +743,27 @@ class EmbeddedSessionView(tk.Frame):
         final_x = self.offset_x + self.pan_x
         final_y = self.offset_y + self.pan_y
 
-        # Fast Resample with PIL
-        resized = self.remote_image.resize((dw, dh), Image.Resampling.BILINEAR)
+        # Fast Resample with PIL (zero-copy when 1:1)
+        if dw == rw and dh == rh:
+            resized = self.remote_image
+        else:
+            resized = self.remote_image.resize((dw, dh), Image.Resampling.BILINEAR)
         self.tk_photo = ImageTk.PhotoImage(resized)
 
-        self.canvas.delete("all")
-        self.canvas.create_image(final_x, final_y, anchor="nw", image=self.tk_photo)
+        # High-performance Tkinter canvas blitting: reuse canvas image ID without destroying items
+        if self.canvas_img_id is None:
+            self.canvas_img_id = self.canvas.create_image(final_x, final_y, anchor="nw", image=self.tk_photo)
+        else:
+            self.canvas.coords(self.canvas_img_id, final_x, final_y)
+            self.canvas.itemconfig(self.canvas_img_id, image=self.tk_photo)
 
         # Update FPS
         self.frame_count += 1
         now = time.time()
         if now - self.last_fps_time >= 1.0:
-            self.fps = self.frame_count
+            self.fps = max(self.frame_count, self.recv_frame_count)
             self.frame_count = 0
+            self.recv_frame_count = 0
             self.last_fps_time = now
             self.fps_label.config(text=f"{self.fps} FPS")
 
@@ -656,14 +806,14 @@ class EmbeddedSessionView(tk.Frame):
                         scheme = "ws" if "127.0.0.1" in clean_host or "localhost" in clean_host else "wss"
                         effective_relay = f"{scheme}://{clean_host}/ws"
                     else:
-                        if self.winfo_exists():
+                        if self._safe_exists():
                             self.after(0, lambda: self._on_connection_error(
                                 f"Host [{self.target_id}] is offline or ID not found in global registry.\n\n"
                                 f"Ensure the remote OpenDesk app is running on the host machine and connected to the internet."
                             ))
                         return
 
-                if self.winfo_exists():
+                if self._safe_exists():
                     self.after(0, lambda: self.status_badge.config(
                         text=f"● Connecting [{self.target_id}]...", bg="#252a38", fg="#e0af68"
                     ))
@@ -688,7 +838,7 @@ class EmbeddedSessionView(tk.Frame):
                                     break
                     except Exception as e:
                         print(f"[Viewer] Connection error: {e}")
-                        if self.winfo_exists():
+                        if self._safe_exists():
                             self.after(0, lambda: self._on_connection_error(str(e)))
 
             self.loop.run_until_complete(main_ws())
@@ -711,24 +861,25 @@ class EmbeddedSessionView(tk.Frame):
             if status == "ok":
                 self.in_session = True
                 self.granted_permissions = payload.get("permissions", {}) or {"input": True, "audio": True, "clipboard": True, "file_transfer": True}
-                if self.winfo_exists():
+                if self._safe_exists():
                     self.after(0, self._on_session_connected)
             elif status == "waiting_approval":
-                if self.winfo_exists():
+                if self._safe_exists():
                     self.after(0, lambda: self.status_badge.config(
                         text=f"● Waiting for [{self.target_id}] to accept...",
                         bg="#252a38", fg="#38bdf8"
                     ))
             elif status == "rejected":
                 msg = payload.get("message", "Connection request was declined by the remote user.")
-                if self.winfo_exists():
+                if self._safe_exists():
                     self.after(0, lambda: self._on_connection_error(f"Connection Declined:\n\n{msg}"))
             else:
                 msg = payload.get("message", "Could not connect to host.")
-                if self.winfo_exists():
+                if self._safe_exists():
                     self.after(0, lambda: self._on_connection_error(msg))
 
         elif mtype == MessageType.VIDEO_FULL:
+            self.recv_frame_count += 1
             w = payload.get("width", 1920)
             h = payload.get("height", 1080)
             b64_img = payload.get("image", "")
@@ -738,17 +889,18 @@ class EmbeddedSessionView(tk.Frame):
                 self.remote_width = w
                 self.remote_height = h
                 self.remote_image = img
-                if self.winfo_exists():
+                if self._safe_exists():
                     self.after(0, self._trigger_render)
 
         elif mtype == MessageType.VIDEO_DELTA:
+            self.recv_frame_count += 1
             if self.remote_image:
                 tiles = payload.get("tiles", [])
                 for t in tiles:
                     raw_bytes = base64.b64decode(t["image"])
                     tile_img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
                     self.remote_image.paste(tile_img, (t["x"], t["y"]))
-                if self.winfo_exists():
+                if self._safe_exists():
                     self.after(0, self._trigger_render)
 
         elif mtype == MessageType.CLIPBOARD_TEXT:

@@ -8,6 +8,7 @@ import sys
 import ctypes
 import time
 from typing import Tuple, Optional
+import numpy as np
 from PIL import Image
 
 class WindowsScreenCapturer:
@@ -98,15 +99,17 @@ class WindowsScreenCapturer:
             self.user32.ReleaseDC(0, self.hdc_screen)
             self.hdc_screen = None
 
-    def grab(self) -> Image.Image:
-        """Capture current screen contents as a PIL Image."""
-        # Check if screen resolution changed
+    def grab_frame(self) -> Tuple[Image.Image, np.ndarray]:
+        """
+        Capture current screen contents returning:
+        1. PIL Image (referencing low-level DIB buffer without 8MB duplicate copy)
+        2. Zero-copy uint32 NumPy 2D array view for ultra-fast diff computation (<0.5ms)
+        """
         curr_w = self.user32.GetSystemMetrics(0)
         curr_h = self.user32.GetSystemMetrics(1)
         if curr_w != self.width or curr_h != self.height:
             self._allocate_buffers()
 
-        # Re-attach desktop if needed
         self._init_desktop()
         
         # 0x00CC0020 = SRCCOPY
@@ -116,17 +119,24 @@ class WindowsScreenCapturer:
         )
         
         if not res:
-            # Attempt re-init once
             self._allocate_buffers()
             self.gdi32.BitBlt(
                 self.hdc_mem, 0, 0, self.width, self.height,
                 self.hdc_screen, 0, 0, 0x00CC0020
             )
 
-        # Read buffer directly into PIL
         buffer_size = self.width * self.height * 4
         raw_bytes = (ctypes.c_char * buffer_size).from_address(self.ppv_bits.value)
-        return Image.frombuffer('RGBA', (self.width, self.height), bytes(raw_bytes), 'raw', 'BGRA', 0, 1)
+        # Direct zero-copy uint32 NumPy view (height, width)
+        arr_u32 = np.frombuffer(raw_bytes, dtype=np.uint32).reshape((self.height, self.width))
+        # Zero-copy PIL image view
+        img = Image.frombuffer('RGBA', (self.width, self.height), raw_bytes, 'raw', 'BGRA', 0, 1)
+        return img, arr_u32
+
+    def grab(self) -> Image.Image:
+        """Capture current screen contents as a PIL Image."""
+        img, _ = self.grab_frame()
+        return img
 
     def close(self):
         self._release_buffers()

@@ -134,3 +134,21 @@ def set_auto_update_enabled(enabled: bool):
     cfg = load_config()
     cfg["auto_update"] = bool(enabled)
     save_config(cfg)
+
+def get_audio_settings() -> Dict[str, Any]:
+    """Retrieve saved audio configuration (input/output devices, gain, volumes)."""
+    cfg = load_config()
+    audio = cfg.get("audio", {})
+    return {
+        "input_device": audio.get("input_device", ""),
+        "output_device": audio.get("output_device", ""),
+        "mic_gain": float(audio.get("mic_gain", 1.2)),
+        "speaker_volume": float(audio.get("speaker_volume", 1.0)),
+        "noise_gate": bool(audio.get("noise_gate", True))
+    }
+
+def save_audio_settings(settings: Dict[str, Any]):
+    """Save persistent audio preferences to configuration."""
+    cfg = load_config()
+    cfg["audio"] = settings
+    save_config(cfg)
