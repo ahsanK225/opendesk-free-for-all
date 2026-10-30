@@ -31,6 +31,11 @@ OpenDesk is a modern, high-performance open-source remote desktop solution inspi
   - **Toolbar Quality Toggle**: 1-click toggle between `⚡ 60 FPS Fluid` and `💎 HD Sharp` rendering modes.
   - **Standby FPS Display**: Real-time FPS counter showing active streaming rate and `60 FPS (Idle)` on standby.
 
+- **🖥️ Integrated Modern Title Bar (CSD) & Instant Hang-Proof Exit**:
+  - **Embedded Window Controls ("App Ke Ander Hi")**: Seamlessly integrated Minimize (`―`), Maximize/Restore (`🗖`/`🗗`), and Close (`✕`) buttons right into the OpenDesk top tab bar, completely removing the external Windows OS white title bar.
+  - **Native Aero Window Dragging**: Full multi-monitor dragging, edge snapping, and double-click maximize toggle.
+  - **Instant Hang-Proof Close**: 0ms immediate window hiding and clean kernel-level exit (`os._exit(0)`), completely eliminating freezing or "Not Responding" when exiting.
+
 ---
 
 ## 📦 Standalone Distribution & Installer

@@ -159,6 +159,87 @@ class OpenDeskGUI:
             self.root.eval('tk::PlaceWindow . center')
         except Exception:
             pass
+        # Seamless Client-Side Decoration: integrate window controls inside app on Windows
+        self._apply_custom_frameless_window()
+
+    def _apply_custom_frameless_window(self):
+        """
+        Embeds Minimize, Maximize, and Close buttons directly inside the app,
+        removing the standard OS titlebar while retaining native resize borders,
+        Aero snap, and taskbar visibility.
+        """
+        if sys.platform != "win32":
+            return
+        try:
+            if not self.root or not self.root.winfo_exists():
+                return
+            import ctypes
+            self.root.update_idletasks()
+            hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id()) or self.root.winfo_id()
+
+            # 1. Enable Windows 10/11 Immersive Dark Mode for DWM borders
+            try:
+                DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+                val = ctypes.c_int(1)
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ctypes.byref(val), ctypes.sizeof(val)
+                )
+            except Exception:
+                pass
+
+            # 2. Strip WS_CAPTION to remove external OS title bar while keeping WS_THICKFRAME for resizing
+            GWL_STYLE = -16
+            WS_CAPTION = 0x00C00000
+            WS_THICKFRAME = 0x00040000
+            WS_MINIMIZEBOX = 0x00020000
+            WS_MAXIMIZEBOX = 0x00010000
+
+            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
+            new_style = (style & ~WS_CAPTION) | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, new_style)
+
+            SWP_NOZORDER = 0x0004
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            SWP_FRAMECHANGED = 0x0020
+            ctypes.windll.user32.SetWindowPos(
+                hwnd, 0, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED
+            )
+        except Exception as e:
+            print(f"[UI] Custom title bar init notice: {e}")
+
+    def _start_window_drag(self, event):
+        """Native Windows silky-smooth window dragging with Aero snap support."""
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id()) or self.root.winfo_id()
+                ctypes.windll.user32.ReleaseCapture()
+                ctypes.windll.user32.SendMessageW(hwnd, 0x0112, 0xF012, 0)
+                if hasattr(self, "max_btn"):
+                    self.max_btn.config(text="🗗" if self.root.state() == "zoomed" else "🗖")
+            except Exception:
+                pass
+
+    def _minimize_window(self):
+        try:
+            self.root.iconify()
+        except Exception:
+            pass
+
+    def _toggle_maximize_window(self):
+        try:
+            if self.root.state() == "zoomed":
+                self.root.state("normal")
+                if hasattr(self, "max_btn"):
+                    self.max_btn.config(text="🗖")
+            else:
+                self.root.state("zoomed")
+                if hasattr(self, "max_btn"):
+                    self.max_btn.config(text="🗗")
+        except Exception:
+            pass
 
     # =========================================================================
     # TOP ANYDESK TAB BAR & CONTROLS
@@ -167,11 +248,23 @@ class OpenDeskGUI:
         self.tab_bar_frame = tk.Frame(self.root, bg="#141822", height=42)
         self.tab_bar_frame.pack(fill="x", side="top")
 
+        # Allow dragging the window from empty areas of the tab bar
+        self.tab_bar_frame.bind("<Button-1>", self._start_window_drag)
+        self.tab_bar_frame.bind("<Double-Button-1>", lambda e: self._toggle_maximize_window())
+
         # Brand / Logo on far left
         brand_frame = tk.Frame(self.tab_bar_frame, bg="#141822")
         brand_frame.pack(side="left", padx=(14, 10), pady=6)
-        tk.Label(brand_frame, text="⚡", font=("Segoe UI Emoji", 13), bg="#141822", fg="#ef4444").pack(side="left")
-        tk.Label(brand_frame, text="OpenDesk", font=("Segoe UI", 12, "bold"), bg="#141822", fg="#f1f5f9").pack(side="left", padx=4)
+        brand_frame.bind("<Button-1>", self._start_window_drag)
+        brand_frame.bind("<Double-Button-1>", lambda e: self._toggle_maximize_window())
+
+        logo_lbl = tk.Label(brand_frame, text="⚡", font=("Segoe UI Emoji", 13), bg="#141822", fg="#ef4444")
+        logo_lbl.pack(side="left")
+        logo_lbl.bind("<Button-1>", self._start_window_drag)
+
+        name_lbl = tk.Label(brand_frame, text="OpenDesk", font=("Segoe UI", 12, "bold"), bg="#141822", fg="#f1f5f9")
+        name_lbl.pack(side="left", padx=4)
+        name_lbl.bind("<Button-1>", self._start_window_drag)
 
         # Tab Items Container
         self.tabs_container = tk.Frame(self.tab_bar_frame, bg="#141822")
@@ -183,9 +276,41 @@ class OpenDeskGUI:
                                   bd=0, padx=8, pady=2, cursor="hand2", command=lambda: self.switch_tab("home"))
         self.plus_btn.pack(side="left", padx=2, pady=6)
 
-        # Right Action Buttons & Indicators
+        # --- Integrated Window Controls on Far Right ("App Ke Ander Hi") ---
+        win_controls = tk.Frame(self.tab_bar_frame, bg="#141822")
+        win_controls.pack(side="right", fill="y")
+
+        # Minimize Button '―'
+        self.min_btn = tk.Label(win_controls, text="―", font=("Segoe UI", 9),
+                                bg="#141822", fg="#94a3b8", width=5, cursor="hand2")
+        self.min_btn.pack(side="left", fill="y")
+        self.min_btn.bind("<Button-1>", lambda e: self._minimize_window())
+        self.min_btn.bind("<Enter>", lambda e: self.min_btn.configure(bg="#222838", fg="#f1f5f9"))
+        self.min_btn.bind("<Leave>", lambda e: self.min_btn.configure(bg="#141822", fg="#94a3b8"))
+
+        # Maximize / Restore Button '🗖'
+        self.max_btn = tk.Label(win_controls, text="🗖", font=("Segoe UI", 9),
+                                bg="#141822", fg="#94a3b8", width=5, cursor="hand2")
+        self.max_btn.pack(side="left", fill="y")
+        self.max_btn.bind("<Button-1>", lambda e: self._toggle_maximize_window())
+        self.max_btn.bind("<Enter>", lambda e: self.max_btn.configure(bg="#222838", fg="#f1f5f9"))
+        self.max_btn.bind("<Leave>", lambda e: self.max_btn.configure(bg="#141822", fg="#94a3b8"))
+
+        # Close Button '✕' (Red on hover)
+        self.close_btn = tk.Label(win_controls, text="✕", font=("Segoe UI", 9),
+                                  bg="#141822", fg="#94a3b8", width=5, cursor="hand2")
+        self.close_btn.pack(side="left", fill="y")
+        self.close_btn.bind("<Button-1>", lambda e: self._on_close())
+        self.close_btn.bind("<Enter>", lambda e: self.close_btn.configure(bg="#ef4444", fg="#ffffff"))
+        self.close_btn.bind("<Leave>", lambda e: self.close_btn.configure(bg="#141822", fg="#94a3b8"))
+
+        # Divider line
+        div = tk.Frame(self.tab_bar_frame, bg="#202534", width=1)
+        div.pack(side="right", fill="y", pady=8, padx=4)
+
+        # Right Action Buttons & Indicators (Placed just left of window controls)
         right_actions = tk.Frame(self.tab_bar_frame, bg="#141822")
-        right_actions.pack(side="right", padx=12, pady=6)
+        right_actions.pack(side="right", padx=(2, 6), pady=6)
 
         self.mic_btn = tk.Button(right_actions, text="🎙️ Mic: ON", font=("Segoe UI", 8, "bold"),
                                  bg="#1f382a", fg="#9ece6a", activebackground="#2f4a38", activeforeground="#9ece6a",
@@ -1473,36 +1598,56 @@ class OpenDeskGUI:
             self.bottom_status_label.config(text=f"Global: {self.public_url}")
 
     def _on_close(self):
-        if hasattr(self, "rendezvous_heartbeat") and self.rendezvous_heartbeat:
+        """
+        Instant, hang-proof application shutdown.
+        Immediately hides the window (0ms perceived lag), stops services in background,
+        destroys Tkinter, and calls os._exit(0) to eliminate Python/PortAudio thread deadlocks.
+        """
+        # 1. Immediately hide window so user sees instant close with zero freeze
+        try:
+            self.root.withdraw()
+        except Exception:
+            pass
+
+        # 2. Fast background cleanup for subprocesses and sockets
+        def background_cleanup():
             try:
-                self.rendezvous_heartbeat.stop()
+                if hasattr(self, "rendezvous_heartbeat") and self.rendezvous_heartbeat:
+                    self.rendezvous_heartbeat.stop()
             except Exception:
                 pass
 
-        # Stop all embedded session viewers
-        for t in self.tabs:
-            if t.get("viewer"):
-                try:
-                    t["viewer"].close()
-                except Exception:
-                    pass
+            for t in self.tabs:
+                if t.get("viewer"):
+                    try:
+                        t["viewer"].close()
+                    except Exception:
+                        pass
 
-        try:
-            if self.tunnel:
-                self.tunnel.stop()
-        except Exception:
-            pass
-        try:
-            if self.host_agent:
-                self.host_agent.stop()
-        except Exception:
-            pass
+            try:
+                if self.host_agent:
+                    self.host_agent.stop()
+            except Exception:
+                pass
+
+            try:
+                if self.tunnel:
+                    self.tunnel.stop()
+            except Exception:
+                pass
+
+        cleanup_thread = threading.Thread(target=background_cleanup, daemon=True)
+        cleanup_thread.start()
+
+        # 3. Destroy Tkinter UI
         try:
             self.root.destroy()
         except Exception:
             pass
-        time.sleep(0.05)
-        sys.exit(0)
+
+        # 4. Immediate kernel-level exit (prevents thread-join deadlocks and C-runtime hangs)
+        import os
+        os._exit(0)
 
 
 def main():

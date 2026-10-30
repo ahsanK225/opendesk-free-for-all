@@ -167,6 +167,8 @@ Unsigned binaries trigger Windows SmartScreen warnings ("Windows protected your 
 
 ### 7.1 Multi-Tab Workflow & Viewport Switching
 OpenDesk adheres to the signature AnyDesk 8 desktop experience:
+- **Integrated Client-Side Decoration (CSD) Title & Tab Bar**: Replaces the standard Windows OS white title bar via Win32 `WS_CAPTION` stripping and `DWMWA_USE_IMMERSIVE_DARK_MODE`. The top bar hosts brand identity, tabs, and integrated Minimize (`―`), Maximize/Restore (`🗖`/`🗗`), and Close (`✕`) buttons with native hover feedback. Supports native Win32 `SC_MOVE` + `HTCAPTION` dragging and double-click maximize toggle.
+- **Instant Hang-Proof Teardown**: Eliminates thread deadlock and UI freezing on close via immediate 0ms window hiding (`withdraw()`), background daemon cleanup worker, and clean kernel-level exit (`os._exit(0)`).
 - **Top Window Tab Bar**: A horizontal tab strip featuring persistent `[ 🏠 New Connection ]`, active remote session tabs `[ 💻 <Formatted ID>  ✕ ]`, and a dynamic `+` button.
 - **In-App Embedded Session Viewport (`EmbeddedSessionView`)**: Remote desktop sessions are hosted directly within the tab container frame inside the main window, rendering 60 FPS DeskRT delta frames onto an interactive Tkinter `Canvas` with normalized Win32 input, voice audio, and bidirectional clipboard sync.
 - **Tab Lifecycle**:

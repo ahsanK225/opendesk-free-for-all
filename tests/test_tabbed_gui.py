@@ -150,5 +150,20 @@ class TestTabbedGUI(unittest.TestCase):
         finally:
             OpenDeskGUI._start_services = original_start
 
+    def test_custom_integrated_window_controls(self):
+        """Verify integrated window controls (Minimize, Maximize, Close) and drag bindings exist."""
+        original_start = OpenDeskGUI._start_services
+        OpenDeskGUI._start_services = lambda self: None
+        try:
+            app = OpenDeskGUI(self.root, port=18083)
+            self.assertTrue(hasattr(app, "min_btn"), "Minimize button must be present in top tab bar")
+            self.assertTrue(hasattr(app, "max_btn"), "Maximize button must be present in top tab bar")
+            self.assertTrue(hasattr(app, "close_btn"), "Close button must be present in top tab bar")
+            self.assertEqual(app.min_btn.cget("text"), "―")
+            self.assertEqual(app.max_btn.cget("text"), "🗖")
+            self.assertEqual(app.close_btn.cget("text"), "✕")
+        finally:
+            OpenDeskGUI._start_services = original_start
+
 if __name__ == "__main__":
     unittest.main()

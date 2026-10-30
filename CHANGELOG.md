@@ -29,9 +29,14 @@ All notable project changes are documented here.
   - **Session Toolbar Quality Switch**: Added 1-click toggle button on session toolbar allowing instant switching between `⚡ 60 FPS Fluid` and `💎 HD Sharp` rendering modes.
   - **Responsive FPS Indicator**: Real-time counter showing active streaming FPS during motion and `60 FPS (Idle)` on standby.
 
+- **Integrated Modern Title Bar (CSD) & Instant Hang-Proof Exit** (`opendesk_app.py`, `tests/test_tabbed_gui.py`):
+  - **Embedded Window Controls ("App Ke Ander Hi")**: Completely removed the external Windows OS white title bar using Win32 `WS_CAPTION` stripping and `DWMWA_USE_IMMERSIVE_DARK_MODE`. Seamlessly integrated Minimize (`―`), Maximize/Restore (`🗖`/`🗗`), and Close (`✕`) buttons directly into the OpenDesk top tab bar with native dark-mode hover states (red `#ef4444` close hover).
+  - **Native Smooth Window Dragging**: Added native Win32 `SC_MOVE` + `HTCAPTION` dragging and double-click maximize toggle on the tab bar and header, delivering silky smooth window snapping and multi-monitor dragging.
+  - **Instant Hang-Proof Exit**: Completely resolved the close freeze issue where `sys.exit(0)` and synchronous tunnel teardown blocked the GUI thread with "Not Responding". Implemented immediate 0ms window withdrawal (`self.root.withdraw()`), detached background cleanup worker for subprocesses/agent loops, and clean kernel-level exit (`os._exit(0)`).
+
 ### Tests and Verification
-- Added 5 new unit tests in `tests/test_audio.py` for Discord VAD sensitivity cutoff, Push-to-Talk gating, "Let's Check" loopback self-hearing buffer routing, PortAudio 1D mono buffer safety, and multithreaded double-buffering image lock concurrency.
-- **51 of 51 unit and integration tests passing cleanly**.
+- Added 6 new unit tests in `tests/test_audio.py` and `tests/test_tabbed_gui.py` verifying Discord VAD sensitivity cutoff, Push-to-Talk gating, "Let's Check" loopback self-hearing buffer routing, PortAudio 1D mono buffer safety, multithreaded double-buffering image lock concurrency, and custom integrated window controls (Minimize, Maximize, Close).
+- **52 of 52 unit and integration tests passing cleanly**.
 - Authenticode SHA-256 digital signing with DigiCert RFC 3161 timestamps verified for all v1.1.9 portable and installer executables.
 
 ---

@@ -12,6 +12,8 @@
     "Let's Check Loopback Mic Test: Real-time self-hearing test loop directly from microphone to headphones",
     "Advanced Voice Processing: Echo Cancellation, Noise Suppression (Fan/Hum filter), and Automatic Gain Control (AGC)",
     "Adaptive 60 FPS Fluid Rendering Engine: Sub-millisecond motion resampling during desktop movement with instant stationary HD clarity",
+    "Integrated Modern Title Bar (CSD): Replaced external Windows OS white title bar with unified dark title bar, integrated minimize, maximize, and close buttons, and smooth Aero drag support",
+    "Instant Hang-Proof Exit: Zero-latency close handler with asynchronous daemon shutdown and kernel-level exit, eliminating freeze on close",
     "Session Toolbar Quality Switch: 1-click toggle between ⚡ 60 FPS Fluid and 💎 HD Sharp display modes",
     "Authenticode Signed Binaries: Digitally signed with SHA-256 and DigiCert RFC 3161 timestamps"
   ]
