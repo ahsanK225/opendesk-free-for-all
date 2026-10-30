@@ -22,7 +22,7 @@ def main():
     }
 
     # Fetch release
-    req = urllib.request.Request('https://api.github.com/repos/ahsanK225/opendesk-free-for-all/releases/tags/v1.1.9', headers=headers)
+    req = urllib.request.Request('https://api.github.com/repos/ahsanK225/opendesk-free-for-all/releases/tags/v1.2.0', headers=headers)
     with urllib.request.urlopen(req) as resp:
         rel = json.loads(resp.read())
 
@@ -40,8 +40,8 @@ def main():
     # Files to upload
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     files = [
-        ('OpenDesk_Setup_v1.1.9_Installer.exe', os.path.join(base_dir, 'OpenDesk_Setup_v1.1.9_Installer.exe')),
-        ('OpenDesk_v1.1.9_Portable.exe', os.path.join(base_dir, 'OpenDesk_v1.1.9_Portable.exe'))
+        ('OpenDesk_Setup_v1.2.0_Installer.exe', os.path.join(base_dir, 'OpenDesk_Setup_v1.2.0_Installer.exe')),
+        ('OpenDesk_v1.2.0_Portable.exe', os.path.join(base_dir, 'OpenDesk_v1.2.0_Portable.exe'))
     ]
 
     for aname, fpath in files:
@@ -73,7 +73,7 @@ def main():
 
     print("\nVerifying live download URLs...")
     for aname, _ in files:
-        dl_url = f"https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.9/{aname}"
+        dl_url = f"https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.0/{aname}"
         try:
             head_req = urllib.request.Request(dl_url, headers={'User-Agent': 'Mozilla/5.0'})
             with urllib.request.urlopen(head_req) as r:

@@ -1,6 +1,6 @@
 # OpenDesk: Ultra-Low-Latency Remote Desktop Suite
 
-![Version](https://img.shields.io/badge/version-v1.1.9-red?style=for-the-badge&logo=github)
+![Version](https://img.shields.io/badge/version-v1.2.0-red?style=for-the-badge&logo=github)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-blue?style=for-the-badge&logo=windows)
 ![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
 ![Security](https://img.shields.io/badge/code%20signing-Authenticode%20SHA--256-orange?style=for-the-badge)
@@ -9,40 +9,39 @@ OpenDesk is a modern, high-performance open-source remote desktop solution inspi
 
 ---
 
-## 🚀 What's New in v1.1.9 (Latest Release)
+## 🚀 What's New in v1.2.0 (Latest Release)
 
-- **🛡️ Hard Crash Elimination (Pillow 0xC0000005 & PortAudio Fixes)**:
-  - **Pillow Concurrency Race Condition Fix**: Completely resolved the hard crash (`ACCESS_VIOLATION 0xC0000005`) that terminated OpenDesk without a traceback during active sessions. Guarded all PIL operations across the network and Tkinter threads with thread-safe `image_lock` double-buffering.
-  - **PortAudio 1D Buffer Guard**: Eliminated PortAudio callback `IndexError` when using mono output devices; wrapped all PortAudio callbacks in fail-safe exception blocks.
-  - **Task Lifecycle & Reconnect Leak Prevention**: Tracks and cleanly cancels old capture and network worker loops upon peer reconnect.
-
-- **🎧 Discord-Grade HD Voice & Video Suite**:
-  - **Studio-Quality 48,000 Hz HD Voice**: Upgraded VoIP pipeline to Discord's 48kHz standard, matching native Windows audio hardware with zero anti-aliasing distortion.
-  - **100% Backward Compatibility**: Ingests and plays audio from legacy 16kHz clients (v1.1.8) while delivering 48kHz studio audio to v1.1.9 peers.
-  - **"Let's Check" Mic Test (Self-Hearing Loopback)**: Real-time self-hearing test loop routes your microphone directly into your headphones with an animated green/yellow/red VU meter.
-  - **Voice Activity Detection (VAD) Sensitivity Slider**: Draggable threshold slider with auto-sensitivity ambient noise calibration cuts silence transmission completely, eliminating keyboard, fan, and breathing noise.
-  - **Push-to-Talk (PTT)**: Configurable push-to-talk mode activated with `[ Left Ctrl ]`.
-  - **Advanced Voice Processing**: Echo Cancellation, Noise Suppression (sub-80Hz rumble filter), and Automatic Gain Control (AGC).
-
-- **⚡ Adaptive 60 FPS Fluid Rendering Engine**:
-  - **Hardware Mouse Cursor Capture**: Direct Win32 `GetCursorInfo` and `DrawIconEx` blitting onto the host GDI memory DC ensures every remote mouse movement renders in real time as 60 FPS delta tiles, eliminating idle frame stalls.
-  - **Direct RGB BGRX Screen Capture**: Captures desktop frames directly as RGB from 32-bit Win32 DIBSection memory, eliminating per-frame color space conversion overhead.
-  - **Adaptive Motion Resampling**: Uses sub-millisecond `NEAREST` filter during active desktop motion and video streaming to maintain a silky smooth 60 FPS; automatically executes a pin-sharp `BILINEAR` HD pass the millisecond movement stops.
-  - **Toolbar Quality Toggle**: 1-click toggle between `⚡ 60 FPS Fluid` and `💎 HD Sharp` rendering modes.
-  - **Standby FPS Display**: Real-time FPS counter showing active streaming rate and `60 FPS (Idle)` on standby.
+- **🛡️ Startup & Connect Crash Immunity (Thread-Safe UI Queue)**:
+  - **Thread-Safe `post_ui` Message Queue**: Solved `ucrtbase.dll 0xc0000409` and `RuntimeError: main thread is not in main loop` crashes by preventing background threads from directly invoking Tkinter Tcl commands.
+  - **Connection Crash Elimination**: Completely resolved remote session crash when connecting to friends; video delta updates and status updates are cleanly marshaled to the main thread.
+  - **Re-entrancy Guard**: Prevented Win32 message loop re-entrancy during window decoration initialization on visible desktops.
 
 - **🖥️ Integrated Modern Title Bar (CSD) & Instant Hang-Proof Exit**:
   - **Embedded Window Controls ("App Ke Ander Hi")**: Seamlessly integrated Minimize (`―`), Maximize/Restore (`🗖`/`🗗`), and Close (`✕`) buttons right into the OpenDesk top tab bar, completely removing the external Windows OS white title bar.
   - **Native Aero Window Dragging**: Full multi-monitor dragging, edge snapping, and double-click maximize toggle.
   - **Instant Hang-Proof Close**: 0ms immediate window hiding and clean kernel-level exit (`os._exit(0)`), completely eliminating freezing or "Not Responding" when exiting.
 
+- **🎧 Discord-Grade HD Voice & Video Suite**:
+  - **Studio-Quality 48,000 Hz HD Voice**: Upgraded VoIP pipeline to Discord's 48kHz standard, matching native Windows audio hardware with zero anti-aliasing distortion.
+  - **100% Backward Compatibility**: Ingests and plays audio from legacy 16kHz clients while delivering 48kHz studio audio to v1.2.0 peers.
+  - **"Let's Check" Mic Test (Self-Hearing Loopback)**: Real-time self-hearing test loop routes your microphone directly into your headphones with an animated green/yellow/red VU meter.
+  - **Voice Activity Detection (VAD) Sensitivity Slider**: Draggable threshold slider with auto-sensitivity ambient noise calibration cuts silence transmission completely, eliminating keyboard, fan, and breathing noise.
+  - **Push-to-Talk (PTT)**: Configurable push-to-talk mode activated with `[ Left Ctrl ]`.
+  - **Advanced Voice Processing**: Echo Cancellation, Noise Suppression (sub-80Hz rumble filter), and Automatic Gain Control (AGC).
+
+- **⚡ Adaptive 60 FPS Fluid Rendering Engine**:
+  - **Hardware Mouse Cursor Capture**: Direct Win32 `GetCursorInfo` and `DrawIconEx` blitting onto the host GDI memory DC ensures every remote mouse movement renders in real time as 60 FPS delta tiles.
+  - **Direct RGB BGRX Screen Capture**: Captures desktop frames directly as RGB from 32-bit Win32 DIBSection memory, eliminating per-frame color space conversion overhead.
+  - **Adaptive Motion Resampling**: Uses sub-millisecond `NEAREST` filter during active desktop motion and video streaming to maintain a silky smooth 60 FPS; automatically executes a pin-sharp `BILINEAR` HD pass the millisecond movement stops.
+  - **Toolbar Quality Toggle**: 1-click toggle between `⚡ 60 FPS Fluid` and `💎 HD Sharp` rendering modes.
+
 ---
 
 ## 📦 Standalone Distribution & Installer
 
-### 1. Ready-To-Share Installer (v1.1.9)
-* **Direct Download (Installer)**: [👉 Download Setup Wizard (`OpenDesk_Setup_v1.1.9_Installer.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.9/OpenDesk_Setup_v1.1.9_Installer.exe)
-* **Direct Download (Portable)**: [👉 Download Portable Executable (`OpenDesk_v1.1.9_Portable.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.9/OpenDesk_v1.1.9_Portable.exe)
+### 1. Ready-To-Share Installer (v1.2.0)
+* **Direct Download (Installer)**: [👉 Download Setup Wizard (`OpenDesk_Setup_v1.2.0_Installer.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.0/OpenDesk_Setup_v1.2.0_Installer.exe)
+* **Direct Download (Portable)**: [👉 Download Portable Executable (`OpenDesk_v1.2.0_Portable.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.0/OpenDesk_v1.2.0_Portable.exe)
 * **GitHub Releases**: [View All Releases & Assets](https://github.com/ahsanK225/opendesk-free-for-all/releases)
 * **Local Build Path**: Generated locally in your project folder as `OpenDesk_Setup.exe` and `OpenDesk.exe`.
 
@@ -185,9 +184,9 @@ OpenDesk includes an autonomous, 1-click in-app software updater designed for se
 
 ## 📦 Standalone Distribution & Installer
 
-### 1. Ready-To-Share Installer (v1.1.9)
-* **Direct Download (Installer)**: [👉 Download Setup Wizard (`OpenDesk_Setup_v1.1.9_Installer.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.9/OpenDesk_Setup_v1.1.9_Installer.exe)
-* **Direct Download (Portable)**: [👉 Download Portable Executable (`OpenDesk_v1.1.9_Portable.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.9/OpenDesk_v1.1.9_Portable.exe)
+### 1. Ready-To-Share Installer (v1.2.0)
+* **Direct Download (Installer)**: [👉 Download Setup Wizard (`OpenDesk_Setup_v1.2.0_Installer.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.0/OpenDesk_Setup_v1.2.0_Installer.exe)
+* **Direct Download (Portable)**: [👉 Download Portable Executable (`OpenDesk_v1.2.0_Portable.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.0/OpenDesk_v1.2.0_Portable.exe)
 * **GitHub Releases**: [View All Releases & Assets](https://github.com/ahsanK225/opendesk-free-for-all/releases)
 * **Local Build Path**: Generated locally in your project folder as `OpenDesk_Setup.exe` and `OpenDesk.exe`.
 

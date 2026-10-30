@@ -83,28 +83,34 @@ def main():
     token = get_github_token()
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
-    tag = "v1.1.9"
-    title = "OpenDesk v1.1.9 - Hard Crash Elimination, Discord HD Voice Suite & 60 FPS Adaptive Engine"
-    body = """## What's New in OpenDesk v1.1.9
+    tag = "v1.2.0"
+    title = "OpenDesk v1.2.0 - Startup Crash Immunity, Thread-Safe Concurrency & In-App Frameless Window"
+    body = """## What's New in OpenDesk v1.2.0
 
-- **🛡️ Critical Crash Elimination (Pillow 0xC0000005 & PortAudio IndexError Fix)**:
-  - Multithreaded thread-safe double buffering with `image_lock`: completely eliminates Pillow C access violations caused by concurrent tile pasting during canvas resizing.
-  - Safe 1D/2D PortAudio channel indexing: catches callback exceptions and guards mono speaker streams against index errors.
-  - Async task lifecycle tracking: cleanly cancels old worker loops upon peer reconnect to prevent task leakage and CPU thrashing.
+- **🛡️ Startup & Connect Crash Immunity**:
+  - Thread-Safe UI Dispatch Queue (`self._ui_queue` + `self.post_ui`): eliminated `RuntimeError: main thread is not in main loop` and `ucrtbase.dll 0xc0000409` buffer overrun crashes caused by cross-thread Tkinter Tcl mutations.
+  - Eliminated friend connection crash: decoupled all incoming video packets, status updates, and clipboard notifications from Tcl registration.
+  - Re-entrancy guard on window styling preventing Win32 message loop recursion on visible desktop startup.
+
+- **🪟 Seamless In-App Title Bar (CSD - Client-Side Decoration)**:
+  - Completely stripped external Windows OS white title bar.
+  - Integrated Minimize (`―`), Maximize/Restore (`🗖`/`🗗`), and Close (`✕`) buttons directly into the dark app tab bar with native dark-mode hover states (red close hover).
+  - Native smooth Win32 window dragging with Aero snap support.
+
+- **⚡ Instant Hang-Proof Exit**:
+  - Multi-stage shutdown: immediate 0ms window hide, background worker cleanup, and clean kernel-level termination (`os._exit(0)`).
 
 - **🎧 Discord-Grade HD Voice & Video Suite**:
-  - Studio-grade 48,000 Hz VoIP standard matching Discord and WebRTC (eliminates resampling aliasing distortion).
-  - 100% backward compatibility with legacy 16kHz peers.
-  - Discord-style "Let's Check" Mic Test: real-time self-hearing loopback test directly through headphones with animated dB VU meter.
+  - Studio-grade 48,000 Hz VoIP standard matching Discord and WebRTC (zero resampling distortion).
   - Voice Activity Detection (VAD) with decibel sensitivity threshold slider and ambient noise floor auto-calibration.
   - Push-to-Talk (PTT) mode with customizable shortcut key ([Left Ctrl]).
-  - Advanced Voice Processing: Echo Cancellation, Noise Suppression (Fan/Hum filter), and Automatic Gain Control (AGC).
+  - Discord-style "Let's Check" loopback mic test with animated dB VU meter.
+  - Advanced Voice Processing: Echo Cancellation, Noise Suppression, and AGC.
 
-- **⚡ Adaptive 60 FPS Fluid Rendering Engine**:
-  - Direct RGB BGRX Win32 DIB screen capture: eliminates per-frame RGBA-to-RGB color space conversion overhead.
-  - Sub-millisecond motion resampling (`NEAREST`) during active window movement and video playback, followed by automatic crystal-clear stationary `BILINEAR` HD pass.
-  - Session toolbar 1-click quality switch: toggle between `⚡ 60 FPS Fluid` and `💎 HD Sharp` display modes.
-  - Responsive FPS counter with clear active rates and standby status.
+- **🚀 Adaptive 60 FPS Fluid Rendering Engine**:
+  - Direct RGB BGRX Win32 DIB screen capture.
+  - Sub-millisecond motion resampling (`NEAREST`) during movement with automatic stationary `BILINEAR` HD clarity pass.
+  - Session toolbar 1-click quality switch between `⚡ 60 FPS Fluid` and `💎 HD Sharp`.
 
 - **🛡️ Authenticode Digital Signatures**:
   - All installer and portable binaries signed with Authenticode SHA-256 and DigiCert RFC 3161 timestamps.
@@ -116,8 +122,8 @@ def main():
     print("Existing assets in release:", existing_asset_names)
 
     files_to_upload = [
-        (os.path.join(base_dir, 'OpenDesk_v1.1.9_Portable.exe'), 'OpenDesk_v1.1.9_Portable.exe'),
-        (os.path.join(base_dir, 'OpenDesk_Setup_v1.1.9_Installer.exe'), 'OpenDesk_Setup_v1.1.9_Installer.exe')
+        (os.path.join(base_dir, 'OpenDesk_v1.2.0_Portable.exe'), 'OpenDesk_v1.2.0_Portable.exe'),
+        (os.path.join(base_dir, 'OpenDesk_Setup_v1.2.0_Installer.exe'), 'OpenDesk_Setup_v1.2.0_Installer.exe')
     ]
 
     for fpath, aname in files_to_upload:

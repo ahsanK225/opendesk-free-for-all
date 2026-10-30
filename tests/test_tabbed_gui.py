@@ -13,6 +13,7 @@ import common.config as config_mod
 
 class TestTabbedGUI(unittest.TestCase):
     def setUp(self):
+        os.environ["OPENDESK_SILENT_TEST"] = "1"
         self.root = tk.Tk()
         self.root.withdraw()
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -21,6 +22,7 @@ class TestTabbedGUI(unittest.TestCase):
         self.patcher.start()
 
     def tearDown(self):
+        os.environ.pop("OPENDESK_SILENT_TEST", None)
         self.patcher.stop()
         self.temp_dir.cleanup()
         try:

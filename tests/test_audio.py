@@ -2,6 +2,7 @@ import unittest
 import base64
 import sys
 import os
+from unittest.mock import patch, MagicMock
 import numpy as np
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -9,6 +10,18 @@ from opendesk.host.audio import AudioEngine, SAMPLE_RATE, BLOCK_SIZE
 from opendesk.common.protocol import MessageType, create_packet, parse_packet
 
 class TestAudioEngine(unittest.TestCase):
+    def setUp(self):
+        import sounddevice as sd
+        self.mock_out = MagicMock()
+        self.mock_in = MagicMock()
+        self.patch_out = patch.object(sd, "OutputStream", return_value=self.mock_out)
+        self.patch_in = patch.object(sd, "InputStream", return_value=self.mock_in)
+        self.patch_out.start()
+        self.patch_in.start()
+
+    def tearDown(self):
+        self.patch_out.stop()
+        self.patch_in.stop()
     def test_audio_engine_packet_creation(self):
         # Generate dummy 100ms 16kHz sine wave audio
         t = np.linspace(0, 0.1, BLOCK_SIZE, endpoint=False)

@@ -1,20 +1,18 @@
 {
-  "version": "1.1.9",
+  "version": "1.2.0",
   "release_date": "2026-10-31",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.9/OpenDesk_v1.1.9_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.1.9/OpenDesk_Setup_v1.1.9_Installer.exe",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.0/OpenDesk_v1.2.0_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.0/OpenDesk_Setup_v1.2.0_Installer.exe",
   "changelog": [
-    "Critical Crash Elimination: Thread-safe double buffering and image_lock preventing Pillow C multithreaded access violations (0xC0000005)",
-    "PortAudio Crash Proofing: Safe 1D/2D channel handling preventing unhandled IndexError in sounddevice callback threads",
-    "Leak-Free Session Lifecycle: Full async task cancellation and queue flushing upon peer reconnect or session close",
+    "Startup & Connect Crash Immunity: Thread-safe post_ui dispatch queue eliminating cross-thread Tcl interpreter mutations and ucrtbase.dll 0xc0000409 buffer overrun crashes",
+    "Seamless In-App Title Bar (CSD): Stripped external Windows OS title bar, integrated minimize, maximize, and close controls directly into top app tab bar with native dark-mode hover states",
+    "Instant Hang-Proof Exit: Multi-stage 0ms window hide, background worker teardown, and clean kernel exit (os._exit) eliminating freeze on close",
+    "Silent Automated Testing: Mocked audio hardware streams and system chimes during automated execution",
     "Discord-Grade 48kHz HD Audio: Native studio-quality 48,000 Hz VoIP with zero resampling aliasing distortion and backward compatibility",
     "Discord Voice Suite: Voice Activity Detection (VAD) with decibel threshold slider, Push-to-Talk, and live VU meter",
     "Let's Check Loopback Mic Test: Real-time self-hearing test loop directly from microphone to headphones",
     "Advanced Voice Processing: Echo Cancellation, Noise Suppression (Fan/Hum filter), and Automatic Gain Control (AGC)",
     "Adaptive 60 FPS Fluid Rendering Engine: Sub-millisecond motion resampling during desktop movement with instant stationary HD clarity",
-    "Integrated Modern Title Bar (CSD): Replaced external Windows OS white title bar with unified dark title bar, integrated minimize, maximize, and close buttons, and smooth Aero drag support",
-    "Instant Hang-Proof Exit: Zero-latency close handler with asynchronous daemon shutdown and kernel-level exit, eliminating freeze on close",
-    "Session Toolbar Quality Switch: 1-click toggle between ⚡ 60 FPS Fluid and 💎 HD Sharp display modes",
     "Authenticode Signed Binaries: Digitally signed with SHA-256 and DigiCert RFC 3161 timestamps"
   ]
 }

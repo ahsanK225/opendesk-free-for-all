@@ -205,16 +205,17 @@ class OpenDeskGUI:
             pass
 
         # Seamless Client-Side Decoration: integrate window controls inside app on Windows
-        self._apply_custom_frameless_window()
-        # Bind Map event and configure event to preserve frameless CSD and sync maximize button
-        self.root.bind("<Map>", lambda e: self._apply_custom_frameless_window() if e.widget == self.root else None)
+        if sys.platform == "win32":
+            try:
+                self.root.withdraw()
+                self.root.update_idletasks()
+                self._apply_custom_frameless_window()
+                self.root.deiconify()
+            except Exception:
+                self._apply_custom_frameless_window()
+        else:
+            self._apply_custom_frameless_window()
         self.root.bind("<Configure>", self._on_window_configure)
-        try:
-            if self.root and self.root.winfo_exists() and not getattr(self, "_is_closing", False):
-                self.root.after(50, self._apply_custom_frameless_window)
-                self.root.after(200, self._apply_custom_frameless_window)
-        except Exception:
-            pass
 
     def _on_window_configure(self, event):
         if event.widget == self.root and hasattr(self, "max_btn"):
@@ -232,17 +233,32 @@ class OpenDeskGUI:
         """
         if sys.platform != "win32":
             return
+        if getattr(self, "_frameless_applying", False):
+            return
+        self._frameless_applying = True
         try:
             if not self.root or not self.root.winfo_exists():
                 return
             import ctypes
-            self.root.update_idletasks()
             try:
                 hwnd = int(self.root.wm_frame(), 16)
             except Exception:
                 hwnd = 0
             if not hwnd:
                 hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id()) or self.root.winfo_id()
+            if not hwnd:
+                return
+
+            GWL_STYLE = -16
+            WS_CAPTION = 0x00C00000
+            WS_THICKFRAME = 0x00040000
+            WS_MINIMIZEBOX = 0x00020000
+            WS_MAXIMIZEBOX = 0x00010000
+            WS_SYSMENU = 0x00080000
+
+            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
+            if not (style & WS_CAPTION):
+                return  # WS_CAPTION is already stripped! Do NOT call SetWindowPos or recalculate frame
 
             # 1. Enable Windows 10/11 Immersive Dark Mode for DWM borders
             try:
@@ -255,14 +271,6 @@ class OpenDeskGUI:
                 pass
 
             # 2. Strip WS_CAPTION to remove external OS title bar while keeping WS_THICKFRAME for resizing
-            GWL_STYLE = -16
-            WS_CAPTION = 0x00C00000
-            WS_THICKFRAME = 0x00040000
-            WS_MINIMIZEBOX = 0x00020000
-            WS_MAXIMIZEBOX = 0x00010000
-            WS_SYSMENU = 0x00080000
-
-            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
             new_style = (style & ~WS_CAPTION) | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU
             ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, new_style)
 
@@ -276,6 +284,8 @@ class OpenDeskGUI:
             )
         except Exception as e:
             print(f"[UI] Custom title bar init notice: {e}")
+        finally:
+            self._frameless_applying = False
 
     def _start_window_drag(self, event):
         """Native Windows silky-smooth window dragging with Aero snap support."""
@@ -286,15 +296,6 @@ class OpenDeskGUI:
                     hwnd = int(self.root.wm_frame(), 16)
                 except Exception:
                     hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id()) or self.root.winfo_id()
-                ctypes.windll.user32.ReleaseCapture()
-                ctypes.windll.user32.SendMessageW(hwnd, 0x0112, 0xF012, 0)
-                if hasattr(self, "max_btn"):
-                    self.max_btn.config(text="🗗" if self.root.state() == "zoomed" else "🗖")
-            except Exception:
-                pass
-            try:
-                import ctypes
-                hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id()) or self.root.winfo_id()
                 ctypes.windll.user32.ReleaseCapture()
                 ctypes.windll.user32.SendMessageW(hwnd, 0x0112, 0xF012, 0)
                 if hasattr(self, "max_btn"):
@@ -1209,12 +1210,13 @@ class OpenDeskGUI:
 
     def _show_incoming_connection_dialog(self, client_id: str, display_id: str, on_decision: Callable):
         """AnyDesk-style Incoming Session Request Dialog with permission toggles and audio chime."""
-        # 1. Play alert sound chime
-        try:
-            import winsound
-            winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
-        except Exception:
-            pass
+        # 1. Play alert sound chime (silent in automated tests)
+        if os.environ.get("OPENDESK_SILENT_TEST") != "1":
+            try:
+                import winsound
+                winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+            except Exception:
+                pass
 
         # 2. Build AnyDesk-style modal dialog
         dialog = tk.Toplevel(self.root)
@@ -1603,8 +1605,11 @@ class OpenDeskGUI:
     def _start_services(self):
         # 1. Start Relay Server thread
         def run_relay():
-            server = RelayServer(host="0.0.0.0", port=self.port)
-            server.run()
+            try:
+                server = RelayServer(host="0.0.0.0", port=self.port)
+                server.run()
+            except Exception as e:
+                print(f"[Relay Server] Thread notice: {e}")
 
         t_relay = threading.Thread(target=run_relay, daemon=True)
         t_relay.start()
@@ -1612,28 +1617,31 @@ class OpenDeskGUI:
         # 2. Start Host Agent thread
         def run_agent():
             time.sleep(0.5)
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            unattended_pw = get_unattended_password()
-            self.host_agent = HostAgent(
-                relay_url=self.relay_url,
-                host_id=self.assigned_id,
-                password=unattended_pw,
-                on_connection_request=self._on_incoming_connection_request
-            )
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                unattended_pw = get_unattended_password()
+                self.host_agent = HostAgent(
+                    relay_url=self.relay_url,
+                    host_id=self.assigned_id,
+                    password=unattended_pw,
+                    on_connection_request=self._on_incoming_connection_request
+                )
 
-            async def monitor_id():
-                while True:
-                    if self.host_agent.assigned_id:
-                        self.assigned_id = self.host_agent.assigned_id
-                        self.post_ui(self._on_agent_online)
-                        break
-                    await asyncio.sleep(0.2)
+                async def monitor_id():
+                    while True:
+                        if self.host_agent and self.host_agent.assigned_id:
+                            self.assigned_id = self.host_agent.assigned_id
+                            self.post_ui(self._on_agent_online)
+                            break
+                        await asyncio.sleep(0.2)
 
-            async def main_loop():
-                await asyncio.gather(self.host_agent.start(), monitor_id())
+                async def main_loop():
+                    await asyncio.gather(self.host_agent.start(), monitor_id())
 
-            loop.run_until_complete(main_loop())
+                loop.run_until_complete(main_loop())
+            except Exception as e:
+                print(f"[Host Agent] Thread notice: {e}")
 
         t_agent = threading.Thread(target=run_agent, daemon=True)
         t_agent.start()
