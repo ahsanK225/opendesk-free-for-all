@@ -17,6 +17,7 @@ All notable project changes are documented here.
   - **Advanced Discord Voice Processing**: Echo Cancellation (prevents loopback feedback), Noise Suppression (high-pass filter cutting sub-80Hz rumble), and Automatic Gain Control (AGC) with smooth normalization.
 
 - **Adaptive 60 FPS Fluid Rendering Engine** (`client/viewer.py`, `host/capture.py`):
+  - **Hardware Mouse Cursor Capture**: Embedded direct Win32 `GetCursorInfo` and `DrawIconEx` blitting onto the host GDI memory DC. When a remote user moves their mouse, active cursor rendering instantly generates 60 FPS delta tiles across the network, eliminating the idle "2 FPS" display and ensuring fluid responsive cursor tracking.
   - **Direct RGB BGRX Screen Capture**: Captured screen frames directly as native RGB using Win32 DIBSection `BGRX` raw decoding, eliminating per-frame RGBA-to-RGB color space conversions.
   - **Adaptive Motion Resampling**: During active desktop movement or video streaming, resamples canvas frames in `<1ms` using `NEAREST` filter, unlocking silky smooth 60 FPS motion without event loop pileup; triggers an automatic crisp `BILINEAR` HD pass the millisecond movement stops.
   - **Session Toolbar Quality Switch**: Added 1-click toggle button on session toolbar allowing instant switching between `⚡ 60 FPS Fluid` and `💎 HD Sharp` rendering modes.

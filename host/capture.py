@@ -6,6 +6,7 @@ for direct access to the active user's desktop session.
 
 import sys
 import ctypes
+from ctypes import wintypes
 import time
 from typing import Tuple, Optional
 import numpy as np
@@ -35,6 +36,26 @@ class WindowsScreenCapturer:
                 ('biClrImportant', ctypes.c_uint32),
             ]
         self.BITMAPINFOHEADER = BITMAPINFOHEADER
+
+        # Structures for Hardware Mouse Cursor Capture
+        class CURSORINFO(ctypes.Structure):
+            _fields_ = [
+                ('cbSize', wintypes.DWORD),
+                ('flags', wintypes.DWORD),
+                ('hCursor', wintypes.HANDLE),
+                ('ptScreenPos', wintypes.POINT),
+            ]
+        self.CURSORINFO = CURSORINFO
+
+        class ICONINFO(ctypes.Structure):
+            _fields_ = [
+                ('fIcon', wintypes.BOOL),
+                ('xHotspot', wintypes.DWORD),
+                ('yHotspot', wintypes.DWORD),
+                ('hbmMask', wintypes.HANDLE),
+                ('hbmColor', wintypes.HANDLE),
+            ]
+        self.ICONINFO = ICONINFO
         
         self.width = 0
         self.height = 0
@@ -124,6 +145,27 @@ class WindowsScreenCapturer:
                 self.hdc_mem, 0, 0, self.width, self.height,
                 self.hdc_screen, 0, 0, 0x00CC0020
             )
+
+        # Draw active hardware mouse cursor onto memory DC so remote peer sees mouse movement in real time
+        try:
+            ci = self.CURSORINFO()
+            ci.cbSize = ctypes.sizeof(self.CURSORINFO)
+            if self.user32.GetCursorInfo(ctypes.byref(ci)) and (ci.flags & 1) and ci.hCursor:
+                icon_info = self.ICONINFO()
+                if self.user32.GetIconInfo(ci.hCursor, ctypes.byref(icon_info)):
+                    cur_x = ci.ptScreenPos.x - icon_info.xHotspot
+                    cur_y = ci.ptScreenPos.y - icon_info.yHotspot
+                    if icon_info.hbmMask:
+                        self.gdi32.DeleteObject(icon_info.hbmMask)
+                    if icon_info.hbmColor:
+                        self.gdi32.DeleteObject(icon_info.hbmColor)
+                else:
+                    cur_x = ci.ptScreenPos.x
+                    cur_y = ci.ptScreenPos.y
+                # 0x0003 = DI_NORMAL
+                self.user32.DrawIconEx(self.hdc_mem, cur_x, cur_y, ci.hCursor, 0, 0, 0, None, 0x0003)
+        except Exception:
+            pass
 
         buffer_size = self.width * self.height * 4
         raw_bytes = (ctypes.c_char * buffer_size).from_address(self.ppv_bits.value)

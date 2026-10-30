@@ -25,6 +25,7 @@ OpenDesk is a modern, high-performance open-source remote desktop solution inspi
   - **Advanced Voice Processing**: Echo Cancellation, Noise Suppression (sub-80Hz rumble filter), and Automatic Gain Control (AGC).
 
 - **⚡ Adaptive 60 FPS Fluid Rendering Engine**:
+  - **Hardware Mouse Cursor Capture**: Direct Win32 `GetCursorInfo` and `DrawIconEx` blitting onto the host GDI memory DC ensures every remote mouse movement renders in real time as 60 FPS delta tiles, eliminating idle frame stalls.
   - **Direct RGB BGRX Screen Capture**: Captures desktop frames directly as RGB from 32-bit Win32 DIBSection memory, eliminating per-frame color space conversion overhead.
   - **Adaptive Motion Resampling**: Uses sub-millisecond `NEAREST` filter during active desktop motion and video streaming to maintain a silky smooth 60 FPS; automatically executes a pin-sharp `BILINEAR` HD pass the millisecond movement stops.
   - **Toolbar Quality Toggle**: 1-click toggle between `⚡ 60 FPS Fluid` and `💎 HD Sharp` rendering modes.

@@ -146,6 +146,7 @@ Unsigned binaries trigger Windows SmartScreen warnings ("Windows protected your 
 - **Conversational Latency Guard**: Buffer capped at 70ms with auto-purging to maintain conversational real-time delay `<50ms`.
 
 ## 5. Viewport Rendering & DeskRT 60 FPS Codec
+- **Hardware Mouse Cursor Capture**: Embedded direct Win32 `GetCursorInfo` and `DrawIconEx` blitting onto the host GDI memory DC. Moving the mouse cursor immediately alters the screen buffer, ensuring small 32x32 delta tiles are broadcast at 60 FPS instead of remaining in an idle 2 FPS state when no window animations are playing.
 - **Zero-Copy NumPy Vectorized Diff**: `WindowsScreenCapturer.grab_frame()` provides a direct 2D uint32 NumPy view (`1080x1920`) over Win32 GDI DIBSection memory in `<15 microseconds`, allowing screen-wide difference detection in `<1.5ms`.
 - **Clustered Bounding Box Merging**: Adjacent dirty blocks (e.g. typing, scrolling, notifications) are merged into clean rectangular bounding boxes. This reduces JPEG compression calls from 30+ separate tile encodes down to 1-2 merged blocks, cutting CPU usage and WebSocket base64/JSON payload size by over 70%.
 - **Decoupled Capture & Asynchronous WebSocket Sender**: Screen capture runs at 60 FPS decoupled from network latency; drops older stale frames under network congestion so the user always views the freshest screen state.
