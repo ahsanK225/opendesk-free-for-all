@@ -25,11 +25,11 @@ opendesk/
 ├── OpenDesk.exe                    # Standalone single-file executable (Digitally Signed)
 ├── opendesk.ico                    # High-resolution application icon
 ├── opendesk.spec                   # PyInstaller bundle specification with all hidden imports
-├── opendesk_app.py                 # AnyDesk 8 multi-tab GUI, sidebar, quick-connect, Discord Voice settings & session viewer
-├── opendesk_installer.iss          # Inno Setup 6 wizard installation script (v1.2.0)
+├── opendesk_app.py                 # AnyDesk 8 multi-tab GUI, sidebar, quick-connect, session rename/edit/delete, Discord Voice settings & session viewer
+├── opendesk_installer.iss          # Inno Setup 6 wizard installation script (v1.2.1)
 ├── OpenDesk_Setup.exe              # Compiled Inno Setup installer wizard (Digitally Signed)
-├── OpenDesk_Setup_v1.2.0_Installer.exe # Versioned installer wizard binary (v1.2.0)
-├── OpenDesk_v1.2.0_Portable.exe    # Versioned standalone portable binary (v1.2.0)
+├── OpenDesk_Setup_v1.2.1_Installer.exe # Versioned installer wizard binary (v1.2.1)
+├── OpenDesk_v1.2.1_Portable.exe    # Versioned standalone portable binary (v1.2.1)
 ├── PROJECT_STRUCTURE.md            # Detailed structural and module specification
 ├── push_to_github.bat              # 1-Click Git push synchronization script
 ├── README.md                       # Public documentation, quickstart, and downloads
@@ -92,6 +92,7 @@ opendesk/
 │   ├── test_integration.py         # End-to-end integration tests for relay and host
 │   ├── test_native_viewer.py       # Unit tests for native desktop session viewer
 │   ├── test_rendezvous.py          # Unit tests for 9-digit rendezvous publish, resolve, and heartbeat
+│   ├── test_session_management.py  # Unit tests for session rename, edit, delete, and modal dialogs
 │   ├── test_tabbed_gui.py          # Unit tests for AnyDesk tab lifecycle & recent session config
 │   ├── test_updater.py             # Unit tests for auto-update version check & download
 │   └── __init__.py
@@ -116,6 +117,6 @@ opendesk/
 - **`opendesk_app.py`**: AnyDesk 8 multi-tab desktop application. Provides top tab strip (`[ 🏠 New Connection ]`, dynamic `[ 💻 <ID> ✕ ]` tabs, `+` button), left navigation sidebar, Home dashboard with This Desk card, quick connect search bar, unattended password setup, recent sessions & favorites discovery grid, embedded in-tab session viewports, integrated modern client-side titlebar controls (Minimize `―`, Maximize `🗖`, Close `✕`), 0ms instant exit teardown, and thread-safe UI message queue (`post_ui`).
 - **`client/viewer.py`**: Contains `EmbeddedSessionView(tk.Frame)` and `NativeSessionViewer(tk.Toplevel)`. Renders real-time DeskRT video frames onto Tkinter canvas, scales coordinates, forwards mouse/keyboard input, synchronizes clipboard, handles Discord HD audio, thread-safe UI message queue (`post_ui`), and manages fullscreen and shortcuts.
 - **`host/agent.py`**: Core host engine. Captures screens, encodes delta frames, streams audio, injects input, synchronizes clipboard, and coordinates file transfers.
-- **`common/config.py`**: Persistent configuration store for 9-digit host ID, recent sessions history, aliases, favorite devices, unattended password access, and automatic update preferences.
+- **`common/config.py`**: Persistent configuration store for 9-digit host ID, recent sessions history, aliases, custom session management (`rename_recent_session`, `edit_recent_session`, `delete_recent_session`, `clear_recent_sessions`), favorite devices, unattended password access, and automatic update preferences.
 - **`common/rendezvous.py`**: Global rendezvous directory client and heartbeat service. Maps 9-digit OpenDesk IDs to live Cloudflare Tunnel endpoints worldwide, enabling instant AnyDesk-style cross-network discovery.
 - **`common/updater.py`**: In-app software updater. Queries remote `version.json` or GitHub releases, parses semantic versions, downloads update packages with progress monitoring, and handles seamless Windows batch self-replacement and relaunch.

@@ -1,6 +1,46 @@
 # Changelog
 All notable project changes are documented here.
 
+## [2026-10-31] — Release v1.2.1: Custom Session Management: Rename, Edit, Delete & Context Menu for Recent Sessions and Favorites
+### Added
+- **Recent Sessions & Favorites Custom Management Suite** (`common/config.py`, `opendesk_app.py`, `tests/test_session_management.py`):
+  - **Rename Session**: Direct capability to rename any session display name/alias directly from the UI.
+  - **Full Session Details Editing**: Comprehensive modal dialog allowing users to modify remote connection address/ID, display alias, and favorite pinning status simultaneously.
+  - **Delete Session**: Safely remove any session from recent session history and favorites with an AnyDesk-style confirmation dialog.
+  - **Direct Card Action Buttons**: Each card in the "Recent Sessions & Favorites" grid now features responsive, discoverable quick buttons:
+    - `[✏️ Edit]` button for instant modal edit invocation with sleek cyan hover state (`#38bdf8`).
+    - `[🗑️]` delete button with vibrant crimson hover state (`#ef4444`).
+    - `[★]`/`[☆]` favorite star toggle with golden highlight (`#eab308`).
+    - `[Connect ➜]` one-click connection launcher.
+  - **Right-Click Context Menu & 3-Dot Options Button (`⋮`)**:
+    - Right-clicking `<Button-3>` anywhere on a card (card body, alias, ID, timestamp, action bar) or left-clicking the 3-dot options button (`⋮`) opens an authentic dark-themed context menu (`tk.Menu`):
+      - `⚡ Connect`
+      - `✏️ Rename Session...`
+      - `⚙️ Edit Details...`
+      - `⭐ Add to Favorites` / `★ Remove from Favorites`
+      - `🗑️ Delete Session`
+  - **Tailored Modern Dark Modals**:
+    - Centered, non-resizable dark modals (`#141822`) with `<Return>` (save) and `<Escape>` (dismiss) keyboard shortcuts.
+    - Automatic text selection and focus on input entry fields.
+  - **Persistent Backend Configuration & Sanitization**:
+    - Added `rename_recent_session`, `edit_recent_session`, `delete_recent_session`, and `clear_recent_sessions` in `common/config.py`.
+    - Automatically formats 9-digit remote IDs with space triplets (`XXX XXX XXX`) and strips redundant whitespace.
+    - Real-time reactive UI grid refresh immediately following any modification.
+- **Unit & Integration Test Suite** (`tests/test_session_management.py`):
+  - 12 comprehensive unit and GUI tests verifying rename, spacing tolerance, edit, autoformat, delete, clear, and dialog lifecycle.
+  - Expanded repository test suite from 52 to 64 tests with 100% passing results.
+- **Packaging, Digital Signing & Distribution** (`version.json`, `opendesk_installer.iss`, `build_installer.bat`):
+  - Recompiled standalone executable `OpenDesk_v1.2.1_Portable.exe` and setup wizard `OpenDesk_Setup_v1.2.1_Installer.exe`.
+  - Digitally signed both binaries with Authenticode SHA-256 and DigiCert RFC 3161 timestamps.
+  - Published to GitHub Release v1.2.1 with verified live HTTP 200 downloads.
+
+### Tests and Verification
+- 64 of 64 unit and integration tests passing silently in 4.355s (`python -m unittest discover tests`).
+- Recompiled and Authenticode signed portable (`OpenDesk_v1.2.1_Portable.exe`) and wizard installer (`OpenDesk_Setup_v1.2.1_Installer.exe`).
+- Verified live HTTP 200 downloads from GitHub Releases for v1.2.1 assets.
+
+---
+
 ## [2026-10-31] — Release v1.2.0: Startup Crash Immunity, Restored Maximize & Non-Blocking DWM Drag Engine
 ### Added
 - **Restored Maximize Button & Crash Root-Cause Resolution** (`opendesk_app.py`, `tests/test_tabbed_gui.py`):

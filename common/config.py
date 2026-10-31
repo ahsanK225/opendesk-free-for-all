@@ -107,13 +107,71 @@ def toggle_favorite(target_id: str) -> bool:
     recents = cfg.get("recent_sessions", [])
     is_fav = False
     for r in recents:
-        if r.get("id", "").replace(" ", "") == clean:
+        if r.get("id", "").replace(" ", "").replace("-", "") == clean:
             r["favorite"] = not r.get("favorite", False)
             is_fav = r["favorite"]
             break
     cfg["recent_sessions"] = recents
     save_config(cfg)
     return is_fav
+
+def rename_recent_session(target_id: str, new_alias: str) -> bool:
+    """Rename/update the display alias for an existing session."""
+    clean = target_id.replace(" ", "").replace("-", "")
+    cfg = load_config()
+    recents = cfg.get("recent_sessions", [])
+    updated = False
+    for r in recents:
+        if r.get("id", "").replace(" ", "").replace("-", "") == clean:
+            r["alias"] = new_alias.strip() or f"Desktop - {r.get('id', target_id)}"
+            updated = True
+            break
+    if updated:
+        cfg["recent_sessions"] = recents
+        save_config(cfg)
+    return updated
+
+def edit_recent_session(target_id: str, new_id: str, new_alias: str, favorite: Optional[bool] = None) -> bool:
+    """Edit session details including remote ID, alias, and optionally favorite status."""
+    clean_target = target_id.replace(" ", "").replace("-", "")
+    clean_new = new_id.replace(" ", "").replace("-", "")
+    formatted_new = f"{clean_new[:3]} {clean_new[3:6]} {clean_new[6:]}" if len(clean_new) == 9 else new_id.strip()
+    
+    cfg = load_config()
+    recents = cfg.get("recent_sessions", [])
+    updated = False
+    for r in recents:
+        if r.get("id", "").replace(" ", "").replace("-", "") == clean_target:
+            r["id"] = formatted_new
+            r["alias"] = new_alias.strip() or f"Desktop - {formatted_new}"
+            if favorite is not None:
+                r["favorite"] = bool(favorite)
+            updated = True
+            break
+    if updated:
+        cfg["recent_sessions"] = recents
+        save_config(cfg)
+    return updated
+
+def delete_recent_session(target_id: str) -> bool:
+    """Delete/remove a session from recent sessions and favorites."""
+    clean = target_id.replace(" ", "").replace("-", "")
+    cfg = load_config()
+    recents = cfg.get("recent_sessions", [])
+    initial_len = len(recents)
+    recents = [r for r in recents if r.get("id", "").replace(" ", "").replace("-", "") != clean]
+    if len(recents) < initial_len:
+        cfg["recent_sessions"] = recents
+        save_config(cfg)
+        return True
+    return False
+
+def clear_recent_sessions() -> bool:
+    """Clear all recent and favorite sessions."""
+    cfg = load_config()
+    cfg["recent_sessions"] = []
+    save_config(cfg)
+    return True
 
 def get_unattended_password() -> str:
     cfg = load_config()

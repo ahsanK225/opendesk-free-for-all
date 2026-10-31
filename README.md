@@ -1,15 +1,23 @@
 # OpenDesk: Ultra-Low-Latency Remote Desktop Suite
 
-![Version](https://img.shields.io/badge/version-v1.2.0-red?style=for-the-badge&logo=github)
+![Version](https://img.shields.io/badge/version-v1.2.1-red?style=for-the-badge&logo=github)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-blue?style=for-the-badge&logo=windows)
 ![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
 ![Security](https://img.shields.io/badge/code%20signing-Authenticode%20SHA--256-orange?style=for-the-badge)
 
-OpenDesk is a modern, high-performance open-source remote desktop solution inspired by AnyDesk's architecture. It features a custom **DeskRT 60 FPS Tile & Delta Video Codec**, Win32 desktop session capturing, AnyDesk 8 multi-tab GUI with embedded viewports, **Discord-grade 48kHz HD voice communication** with "Let's Check" loopback mic testing, VAD sensitivity thresholding, and Push-to-Talk, AnyDesk-style incoming session request approval with granular permission toggles, adaptive 60 FPS motion rendering with stationary HD clarity, dynamic aspect ratio modes, zoom controls, 64-bit clipboard sync, and global zero-configuration tunneling powered by Cloudflare.
+OpenDesk is a modern, high-performance open-source remote desktop solution inspired by AnyDesk's architecture. It features a custom **DeskRT 60 FPS Tile & Delta Video Codec**, Win32 desktop session capturing, AnyDesk 8 multi-tab GUI with embedded viewports, **custom session management (Rename, Edit, Delete, Context Menus)** for recent sessions and favorites, **Discord-grade 48kHz HD voice communication** with "Let's Check" loopback mic testing, VAD sensitivity thresholding, and Push-to-Talk, AnyDesk-style incoming session request approval with granular permission toggles, adaptive 60 FPS motion rendering with stationary HD clarity, dynamic aspect ratio modes, zoom controls, 64-bit clipboard sync, and global zero-configuration tunneling powered by Cloudflare.
 
 ---
 
-## 🚀 What's New in v1.2.0 (Latest Release)
+## 🚀 What's New in v1.2.1 (Latest Release)
+
+- **⭐ Recent Sessions & Favorites Custom Management Suite**:
+  - **Rename Session**: Instantly rename device nicknames directly from the interface.
+  - **Edit Details**: Comprehensive dialog to edit remote address, display alias, and favorite pinning.
+  - **Delete Session**: Safely remove stale or unneeded sessions with an AnyDesk-style confirmation dialog.
+  - **Quick Action Buttons**: Directly accessible `[✏️ Edit]` and `[🗑️]` buttons on each card.
+  - **Right-Click Context Menu & 3-Dot Menu (`⋮`)**: Connect, Rename, Edit Details, Add/Remove Favorite, and Delete Session actions available on right-click anywhere on the card.
+  - **Real-Time Reactivity**: Immediate UI updates upon any edit or deletion without requiring restart.
 
 - **🛡️ Startup & Connect Crash Immunity (Thread-Safe UI Queue)**:
   - **Thread-Safe `post_ui` Message Queue**: Solved `ucrtbase.dll 0xc0000409` and `RuntimeError: main thread is not in main loop` crashes by preventing background threads from directly invoking Tkinter Tcl commands.
@@ -23,7 +31,7 @@ OpenDesk is a modern, high-performance open-source remote desktop solution inspi
 
 - **🎧 Discord-Grade HD Voice & Video Suite**:
   - **Studio-Quality 48,000 Hz HD Voice**: Upgraded VoIP pipeline to Discord's 48kHz standard, matching native Windows audio hardware with zero anti-aliasing distortion.
-  - **100% Backward Compatibility**: Ingests and plays audio from legacy 16kHz clients while delivering 48kHz studio audio to v1.2.0 peers.
+  - **100% Backward Compatibility**: Ingests and plays audio from legacy 16kHz clients while delivering 48kHz studio audio to v1.2.1 peers.
   - **"Let's Check" Mic Test (Self-Hearing Loopback)**: Real-time self-hearing test loop routes your microphone directly into your headphones with an animated green/yellow/red VU meter.
   - **Voice Activity Detection (VAD) Sensitivity Slider**: Draggable threshold slider with auto-sensitivity ambient noise calibration cuts silence transmission completely, eliminating keyboard, fan, and breathing noise.
   - **Push-to-Talk (PTT)**: Configurable push-to-talk mode activated with `[ Left Ctrl ]`.
@@ -39,9 +47,9 @@ OpenDesk is a modern, high-performance open-source remote desktop solution inspi
 
 ## 📦 Standalone Distribution & Installer
 
-### 1. Ready-To-Share Installer (v1.2.0)
-* **Direct Download (Installer)**: [👉 Download Setup Wizard (`OpenDesk_Setup_v1.2.0_Installer.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.0/OpenDesk_Setup_v1.2.0_Installer.exe)
-* **Direct Download (Portable)**: [👉 Download Portable Executable (`OpenDesk_v1.2.0_Portable.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.0/OpenDesk_v1.2.0_Portable.exe)
+### 1. Ready-To-Share Installer (v1.2.1)
+* **Direct Download (Installer)**: [👉 Download Setup Wizard (`OpenDesk_Setup_v1.2.1_Installer.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.1/OpenDesk_Setup_v1.2.1_Installer.exe)
+* **Direct Download (Portable)**: [👉 Download Portable Executable (`OpenDesk_v1.2.1_Portable.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.1/OpenDesk_v1.2.1_Portable.exe)
 * **GitHub Releases**: [View All Releases & Assets](https://github.com/ahsanK225/opendesk-free-for-all/releases)
 * **Local Build Path**: Generated locally in your project folder as `OpenDesk_Setup.exe` and `OpenDesk.exe`.
 

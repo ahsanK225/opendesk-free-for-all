@@ -1,18 +1,18 @@
 {
-  "version": "1.2.0",
+  "version": "1.2.1",
   "release_date": "2026-10-31",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.0/OpenDesk_v1.2.0_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.0/OpenDesk_Setup_v1.2.0_Installer.exe",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.1/OpenDesk_v1.2.1_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.1/OpenDesk_Setup_v1.2.1_Installer.exe",
   "changelog": [
-    "Startup & Connect Crash Immunity: Thread-safe post_ui dispatch queue eliminating cross-thread Tcl interpreter mutations and ucrtbase.dll 0xc0000409 buffer overrun crashes",
-    "Seamless In-App Title Bar (CSD): Stripped external Windows OS title bar, integrated minimize, maximize, and close controls directly into top app tab bar with native dark-mode hover states",
-    "Instant Hang-Proof Exit: Multi-stage 0ms window hide, background worker teardown, and clean kernel exit (os._exit) eliminating freeze on close",
-    "Silent Automated Testing: Mocked audio hardware streams and system chimes during automated execution",
-    "Discord-Grade 48kHz HD Audio: Native studio-quality 48,000 Hz VoIP with zero resampling aliasing distortion and backward compatibility",
-    "Discord Voice Suite: Voice Activity Detection (VAD) with decibel threshold slider, Push-to-Talk, and live VU meter",
-    "Let's Check Loopback Mic Test: Real-time self-hearing test loop directly from microphone to headphones",
-    "Advanced Voice Processing: Echo Cancellation, Noise Suppression (Fan/Hum filter), and Automatic Gain Control (AGC)",
-    "Adaptive 60 FPS Fluid Rendering Engine: Sub-millisecond motion resampling during desktop movement with instant stationary HD clarity",
+    "Recent & Favorites Custom Session Management: Full support for renaming, editing details, and deleting sessions directly from the user interface",
+    "Sleek Quick-Action Card Controls: Direct inline '✏️ Edit' and '🗑️ Delete' buttons on each card alongside '★'/'☆' favorite toggles and 'Connect ➜'",
+    "Right-Click Context Menu & 3-Dot Options: Rich context menu with Connect, Rename Session, Edit Details, Add/Remove Favorite, and Delete Session actions",
+    "Tailored Dark Modal Dialogs: Beautiful centered dialogs for Rename, Full Edit (ID/Alias/Favorite), and Delete confirmation matching OpenDesk dark aesthetic",
+    "Persistent Configuration Storage: Atomic updates to ~/.opendesk/config.json with automatic 9-digit space formatting and whitespace sanitization",
+    "Real-Time Grid Reactivity: Immediate UI grid refresh on any rename, edit, or deletion without requiring app restart",
+    "Startup & Connect Crash Immunity: Thread-safe post_ui dispatch queue eliminating cross-thread Tcl mutations and ucrtbase.dll buffer overrun crashes",
+    "Seamless In-App Title Bar (CSD): Native dark-mode hover states for integrated minimize, maximize, and close controls",
+    "Discord-Grade 48kHz HD Audio Suite: Echo cancellation, noise suppression, AGC, VAD, and Push-to-Talk",
     "Authenticode Signed Binaries: Digitally signed with SHA-256 and DigiCert RFC 3161 timestamps"
   ]
 }

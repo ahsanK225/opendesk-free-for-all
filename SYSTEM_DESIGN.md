@@ -183,6 +183,15 @@ OpenDesk adheres to the signature AnyDesk 8 desktop experience:
 - **Quick Connect Search Bar**: Prominent address bar with monospace font, optional unattended password entry, and a primary AnyDesk Red action button (`#ef4444`).
 - **This Desk Card**: Displays persistent 9-digit address in bold triplets (`780 363 657`), 1-click address copy, unattended password management, and Cloudflare worldwide tunnel status with 1-click shareable link.
 - **Recent Sessions & Favorites Discovery Grid**: Responsive grid rendering recent target workstations with computer icon, device alias, 9-digit ID, last seen timestamp, favorite star toggle, and 1-click "Connect ➜" launcher.
+- **Custom Session Management (v1.2.1)**:
+  - **Quick Action Controls**: Each card provides direct `[✏️ Edit]` and `[🗑️]` buttons alongside the favorite star `[★]`/`[☆]` and `[Connect ➜]`.
+  - **Right-Click Context Menu**: Full right-click `<Button-3>` context menu and 3-dot `⋮` menu providing:
+    - `⚡ Connect`: Instant connection launch.
+    - `✏️ Rename Session...`: Custom dark modal dialog for fast alias updating.
+    - `⚙️ Edit Details...`: Modal dialog allowing complete editing of remote address/ID, display alias, and favorite pinning.
+    - `⭐ Add to Favorites` / `★ Remove from Favorites`: Direct toggle.
+    - `🗑️ Delete Session`: Dark confirmation modal to remove from history and favorites.
+  - **Persistent Storage & Reactivity**: Managed via `common/config.py` (`rename_recent_session`, `edit_recent_session`, `delete_recent_session`, `clear_recent_sessions`). Automatic 9-digit space formatting (`XXX XXX XXX`) and immediate reactive grid re-rendering without application restart.
 
 ### 7.3 Design Tokens & Styling
 - **Backgrounds**: Main `#0c0e14`, Sidebar `#12151e`, Header/TabBar `#141822`, Cards `#161924`, Input/Address Box `#202534`.

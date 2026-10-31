@@ -46,6 +46,10 @@ try:
         get_recent_sessions,
         add_recent_session,
         toggle_favorite,
+        rename_recent_session,
+        edit_recent_session,
+        delete_recent_session,
+        clear_recent_sessions,
         get_unattended_password,
         set_unattended_password,
         get_auto_update_enabled,
@@ -76,6 +80,10 @@ except ImportError:
         get_recent_sessions,
         add_recent_session,
         toggle_favorite,
+        rename_recent_session,
+        edit_recent_session,
+        delete_recent_session,
+        clear_recent_sessions,
         get_unattended_password,
         set_unattended_password,
         get_auto_update_enabled,
@@ -1001,7 +1009,8 @@ class OpenDeskGUI:
             recents = [r for r in recents if r.get("favorite")]
 
         if not recents:
-            empty_lbl = tk.Label(self.recent_grid_container, text="No sessions found. Enter an address above to connect.",
+            empty_text = "No favorite sessions yet. Click the star ⭐ on any card to add it to favorites." if filter_mode == "favorites" else "No sessions found. Enter an address above to connect."
+            empty_lbl = tk.Label(self.recent_grid_container, text=empty_text,
                                  font=("Segoe UI", 9), bg="#0c0e14", fg="#64748b", pady=20)
             empty_lbl.pack()
             return
@@ -1021,7 +1030,7 @@ class OpenDeskGUI:
             last_seen = item.get("last_seen", "")
 
             card = tk.Frame(grid_frame, bg="#161924", bd=1, relief="solid",
-                            highlightbackground="#282e3f", highlightthickness=1, width=230, height=138)
+                            highlightbackground="#282e3f", highlightthickness=1, width=236, height=145)
             card.grid(row=row, column=col, padx=8, pady=8, sticky="nsew")
             card.pack_propagate(False)
 
@@ -1030,38 +1039,293 @@ class OpenDeskGUI:
 
             tk.Label(top_row, text="💻", font=("Segoe UI Emoji", 12), bg="#161924", fg="#ef4444").pack(side="left")
 
+            # More options button (⋮) for context menu
+            opts_btn = tk.Button(top_row, text="⋮", font=("Segoe UI", 11, "bold"), bg="#161924", fg="#94a3b8",
+                                 activebackground="#222738", activeforeground="#ffffff", bd=0, padx=4, cursor="hand2")
+            opts_btn.pack(side="right")
+            opts_btn.bind("<Enter>", lambda e, b=opts_btn: b.config(fg="#f1f5f9", bg="#222738"))
+            opts_btn.bind("<Leave>", lambda e, b=opts_btn: b.config(fg="#94a3b8", bg="#161924"))
+
             fav_char = "★" if fav else "☆"
             fav_fg = "#eab308" if fav else "#64748b"
             fav_btn = tk.Button(top_row, text=fav_char, font=("Segoe UI", 11), bg="#161924", fg=fav_fg,
-                                activebackground="#161924", activeforeground="#eab308", bd=0, cursor="hand2",
+                                activebackground="#161924", activeforeground="#eab308", bd=0, padx=2, cursor="hand2",
                                 command=lambda t=target_id: self._on_toggle_fav(t))
-            fav_btn.pack(side="right")
+            fav_btn.pack(side="right", padx=(0, 2))
 
-            lbl_alias = tk.Label(card, text=alias, font=("Segoe UI", 9, "bold"), bg="#161924", fg="#f1f5f9", anchor="w")
+            display_alias = alias if len(alias) <= 24 else alias[:22] + "…"
+            lbl_alias = tk.Label(card, text=display_alias, font=("Segoe UI", 9, "bold"), bg="#161924", fg="#f1f5f9", anchor="w")
             lbl_alias.pack(fill="x", padx=10)
             lbl_id = tk.Label(card, text=target_id, font=("Consolas", 9), bg="#161924", fg="#ef4444", anchor="w")
             lbl_id.pack(fill="x", padx=10)
             lbl_seen = tk.Label(card, text=f"Last: {last_seen}", font=("Segoe UI", 7), bg="#161924", fg="#64748b", anchor="w")
             lbl_seen.pack(fill="x", padx=10)
 
-            # Bottom Action Row with prominent, unclipped 1-Click Connect Button
+            # Bottom Action Row with Edit, Delete, and Connect buttons
             act_row = tk.Frame(card, bg="#161924")
             act_row.pack(fill="x", side="bottom", padx=10, pady=(0, 8))
+
+            left_acts = tk.Frame(act_row, bg="#161924")
+            left_acts.pack(side="left")
+
+            edit_btn = tk.Button(left_acts, text="✏️ Edit", font=("Segoe UI", 8), bg="#222738", fg="#cbd5e1",
+                                 activebackground="#334155", activeforeground="#ffffff", bd=0, padx=6, pady=2, cursor="hand2",
+                                 command=lambda t=target_id, a=alias, f=fav: self._prompt_edit_session(t, a, f))
+            edit_btn.pack(side="left", padx=(0, 4))
+            edit_btn.bind("<Enter>", lambda e, b=edit_btn: b.config(bg="#2d3748", fg="#38bdf8"))
+            edit_btn.bind("<Leave>", lambda e, b=edit_btn: b.config(bg="#222738", fg="#cbd5e1"))
+
+            del_btn = tk.Button(left_acts, text="🗑️", font=("Segoe UI", 8), bg="#222738", fg="#94a3b8",
+                                activebackground="#dc2626", activeforeground="#ffffff", bd=0, padx=5, pady=2, cursor="hand2",
+                                command=lambda t=target_id, a=alias: self._prompt_delete_session(t, a))
+            del_btn.pack(side="left")
+            del_btn.bind("<Enter>", lambda e, b=del_btn: b.config(bg="#3d1f28", fg="#ef4444"))
+            del_btn.bind("<Leave>", lambda e, b=del_btn: b.config(bg="#222738", fg="#94a3b8"))
 
             conn_btn = tk.Button(act_row, text="Connect ➜", font=("Segoe UI", 8, "bold"), bg="#ef4444", fg="#ffffff",
                                  activebackground="#dc2626", activeforeground="#ffffff", bd=0, padx=10, pady=3, cursor="hand2",
                                  command=lambda t=target_id: self._launch_session(t))
             conn_btn.pack(side="right")
 
-            # Make entire card clickable for instant connection
+            # Right-click context menu
+            ctx_menu = tk.Menu(self.root, tearoff=0, bg="#1a1e2e", fg="#f1f5f9",
+                               activebackground="#ef4444", activeforeground="#ffffff",
+                               activeborderwidth=0, bd=1, relief="solid")
+            ctx_menu.add_command(label="⚡ Connect", font=("Segoe UI", 9, "bold"),
+                                 command=lambda t=target_id: self._launch_session(t))
+            ctx_menu.add_separator()
+            ctx_menu.add_command(label="✏️ Rename Session...", font=("Segoe UI", 9),
+                                 command=lambda t=target_id, a=alias: self._prompt_rename_session(t, a))
+            ctx_menu.add_command(label="⚙️ Edit Details...", font=("Segoe UI", 9),
+                                 command=lambda t=target_id, a=alias, f=fav: self._prompt_edit_session(t, a, f))
+            fav_label = "★ Remove from Favorites" if fav else "⭐ Add to Favorites"
+            ctx_menu.add_command(label=fav_label, font=("Segoe UI", 9),
+                                 command=lambda t=target_id: self._on_toggle_fav(t))
+            ctx_menu.add_separator()
+            ctx_menu.add_command(label="🗑️ Delete Session", font=("Segoe UI", 9),
+                                 command=lambda t=target_id, a=alias: self._prompt_delete_session(t, a))
+
+            def _show_menu(event, m=ctx_menu):
+                try:
+                    m.tk_popup(event.x_root, event.y_root)
+                finally:
+                    m.grab_release()
+
+            opts_btn.bind("<Button-1>", _show_menu)
             card.config(cursor="hand2")
-            for w in (card, lbl_alias, lbl_id, lbl_seen):
-                w.bind("<Button-1>", lambda e, t=target_id: self._launch_session(t))
+            for w in (card, top_row, lbl_alias, lbl_id, lbl_seen, left_acts):
+                w.bind("<Button-3>", _show_menu)
+                if w in (card, lbl_alias, lbl_id, lbl_seen):
+                    w.bind("<Button-1>", lambda e, t=target_id: self._launch_session(t))
 
             col += 1
             if col >= max_cols:
                 col = 0
                 row += 1
+
+    def _prompt_rename_session(self, target_id: str, current_alias: str):
+        """Open a sleek dark dialog to rename an existing session alias."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Rename Session")
+        dialog.geometry("380x210")
+        dialog.resizable(False, False)
+        dialog.configure(bg="#141822")
+        dialog.attributes("-topmost", True)
+        dialog.transient(self.root)
+
+        try:
+            dialog.update_idletasks()
+            x = self.root.winfo_x() + (self.root.winfo_width() - 380) // 2
+            y = self.root.winfo_y() + (self.root.winfo_height() - 210) // 2
+            dialog.geometry(f"380x210+{max(0, x)}+{max(0, y)}")
+        except Exception:
+            pass
+
+        # Header
+        header = tk.Frame(dialog, bg="#141822")
+        header.pack(fill="x", padx=20, pady=(16, 8))
+        tk.Label(header, text="✏️  Rename Session", font=("Segoe UI", 12, "bold"),
+                 bg="#141822", fg="#f1f5f9").pack(anchor="w")
+        tk.Label(header, text=f"Address / ID: {target_id}", font=("Consolas", 9),
+                 bg="#141822", fg="#ef4444").pack(anchor="w", pady=(2, 0))
+
+        # Body
+        body = tk.Frame(dialog, bg="#141822")
+        body.pack(fill="x", padx=20, pady=8)
+        tk.Label(body, text="Session Name / Alias:", font=("Segoe UI", 9),
+                 bg="#141822", fg="#94a3b8").pack(anchor="w", pady=(0, 4))
+        name_entry = tk.Entry(body, font=("Segoe UI", 10), bg="#1e2333", fg="#ffffff",
+                              insertbackground="#ffffff", bd=1, relief="solid",
+                              highlightthickness=1, highlightbackground="#334155")
+        name_entry.pack(fill="x", ipady=4)
+        name_entry.insert(0, current_alias)
+        name_entry.select_range(0, tk.END)
+        name_entry.focus_set()
+
+        # Action Buttons
+        btn_bar = tk.Frame(dialog, bg="#141822")
+        btn_bar.pack(fill="x", side="bottom", padx=20, pady=(0, 16))
+
+        def on_save():
+            new_name = name_entry.get().strip()
+            if new_name:
+                rename_recent_session(target_id, new_name)
+                self._render_recent_grid()
+            dialog.destroy()
+
+        cancel_btn = tk.Button(btn_bar, text="Cancel", font=("Segoe UI", 9), bg="#252b3d", fg="#cbd5e1",
+                               activebackground="#334155", activeforeground="#ffffff", bd=0, padx=14, pady=4,
+                               cursor="hand2", command=dialog.destroy)
+        cancel_btn.pack(side="right", padx=(8, 0))
+
+        save_btn = tk.Button(btn_bar, text="Save Name", font=("Segoe UI", 9, "bold"), bg="#ef4444", fg="#ffffff",
+                             activebackground="#dc2626", activeforeground="#ffffff", bd=0, padx=16, pady=4,
+                             cursor="hand2", command=on_save)
+        save_btn.pack(side="right")
+
+        dialog.bind("<Return>", lambda e: on_save())
+        dialog.bind("<Escape>", lambda e: dialog.destroy())
+        dialog.grab_set()
+
+    def _prompt_edit_session(self, target_id: str, current_alias: str, current_fav: bool = False):
+        """Open a sleek dark modal dialog to edit session details (ID, alias, favorite status)."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Edit Session Details")
+        dialog.geometry("420x300")
+        dialog.resizable(False, False)
+        dialog.configure(bg="#141822")
+        dialog.attributes("-topmost", True)
+        dialog.transient(self.root)
+
+        try:
+            dialog.update_idletasks()
+            x = self.root.winfo_x() + (self.root.winfo_width() - 420) // 2
+            y = self.root.winfo_y() + (self.root.winfo_height() - 300) // 2
+            dialog.geometry(f"420x300+{max(0, x)}+{max(0, y)}")
+        except Exception:
+            pass
+
+        # Header
+        header = tk.Frame(dialog, bg="#141822")
+        header.pack(fill="x", padx=20, pady=(16, 6))
+        tk.Label(header, text="⚙️  Edit Session Details", font=("Segoe UI", 12, "bold"),
+                 bg="#141822", fg="#f1f5f9").pack(anchor="w")
+
+        # Body
+        body = tk.Frame(dialog, bg="#141822")
+        body.pack(fill="x", padx=20, pady=4)
+
+        tk.Label(body, text="Remote Address / ID:", font=("Segoe UI", 9),
+                 bg="#141822", fg="#94a3b8").pack(anchor="w", pady=(0, 2))
+        id_entry = tk.Entry(body, font=("Consolas", 10), bg="#1e2333", fg="#ffffff",
+                            insertbackground="#ffffff", bd=1, relief="solid",
+                            highlightthickness=1, highlightbackground="#334155")
+        id_entry.pack(fill="x", ipady=3, pady=(0, 8))
+        id_entry.insert(0, target_id)
+
+        tk.Label(body, text="Display Name / Alias:", font=("Segoe UI", 9),
+                 bg="#141822", fg="#94a3b8").pack(anchor="w", pady=(0, 2))
+        alias_entry = tk.Entry(body, font=("Segoe UI", 10), bg="#1e2333", fg="#ffffff",
+                               insertbackground="#ffffff", bd=1, relief="solid",
+                               highlightthickness=1, highlightbackground="#334155")
+        alias_entry.pack(fill="x", ipady=3, pady=(0, 8))
+        alias_entry.insert(0, current_alias)
+
+        fav_var = tk.BooleanVar(value=current_fav)
+        fav_chk = tk.Checkbutton(body, text="⭐ Pin to Favorites", variable=fav_var,
+                                 font=("Segoe UI", 9), bg="#141822", fg="#f1f5f9",
+                                 selectcolor="#1e2333", activebackground="#141822",
+                                 activeforeground="#eab308", bd=0, cursor="hand2")
+        fav_chk.pack(anchor="w", pady=(2, 0))
+
+        alias_entry.focus_set()
+
+        # Action Buttons
+        btn_bar = tk.Frame(dialog, bg="#141822")
+        btn_bar.pack(fill="x", side="bottom", padx=20, pady=(0, 16))
+
+        def on_save():
+            new_id = id_entry.get().strip()
+            new_alias = alias_entry.get().strip()
+            if not new_id:
+                id_entry.config(highlightbackground="#ef4444")
+                return
+            edit_recent_session(target_id, new_id, new_alias, fav_var.get())
+            self._render_recent_grid()
+            dialog.destroy()
+
+        cancel_btn = tk.Button(btn_bar, text="Cancel", font=("Segoe UI", 9), bg="#252b3d", fg="#cbd5e1",
+                               activebackground="#334155", activeforeground="#ffffff", bd=0, padx=14, pady=4,
+                               cursor="hand2", command=dialog.destroy)
+        cancel_btn.pack(side="right", padx=(8, 0))
+
+        save_btn = tk.Button(btn_bar, text="Save Changes", font=("Segoe UI", 9, "bold"), bg="#ef4444", fg="#ffffff",
+                             activebackground="#dc2626", activeforeground="#ffffff", bd=0, padx=16, pady=4,
+                             cursor="hand2", command=on_save)
+        save_btn.pack(side="right")
+
+        dialog.bind("<Return>", lambda e: on_save())
+        dialog.bind("<Escape>", lambda e: dialog.destroy())
+        dialog.grab_set()
+
+    def _prompt_delete_session(self, target_id: str, current_alias: str):
+        """Open a sleek dark confirmation dialog to delete a session from recents/favorites."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Delete Session")
+        dialog.geometry("400x205")
+        dialog.resizable(False, False)
+        dialog.configure(bg="#141822")
+        dialog.attributes("-topmost", True)
+        dialog.transient(self.root)
+
+        try:
+            dialog.update_idletasks()
+            x = self.root.winfo_x() + (self.root.winfo_width() - 400) // 2
+            y = self.root.winfo_y() + (self.root.winfo_height() - 205) // 2
+            dialog.geometry(f"400x205+{max(0, x)}+{max(0, y)}")
+        except Exception:
+            pass
+
+        # Header
+        header = tk.Frame(dialog, bg="#141822")
+        header.pack(fill="x", padx=20, pady=(16, 8))
+        tk.Label(header, text="🗑️  Delete Session", font=("Segoe UI", 12, "bold"),
+                 bg="#141822", fg="#f1f5f9").pack(anchor="w")
+
+        # Body
+        body = tk.Frame(dialog, bg="#141822")
+        body.pack(fill="x", padx=20, pady=4)
+        tk.Label(body, text="Are you sure you want to remove this session from your history and favorites?",
+                 font=("Segoe UI", 9), bg="#141822", fg="#94a3b8", wraplength=360, justify="left").pack(anchor="w", pady=(0, 6))
+
+        info_box = tk.Frame(body, bg="#1e2333", bd=1, relief="solid", highlightbackground="#334155", highlightthickness=1)
+        info_box.pack(fill="x", pady=(2, 6), ipady=4, ipadx=8)
+        tk.Label(info_box, text=current_alias, font=("Segoe UI", 9, "bold"), bg="#1e2333", fg="#f1f5f9").pack(anchor="w")
+        tk.Label(info_box, text=f"ID: {target_id}", font=("Consolas", 8), bg="#1e2333", fg="#ef4444").pack(anchor="w")
+
+        # Action Buttons
+        btn_bar = tk.Frame(dialog, bg="#141822")
+        btn_bar.pack(fill="x", side="bottom", padx=20, pady=(0, 16))
+
+        def on_confirm():
+            delete_recent_session(target_id)
+            self._render_recent_grid()
+            dialog.destroy()
+
+        cancel_btn = tk.Button(btn_bar, text="Cancel", font=("Segoe UI", 9), bg="#252b3d", fg="#cbd5e1",
+                               activebackground="#334155", activeforeground="#ffffff", bd=0, padx=14, pady=4,
+                               cursor="hand2", command=dialog.destroy)
+        cancel_btn.pack(side="right", padx=(8, 0))
+
+        del_btn = tk.Button(btn_bar, text="Delete Session", font=("Segoe UI", 9, "bold"), bg="#dc2626", fg="#ffffff",
+                            activebackground="#b91c1c", activeforeground="#ffffff", bd=0, padx=16, pady=4,
+                            cursor="hand2", command=on_confirm)
+        del_btn.pack(side="right")
+        del_btn.focus_set()
+
+        dialog.bind("<Return>", lambda e: on_confirm())
+        dialog.bind("<Escape>", lambda e: dialog.destroy())
+        dialog.grab_set()
 
     def _on_toggle_fav(self, target_id: str):
         toggle_favorite(target_id)
