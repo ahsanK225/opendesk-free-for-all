@@ -26,10 +26,10 @@ opendesk/
 ├── opendesk.ico                    # High-resolution application icon
 ├── opendesk.spec                   # PyInstaller bundle specification with all hidden imports
 ├── opendesk_app.py                 # AnyDesk 8 multi-tab GUI, sidebar, quick-connect, session rename/edit/delete, Discord Voice settings & session viewer
-├── opendesk_installer.iss          # Inno Setup 6 wizard installation script (v1.2.1)
+├── opendesk_installer.iss          # Inno Setup 6 wizard installation script (v1.2.2)
 ├── OpenDesk_Setup.exe              # Compiled Inno Setup installer wizard (Digitally Signed)
-├── OpenDesk_Setup_v1.2.1_Installer.exe # Versioned installer wizard binary (v1.2.1)
-├── OpenDesk_v1.2.1_Portable.exe    # Versioned standalone portable binary (v1.2.1)
+├── OpenDesk_Setup_v1.2.2_Installer.exe # Versioned installer wizard binary (v1.2.2)
+├── OpenDesk_v1.2.2_Portable.exe    # Versioned standalone portable binary (v1.2.2)
 ├── PROJECT_STRUCTURE.md            # Detailed structural and module specification
 ├── push_to_github.bat              # 1-Click Git push synchronization script
 ├── README.md                       # Public documentation, quickstart, and downloads

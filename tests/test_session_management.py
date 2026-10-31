@@ -21,7 +21,7 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 import common.config as config
-from opendesk_app import OpenDeskGUI
+from opendesk_app import OpenDeskGUI, ModernContextMenu
 
 
 class TestSessionManagementConfig(unittest.TestCase):
@@ -202,6 +202,30 @@ class TestSessionManagementGUI(unittest.TestCase):
         dialog = dialogs[0]
         self.assertEqual(dialog.title(), "Delete Session")
         dialog.destroy()
+
+    def test_modern_context_menu_lifecycle(self):
+        """Verify ModernContextMenu creates borderless glass menu and closes cleanly."""
+        clicked = [False]
+        def on_click():
+            clicked[0] = True
+
+        menu = ModernContextMenu(self.root)
+        menu.add_command(label="Connect", icon="⚡", is_primary=True, command=on_click)
+        menu.add_separator()
+        menu.add_command(label="Rename Session...", icon="✏️", command=None)
+        menu.add_command(label="Delete Session", icon="🗑️", is_danger=True, command=None)
+
+        menu.show(150, 200)
+        self.root.update_idletasks()
+
+        self.assertIsNotNone(menu.window)
+        self.assertTrue(menu.window.winfo_exists())
+        self.assertEqual(ModernContextMenu._active, menu)
+
+        # Verify dismiss closes the window
+        ModernContextMenu.dismiss_active()
+        self.assertIsNone(ModernContextMenu._active)
+        self.assertIsNone(menu.window)
 
 
 if __name__ == "__main__":

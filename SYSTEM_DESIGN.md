@@ -183,14 +183,18 @@ OpenDesk adheres to the signature AnyDesk 8 desktop experience:
 - **Quick Connect Search Bar**: Prominent address bar with monospace font, optional unattended password entry, and a primary AnyDesk Red action button (`#ef4444`).
 - **This Desk Card**: Displays persistent 9-digit address in bold triplets (`780 363 657`), 1-click address copy, unattended password management, and Cloudflare worldwide tunnel status with 1-click shareable link.
 - **Recent Sessions & Favorites Discovery Grid**: Responsive grid rendering recent target workstations with computer icon, device alias, 9-digit ID, last seen timestamp, favorite star toggle, and 1-click "Connect ➜" launcher.
-- **Custom Session Management (v1.2.1)**:
-  - **Quick Action Controls**: Each card provides direct `[✏️ Edit]` and `[🗑️]` buttons alongside the favorite star `[★]`/`[☆]` and `[Connect ➜]`.
-  - **Right-Click Context Menu**: Full right-click `<Button-3>` context menu and 3-dot `⋮` menu providing:
-    - `⚡ Connect`: Instant connection launch.
-    - `✏️ Rename Session...`: Custom dark modal dialog for fast alias updating.
-    - `⚙️ Edit Details...`: Modal dialog allowing complete editing of remote address/ID, display alias, and favorite pinning.
-    - `⭐ Add to Favorites` / `★ Remove from Favorites`: Direct toggle.
-    - `🗑️ Delete Session`: Dark confirmation modal to remove from history and favorites.
+- **Custom Session Management & Modern Glass Context Menu (v1.2.2)**:
+  - **Modern Dark Glass Context Menu (`ModernContextMenu`)**: Replaces standard Windows Win32 OS menus, completely eliminating classic white borders and jagged icons. Encased in a refined 1px slate border (`#2a324b`) over deep dark glass (`#131622`), featuring:
+    - Primary Action `⚡ Connect`: Bold highlight with AnyDesk red hover (`#ef4444`).
+    - Danger Action `🗑️ Delete Session`: Soft crimson theme (`#f87171`) with danger glow hover (`#3d1924`).
+    - Standard Items: `✏️ Rename Session...`, `⚙️ Edit Details...`, `⭐ Add to Favorites` with interactive icons and hover illumination.
+    - Global Dismissal: Auto-dismiss on click outside, window focus loss, or `<Escape>` key.
+  - **Visual Elevation & Card Polish**:
+    - Subtle 1px border with card hover elevation (`#3b4664` highlight and `#191d2c` background).
+    - Status Indicator: Live `● Online` green status dot beside device icon.
+    - High-Tech ID Chip: Monospace Consolas ID rendered inside an authentic dark badge (`#211823` with `#ef4444` font).
+    - Tool Action Toolbar: Sleek pill buttons for `[✏️ Edit]` and `[🗑️]` with smooth cyan and crimson hover glows.
+    - Dialog Focus Highlights: Focused input entries in Rename and Edit dialogs smoothly illuminate with an AnyDesk red outline (`#ef4444`).
   - **Persistent Storage & Reactivity**: Managed via `common/config.py` (`rename_recent_session`, `edit_recent_session`, `delete_recent_session`, `clear_recent_sessions`). Automatic 9-digit space formatting (`XXX XXX XXX`) and immediate reactive grid re-rendering without application restart.
 
 ### 7.3 Design Tokens & Styling

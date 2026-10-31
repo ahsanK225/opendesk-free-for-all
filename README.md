@@ -1,15 +1,28 @@
 # OpenDesk: Ultra-Low-Latency Remote Desktop Suite
 
-![Version](https://img.shields.io/badge/version-v1.2.1-red?style=for-the-badge&logo=github)
+![Version](https://img.shields.io/badge/version-v1.2.2-red?style=for-the-badge&logo=github)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-blue?style=for-the-badge&logo=windows)
 ![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
 ![Security](https://img.shields.io/badge/code%20signing-Authenticode%20SHA--256-orange?style=for-the-badge)
 
-OpenDesk is a modern, high-performance open-source remote desktop solution inspired by AnyDesk's architecture. It features a custom **DeskRT 60 FPS Tile & Delta Video Codec**, Win32 desktop session capturing, AnyDesk 8 multi-tab GUI with embedded viewports, **custom session management (Rename, Edit, Delete, Context Menus)** for recent sessions and favorites, **Discord-grade 48kHz HD voice communication** with "Let's Check" loopback mic testing, VAD sensitivity thresholding, and Push-to-Talk, AnyDesk-style incoming session request approval with granular permission toggles, adaptive 60 FPS motion rendering with stationary HD clarity, dynamic aspect ratio modes, zoom controls, 64-bit clipboard sync, and global zero-configuration tunneling powered by Cloudflare.
+OpenDesk is a modern, high-performance open-source remote desktop solution inspired by AnyDesk's architecture. It features a custom **DeskRT 60 FPS Tile & Delta Video Codec**, Win32 desktop session capturing, AnyDesk 8 multi-tab GUI with embedded viewports, **Modern Dark Glass Context Menus & Elevated Card UI**, **custom session management (Rename, Edit, Delete, Context Menus)** for recent sessions and favorites, **Discord-grade 48kHz HD voice communication** with "Let's Check" loopback mic testing, VAD sensitivity thresholding, and Push-to-Talk, AnyDesk-style incoming session request approval with granular permission toggles, adaptive 60 FPS motion rendering with stationary HD clarity, dynamic aspect ratio modes, zoom controls, 64-bit clipboard sync, and global zero-configuration tunneling powered by Cloudflare.
 
 ---
 
-## 🚀 What's New in v1.2.1 (Latest Release)
+## 🚀 What's New in v1.2.2 (Latest Release)
+
+- **🎨 Modern Dark Glass Context Menu Suite (`ModernContextMenu`)**:
+  - **Eliminated OS White Borders**: Replaced native Win32 `tk.Menu` with a custom borderless menu encased in a sleek slate border (`#2a324b`) over deep dark glass (`#131622`).
+  - **Dynamic Interactive Hover States**: Primary red highlight for Connect, soft crimson danger theme for Delete, and smooth slate highlights for Rename and Edit.
+  - **Global Auto-Dismissal**: Auto-dismiss on click outside, focus change, or `<Escape>` key.
+  - **Screen Boundary Clamping**: Intelligently clamps position to keep the popup safely within display bounds.
+
+- **✨ Session Card Visual Elevation & Micro-Interactions**:
+  - **Card Hover Elevation**: Added smooth border highlight (`#3b4664`) and background lift (`#191d2c`) when hovering over any card.
+  - **Online Status Dot**: Added green `● Online` dot indicator beside device icon.
+  - **High-Tech ID Chip**: Styled numerical ID inside a sleek dark chip (`#211823` background, `#3d222e` border, `#ef4444` Consolas font).
+  - **Refined Action Toolbar**: Sleek pill-shaped `[✏️ Edit]` and `[🗑️]` buttons with smooth cyan (`#38bdf8`) and crimson (`#ef4444`) hover transitions.
+  - **Dialog Focus Glow**: Added interactive AnyDesk red outline (`#ef4444`) to active input entries in Rename and Edit modal dialogs.
 
 - **⭐ Recent Sessions & Favorites Custom Management Suite**:
   - **Rename Session**: Instantly rename device nicknames directly from the interface.
@@ -18,6 +31,16 @@ OpenDesk is a modern, high-performance open-source remote desktop solution inspi
   - **Quick Action Buttons**: Directly accessible `[✏️ Edit]` and `[🗑️]` buttons on each card.
   - **Right-Click Context Menu & 3-Dot Menu (`⋮`)**: Connect, Rename, Edit Details, Add/Remove Favorite, and Delete Session actions available on right-click anywhere on the card.
   - **Real-Time Reactivity**: Immediate UI updates upon any edit or deletion without requiring restart.
+
+---
+
+## 📦 Standalone Distribution & Installer
+
+### 1. Ready-To-Share Installer (v1.2.2)
+* **Direct Download (Installer)**: [👉 Download Setup Wizard (`OpenDesk_Setup_v1.2.2_Installer.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.2/OpenDesk_Setup_v1.2.2_Installer.exe)
+* **Direct Download (Portable)**: [👉 Download Portable Executable (`OpenDesk_v1.2.2_Portable.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.2/OpenDesk_v1.2.2_Portable.exe)
+* **GitHub Releases**: [View All Releases & Assets](https://github.com/ahsanK225/opendesk-free-for-all/releases)
+* **Local Build Path**: Generated locally in your project folder as `OpenDesk_Setup.exe` and `OpenDesk.exe`.
 
 - **🛡️ Startup & Connect Crash Immunity (Thread-Safe UI Queue)**:
   - **Thread-Safe `post_ui` Message Queue**: Solved `ucrtbase.dll 0xc0000409` and `RuntimeError: main thread is not in main loop` crashes by preventing background threads from directly invoking Tkinter Tcl commands.
@@ -47,9 +70,9 @@ OpenDesk is a modern, high-performance open-source remote desktop solution inspi
 
 ## 📦 Standalone Distribution & Installer
 
-### 1. Ready-To-Share Installer (v1.2.1)
-* **Direct Download (Installer)**: [👉 Download Setup Wizard (`OpenDesk_Setup_v1.2.1_Installer.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.1/OpenDesk_Setup_v1.2.1_Installer.exe)
-* **Direct Download (Portable)**: [👉 Download Portable Executable (`OpenDesk_v1.2.1_Portable.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.1/OpenDesk_v1.2.1_Portable.exe)
+### 1. Ready-To-Share Installer (v1.2.2)
+* **Direct Download (Installer)**: [👉 Download Setup Wizard (`OpenDesk_Setup_v1.2.2_Installer.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.2/OpenDesk_Setup_v1.2.2_Installer.exe)
+* **Direct Download (Portable)**: [👉 Download Portable Executable (`OpenDesk_v1.2.2_Portable.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.2/OpenDesk_v1.2.2_Portable.exe)
 * **GitHub Releases**: [View All Releases & Assets](https://github.com/ahsanK225/opendesk-free-for-all/releases)
 * **Local Build Path**: Generated locally in your project folder as `OpenDesk_Setup.exe` and `OpenDesk.exe`.
 

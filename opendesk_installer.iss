@@ -2,7 +2,7 @@
 ; OpenDesk Professional Standalone Installer Script
 
 #define MyAppName "OpenDesk"
-#define MyAppVersion "1.2.1"
+#define MyAppVersion "1.2.2"
 #define MyAppPublisher "OpenDesk Project"
 #define MyAppURL "https://github.com/OpenDesk"
 #define MyAppExeName "OpenDesk.exe"
@@ -27,7 +27,7 @@ PrivilegesRequiredOverridesAllowed=dialog
 
 ; Output configuration
 OutputDir=installer_output
-OutputBaseFilename=OpenDesk_Setup_v1.2.1
+OutputBaseFilename=OpenDesk_Setup_v1.2.2
 SetupIconFile=opendesk.ico
 
 ; Compression & Modern Visual Style

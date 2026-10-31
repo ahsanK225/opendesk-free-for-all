@@ -1,18 +1,18 @@
 {
-  "version": "1.2.1",
+  "version": "1.2.2",
   "release_date": "2026-10-31",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.1/OpenDesk_v1.2.1_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.1/OpenDesk_Setup_v1.2.1_Installer.exe",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.2/OpenDesk_v1.2.2_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.2/OpenDesk_Setup_v1.2.2_Installer.exe",
   "changelog": [
-    "Recent & Favorites Custom Session Management: Full support for renaming, editing details, and deleting sessions directly from the user interface",
-    "Sleek Quick-Action Card Controls: Direct inline '✏️ Edit' and '🗑️ Delete' buttons on each card alongside '★'/'☆' favorite toggles and 'Connect ➜'",
-    "Right-Click Context Menu & 3-Dot Options: Rich context menu with Connect, Rename Session, Edit Details, Add/Remove Favorite, and Delete Session actions",
-    "Tailored Dark Modal Dialogs: Beautiful centered dialogs for Rename, Full Edit (ID/Alias/Favorite), and Delete confirmation matching OpenDesk dark aesthetic",
-    "Persistent Configuration Storage: Atomic updates to ~/.opendesk/config.json with automatic 9-digit space formatting and whitespace sanitization",
-    "Real-Time Grid Reactivity: Immediate UI grid refresh on any rename, edit, or deletion without requiring app restart",
-    "Startup & Connect Crash Immunity: Thread-safe post_ui dispatch queue eliminating cross-thread Tcl mutations and ucrtbase.dll buffer overrun crashes",
-    "Seamless In-App Title Bar (CSD): Native dark-mode hover states for integrated minimize, maximize, and close controls",
-    "Discord-Grade 48kHz HD Audio Suite: Echo cancellation, noise suppression, AGC, VAD, and Push-to-Talk",
+    "Modern Dark Glass Context Menu: Custom borderless context menu eliminating native Win32 white borders with sleek slate border (#2a324b) and dark glass container",
+    "Interactive Menu Hover Highlights: Vibrant primary red highlight for Connect, soft crimson for Delete danger action, and smooth slate highlights for Edit and Rename",
+    "Global Click-Outside Dismissal: Auto-dismiss on click outside, window blur, or Escape key",
+    "Card Elevation & Visual Polish: Card hover elevation (#3b4664 highlight), live green status indicator dot (● Online), and high-tech ID monospace chip (#211823)",
+    "Refined Action Toolbar: Sleek pill buttons for '✏️ Edit' and '🗑️ Delete' with cyan and crimson hover glows",
+    "Input Focus Glow: Smooth red (#ef4444) border glow on focused input fields across all modal dialogs",
+    "Recent & Favorites Custom Session Management: Rename, edit details, and delete sessions directly from UI",
+    "Startup & Connect Crash Immunity: Thread-safe post_ui dispatch queue eliminating cross-thread Tcl mutations",
+    "Seamless In-App Title Bar (CSD): Integrated minimize, maximize, and close controls in top tab bar",
     "Authenticode Signed Binaries: Digitally signed with SHA-256 and DigiCert RFC 3161 timestamps"
   ]
 }

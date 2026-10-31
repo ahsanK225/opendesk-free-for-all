@@ -1,6 +1,35 @@
 # Changelog
 All notable project changes are documented here.
 
+## [2026-10-31] — Release v1.2.2: Modern Dark Glass Context Menu & Premium Session Card UI Polish
+### Added
+- **Modern Dark Glass Context Menu Suite (`ModernContextMenu`)** (`opendesk_app.py`, `tests/test_session_management.py`):
+  - **Eliminated Native Win32 White Borders**: Replaced OS-level `tk.Menu` with a custom frameless `tk.Toplevel` menu encased in a 1px slate border (`#2a324b`) over deep dark glass (`#131622`).
+  - **Interactive Hover Animations & Visual Hierarchy**:
+    - `⚡ Connect`: Bold highlight with vibrant AnyDesk red hover (`#ef4444`).
+    - `🗑️ Delete Session`: Soft crimson theme (`#f87171`) with danger glow hover (`#3d1924`) and text brightening (`#fca5a5`).
+    - Standard Items: `✏️ Rename Session...`, `⚙️ Edit Details...`, `⭐ Add to Favorites` with distinct colored icons and slate hover highlights (`#22293d`).
+  - **Global Auto-Dismissal & Screen Clamping**:
+    - Menu automatically dismisses on global click outside, focus loss, or `<Escape>` key.
+    - Intelligent boundary detection prevents menu from clipping beyond monitor boundaries.
+- **Session Card Visual Elevation & Micro-Interactions** (`opendesk_app.py`):
+  - **Card Hover Elevation**: Added smooth border highlight (`#3b4664`) and subtle background lift (`#191d2c`) when hovering over any card.
+  - **Online Status Dot**: Added green `● Online` dot indicator beside device icon.
+  - **High-Tech ID Chip**: Styled numerical ID inside a sleek dark chip (`#211823` background, `#3d222e` border, `#ef4444` Consolas font).
+  - **Refined Action Toolbar**: Sleek pill-shaped `[✏️ Edit]` and `[🗑️]` buttons with smooth cyan (`#38bdf8`) and crimson (`#ef4444`) hover transitions.
+  - **Dialog Focus Glow**: Added interactive AnyDesk red outline (`#ef4444`) to active input entries in Rename and Edit modal dialogs.
+- **Unit Testing & Digital Signing** (`tests/test_session_management.py`, `version.json`, `build_installer.bat`):
+  - Added unit tests verifying `ModernContextMenu` lifecycle, item configuration, geometry clamping, and auto-dismissal (expanded test suite to 65 tests).
+  - Recompiled and Authenticode signed portable (`OpenDesk_v1.2.2_Portable.exe`) and wizard installer (`OpenDesk_Setup_v1.2.2_Installer.exe`) with DigiCert RFC 3161 timestamps.
+  - Published Release v1.2.2 to GitHub.
+
+### Tests and Verification
+- 65 of 65 unit and integration tests passing silently in 3.882s (`python -m unittest discover tests`).
+- Recompiled and Authenticode signed portable and installer binaries.
+- Verified live HTTP 200 downloads from GitHub Releases for v1.2.2 assets.
+
+---
+
 ## [2026-10-31] — Release v1.2.1: Custom Session Management: Rename, Edit, Delete & Context Menu for Recent Sessions and Favorites
 ### Added
 - **Recent Sessions & Favorites Custom Management Suite** (`common/config.py`, `opendesk_app.py`, `tests/test_session_management.py`):

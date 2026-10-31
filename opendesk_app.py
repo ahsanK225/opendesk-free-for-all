@@ -127,6 +127,188 @@ def find_free_port(start_port=8080) -> int:
     return start_port
 
 
+class ModernContextMenu:
+    """A sleek, custom dark-themed popup context menu for OpenDesk.
+    Eliminates native Win32 white borders, rigid OS padding, and provides
+    smooth hover effects, modern typography, and clean iconography."""
+
+    _active = None
+    _global_hooked = False
+
+    @classmethod
+    def dismiss_active(cls):
+        if cls._active:
+            try:
+                cls._active.close()
+            except Exception:
+                pass
+            cls._active = None
+
+    @classmethod
+    def setup_global_dismiss(cls, root: tk.Tk):
+        if cls._global_hooked:
+            return
+        cls._global_hooked = True
+
+        def _on_global_click(event):
+            if cls._active and cls._active.window and cls._active.window.winfo_exists():
+                try:
+                    win = cls._active.window
+                    x = win.winfo_rootx()
+                    y = win.winfo_rooty()
+                    w = win.winfo_width()
+                    h = win.winfo_height()
+                    if not (x <= event.x_root <= x + w and y <= event.y_root <= y + h):
+                        cls.dismiss_active()
+                except Exception:
+                    cls.dismiss_active()
+
+        root.bind_all("<Button-1>", _on_global_click, add="+")
+        root.bind_all("<Button-3>", _on_global_click, add="+")
+        root.bind_all("<Escape>", lambda e: cls.dismiss_active(), add="+")
+
+    def __init__(self, root: tk.Tk):
+        self.root = root
+        ModernContextMenu.setup_global_dismiss(root)
+        self.items = []
+        self.window = None
+
+    def add_command(self, label: str, command=None, icon: str = "", is_danger: bool = False, is_primary: bool = False):
+        self.items.append({
+            "type": "command",
+            "label": label,
+            "command": command,
+            "icon": icon,
+            "is_danger": is_danger,
+            "is_primary": is_primary
+        })
+
+    def add_separator(self):
+        self.items.append({"type": "separator"})
+
+    def show(self, x_root: int, y_root: int):
+        ModernContextMenu.dismiss_active()
+        ModernContextMenu._active = self
+
+        self.window = tk.Toplevel(self.root)
+        self.window.overrideredirect(True)
+        self.window.attributes("-topmost", True)
+        self.window.configure(bg="#2a324b")  # Outer 1px sleek dark slate border
+
+        # Inner container with deep modern dark glass
+        container = tk.Frame(self.window, bg="#131622", padx=3, pady=3)
+        container.pack(fill="both", expand=True, padx=1, pady=1)
+
+        for item in self.items:
+            if item["type"] == "separator":
+                sep = tk.Frame(container, bg="#232a3d", height=1)
+                sep.pack(fill="x", padx=8, pady=3)
+                continue
+
+            icon = item.get("icon", "")
+            label = item.get("label", "")
+            cmd = item.get("command")
+            is_danger = item.get("is_danger", False)
+            is_primary = item.get("is_primary", False)
+
+            if is_primary:
+                n_bg = "#131622"
+                h_bg = "#ef4444"
+                n_fg = "#ffffff"
+                h_fg = "#ffffff"
+                n_ifg = "#ef4444"
+                h_ifg = "#ffffff"
+                font_weight = "bold"
+            elif is_danger:
+                n_bg = "#131622"
+                h_bg = "#3d1924"
+                n_fg = "#f87171"
+                h_fg = "#fca5a5"
+                n_ifg = "#ef4444"
+                h_ifg = "#fca5a5"
+                font_weight = "normal"
+            else:
+                n_bg = "#131622"
+                h_bg = "#22293d"
+                n_fg = "#e2e8f0"
+                h_fg = "#ffffff"
+                n_ifg = "#eab308" if icon in ("⭐", "★") else ("#38bdf8" if icon == "✏️" else "#94a3b8")
+                h_ifg = "#fde047" if icon in ("⭐", "★") else ("#7dd3fc" if icon == "✏️" else "#ffffff")
+                font_weight = "normal"
+
+            row = tk.Frame(container, bg=n_bg, cursor="hand2")
+            row.pack(fill="x", pady=1)
+
+            if icon:
+                lbl_icon = tk.Label(row, text=icon, font=("Segoe UI Emoji", 10),
+                                    bg=n_bg, fg=n_ifg, width=3, anchor="center")
+                lbl_icon.pack(side="left", padx=(4, 2), pady=3)
+            else:
+                lbl_icon = None
+
+            lbl_text = tk.Label(row, text=label, font=("Segoe UI", 9, font_weight),
+                                bg=n_bg, fg=n_fg, anchor="w")
+            lbl_text.pack(side="left", fill="x", expand=True, padx=(2, 14), pady=3)
+
+            widgets = [row, lbl_text]
+            if lbl_icon:
+                widgets.append(lbl_icon)
+
+            def make_hover(r=row, txt=lbl_text, ic=lbl_icon,
+                           hb=h_bg, hf=h_fg, hi=h_ifg,
+                           nb=n_bg, nf=n_fg, ni=n_ifg):
+                def _enter(e):
+                    r.config(bg=hb)
+                    txt.config(bg=hb, fg=hf)
+                    if ic:
+                        ic.config(bg=hb, fg=hi)
+                def _leave(e):
+                    r.config(bg=nb)
+                    txt.config(bg=nb, fg=nf)
+                    if ic:
+                        ic.config(bg=nb, fg=ni)
+                return _enter, _leave
+
+            _enter, _leave = make_hover()
+            for w in widgets:
+                w.bind("<Enter>", _enter)
+                w.bind("<Leave>", _leave)
+
+                def make_click(c=cmd):
+                    def _click(e):
+                        ModernContextMenu.dismiss_active()
+                        if c:
+                            self.root.after(10, c)
+                    return _click
+
+                w.bind("<Button-1>", make_click())
+
+        # Fit bounds and avoid screen edge clipping
+        self.window.update_idletasks()
+        req_w = self.window.winfo_reqwidth()
+        req_h = self.window.winfo_reqheight()
+        sw = self.window.winfo_screenwidth()
+        sh = self.window.winfo_screenheight()
+
+        target_x = x_root
+        target_y = y_root
+
+        if target_x + req_w > sw - 12:
+            target_x = max(0, sw - req_w - 12)
+        if target_y + req_h > sh - 12:
+            target_y = max(0, target_y - req_h)
+
+        self.window.geometry(f"{req_w}x{req_h}+{target_x}+{target_y}")
+
+    def close(self):
+        if self.window:
+            try:
+                self.window.destroy()
+            except Exception:
+                pass
+            self.window = None
+
+
 class OpenDeskGUI:
     def __init__(self, root: tk.Tk, port: int):
         self.root = root
@@ -1029,94 +1211,131 @@ class OpenDeskGUI:
             fav = item.get("favorite", False)
             last_seen = item.get("last_seen", "")
 
-            card = tk.Frame(grid_frame, bg="#161924", bd=1, relief="solid",
-                            highlightbackground="#282e3f", highlightthickness=1, width=236, height=145)
+            # Outer Card Frame with subtle hover elevation
+            card = tk.Frame(grid_frame, bg="#161926", bd=1, relief="solid",
+                            highlightbackground="#242b3d", highlightthickness=1, width=240, height=148)
             card.grid(row=row, column=col, padx=8, pady=8, sticky="nsew")
             card.pack_propagate(False)
 
-            top_row = tk.Frame(card, bg="#161924")
+            # Top Header Row
+            top_row = tk.Frame(card, bg="#161926")
             top_row.pack(fill="x", padx=10, pady=(8, 2))
 
-            tk.Label(top_row, text="💻", font=("Segoe UI Emoji", 12), bg="#161924", fg="#ef4444").pack(side="left")
+            # Left device icon with modern badge
+            badge_icon = tk.Label(top_row, text="💻", font=("Segoe UI Emoji", 11), bg="#221927", fg="#ef4444", padx=4, pady=1)
+            badge_icon.pack(side="left")
 
-            # More options button (⋮) for context menu
-            opts_btn = tk.Button(top_row, text="⋮", font=("Segoe UI", 11, "bold"), bg="#161924", fg="#94a3b8",
-                                 activebackground="#222738", activeforeground="#ffffff", bd=0, padx=4, cursor="hand2")
+            # Online status indicator dot
+            online_dot = tk.Label(top_row, text="● Online", font=("Segoe UI", 7, "bold"), bg="#161926", fg="#22c55e")
+            online_dot.pack(side="left", padx=(6, 0))
+
+            # Right action: 3-Dot Options button (⋮)
+            opts_btn = tk.Button(top_row, text="⋮", font=("Segoe UI", 11, "bold"), bg="#161926", fg="#94a3b8",
+                                 activebackground="#252c40", activeforeground="#ffffff", bd=0, padx=5, cursor="hand2")
             opts_btn.pack(side="right")
-            opts_btn.bind("<Enter>", lambda e, b=opts_btn: b.config(fg="#f1f5f9", bg="#222738"))
-            opts_btn.bind("<Leave>", lambda e, b=opts_btn: b.config(fg="#94a3b8", bg="#161924"))
+            opts_btn.bind("<Enter>", lambda e, b=opts_btn: b.config(fg="#ffffff", bg="#252c40"))
+            opts_btn.bind("<Leave>", lambda e, b=opts_btn: b.config(fg="#94a3b8", bg="#161926"))
 
+            # Favorite star button (★/☆)
             fav_char = "★" if fav else "☆"
             fav_fg = "#eab308" if fav else "#64748b"
-            fav_btn = tk.Button(top_row, text=fav_char, font=("Segoe UI", 11), bg="#161924", fg=fav_fg,
-                                activebackground="#161924", activeforeground="#eab308", bd=0, padx=2, cursor="hand2",
+            fav_btn = tk.Button(top_row, text=fav_char, font=("Segoe UI", 11), bg="#161926", fg=fav_fg,
+                                activebackground="#161926", activeforeground="#facc15", bd=0, padx=2, cursor="hand2",
                                 command=lambda t=target_id: self._on_toggle_fav(t))
             fav_btn.pack(side="right", padx=(0, 2))
+            fav_btn.bind("<Enter>", lambda e, b=fav_btn: b.config(fg="#facc15"))
+            fav_btn.bind("<Leave>", lambda e, b=fav_btn, f=fav: b.config(fg="#eab308" if f else "#64748b"))
 
+            # Session Alias / Display Name
             display_alias = alias if len(alias) <= 24 else alias[:22] + "…"
-            lbl_alias = tk.Label(card, text=display_alias, font=("Segoe UI", 9, "bold"), bg="#161924", fg="#f1f5f9", anchor="w")
-            lbl_alias.pack(fill="x", padx=10)
-            lbl_id = tk.Label(card, text=target_id, font=("Consolas", 9), bg="#161924", fg="#ef4444", anchor="w")
-            lbl_id.pack(fill="x", padx=10)
-            lbl_seen = tk.Label(card, text=f"Last: {last_seen}", font=("Segoe UI", 7), bg="#161924", fg="#64748b", anchor="w")
-            lbl_seen.pack(fill="x", padx=10)
+            lbl_alias = tk.Label(card, text=display_alias, font=("Segoe UI", 9, "bold"), bg="#161926", fg="#f8fafc", anchor="w")
+            lbl_alias.pack(fill="x", padx=10, pady=(2, 0))
+
+            # Remote ID Badge / Chip (Sleek dark chip)
+            id_chip = tk.Frame(card, bg="#211823", highlightbackground="#3d222e", highlightthickness=1, bd=0)
+            id_chip.pack(anchor="w", padx=10, pady=(3, 2))
+            lbl_id = tk.Label(id_chip, text=f"ID: {target_id}", font=("Consolas", 8, "bold"), bg="#211823", fg="#ef4444", padx=5, pady=0)
+            lbl_id.pack()
+
+            # Last seen timestamp
+            lbl_seen = tk.Label(card, text=f"🕒 Last: {last_seen}", font=("Segoe UI", 7), bg="#161926", fg="#64748b", anchor="w")
+            lbl_seen.pack(fill="x", padx=10, pady=(1, 0))
 
             # Bottom Action Row with Edit, Delete, and Connect buttons
-            act_row = tk.Frame(card, bg="#161924")
+            act_row = tk.Frame(card, bg="#161926")
             act_row.pack(fill="x", side="bottom", padx=10, pady=(0, 8))
 
-            left_acts = tk.Frame(act_row, bg="#161924")
+            # Left side tool buttons
+            left_acts = tk.Frame(act_row, bg="#161926")
             left_acts.pack(side="left")
 
-            edit_btn = tk.Button(left_acts, text="✏️ Edit", font=("Segoe UI", 8), bg="#222738", fg="#cbd5e1",
-                                 activebackground="#334155", activeforeground="#ffffff", bd=0, padx=6, pady=2, cursor="hand2",
+            edit_btn = tk.Button(left_acts, text="✏️ Edit", font=("Segoe UI", 8), bg="#1e2436", fg="#cbd5e1",
+                                 activebackground="#2a334d", activeforeground="#38bdf8", bd=0, padx=7, pady=2, cursor="hand2",
                                  command=lambda t=target_id, a=alias, f=fav: self._prompt_edit_session(t, a, f))
             edit_btn.pack(side="left", padx=(0, 4))
-            edit_btn.bind("<Enter>", lambda e, b=edit_btn: b.config(bg="#2d3748", fg="#38bdf8"))
-            edit_btn.bind("<Leave>", lambda e, b=edit_btn: b.config(bg="#222738", fg="#cbd5e1"))
+            edit_btn.bind("<Enter>", lambda e, b=edit_btn: b.config(bg="#2a334d", fg="#38bdf8"))
+            edit_btn.bind("<Leave>", lambda e, b=edit_btn: b.config(bg="#1e2436", fg="#cbd5e1"))
 
-            del_btn = tk.Button(left_acts, text="🗑️", font=("Segoe UI", 8), bg="#222738", fg="#94a3b8",
-                                activebackground="#dc2626", activeforeground="#ffffff", bd=0, padx=5, pady=2, cursor="hand2",
+            del_btn = tk.Button(left_acts, text="🗑️", font=("Segoe UI", 8), bg="#1e2436", fg="#94a3b8",
+                                activebackground="#3d1b26", activeforeground="#ef4444", bd=0, padx=6, pady=2, cursor="hand2",
                                 command=lambda t=target_id, a=alias: self._prompt_delete_session(t, a))
             del_btn.pack(side="left")
-            del_btn.bind("<Enter>", lambda e, b=del_btn: b.config(bg="#3d1f28", fg="#ef4444"))
-            del_btn.bind("<Leave>", lambda e, b=del_btn: b.config(bg="#222738", fg="#94a3b8"))
+            del_btn.bind("<Enter>", lambda e, b=del_btn: b.config(bg="#3d1b26", fg="#ef4444"))
+            del_btn.bind("<Leave>", lambda e, b=del_btn: b.config(bg="#1e2436", fg="#94a3b8"))
 
+            # Right side Connect Button
             conn_btn = tk.Button(act_row, text="Connect ➜", font=("Segoe UI", 8, "bold"), bg="#ef4444", fg="#ffffff",
-                                 activebackground="#dc2626", activeforeground="#ffffff", bd=0, padx=10, pady=3, cursor="hand2",
+                                 activebackground="#dc2626", activeforeground="#ffffff", bd=0, padx=11, pady=3, cursor="hand2",
                                  command=lambda t=target_id: self._launch_session(t))
             conn_btn.pack(side="right")
+            conn_btn.bind("<Enter>", lambda e, b=conn_btn: b.config(bg="#dc2626"))
+            conn_btn.bind("<Leave>", lambda e, b=conn_btn: b.config(bg="#ef4444"))
 
-            # Right-click context menu
-            ctx_menu = tk.Menu(self.root, tearoff=0, bg="#1a1e2e", fg="#f1f5f9",
-                               activebackground="#ef4444", activeforeground="#ffffff",
-                               activeborderwidth=0, bd=1, relief="solid")
-            ctx_menu.add_command(label="⚡ Connect", font=("Segoe UI", 9, "bold"),
-                                 command=lambda t=target_id: self._launch_session(t))
-            ctx_menu.add_separator()
-            ctx_menu.add_command(label="✏️ Rename Session...", font=("Segoe UI", 9),
-                                 command=lambda t=target_id, a=alias: self._prompt_rename_session(t, a))
-            ctx_menu.add_command(label="⚙️ Edit Details...", font=("Segoe UI", 9),
-                                 command=lambda t=target_id, a=alias, f=fav: self._prompt_edit_session(t, a, f))
-            fav_label = "★ Remove from Favorites" if fav else "⭐ Add to Favorites"
-            ctx_menu.add_command(label=fav_label, font=("Segoe UI", 9),
-                                 command=lambda t=target_id: self._on_toggle_fav(t))
-            ctx_menu.add_separator()
-            ctx_menu.add_command(label="🗑️ Delete Session", font=("Segoe UI", 9),
-                                 command=lambda t=target_id, a=alias: self._prompt_delete_session(t, a))
+            # Card Hover Elevation Effect
+            def make_card_hover(c=card):
+                def _c_enter(e):
+                    c.config(highlightbackground="#3b4664", bg="#191d2c")
+                def _c_leave(e):
+                    c.config(highlightbackground="#242b3d", bg="#161926")
+                return _c_enter, _c_leave
+            _c_enter, _c_leave = make_card_hover()
+            card.bind("<Enter>", _c_enter)
+            card.bind("<Leave>", _c_leave)
 
-            def _show_menu(event, m=ctx_menu):
-                try:
-                    m.tk_popup(event.x_root, event.y_root)
-                finally:
-                    m.grab_release()
+            # Modern Dark Context Menu Factory
+            def make_show_menu(t_id=target_id, al=alias, fv=fav):
+                def _show(event):
+                    menu = ModernContextMenu(self.root)
+                    menu.add_command(label="Connect", icon="⚡", is_primary=True,
+                                     command=lambda: self._launch_session(t_id))
+                    menu.add_separator()
+                    menu.add_command(label="Rename Session...", icon="✏️",
+                                     command=lambda: self._prompt_rename_session(t_id, al))
+                    menu.add_command(label="Edit Details...", icon="⚙️",
+                                     command=lambda: self._prompt_edit_session(t_id, al, fv))
+                    fav_lbl = "Remove from Favorites" if fv else "Add to Favorites"
+                    fav_ic = "★" if fv else "⭐"
+                    menu.add_command(label=fav_lbl, icon=fav_ic,
+                                     command=lambda: self._on_toggle_fav(t_id))
+                    menu.add_separator()
+                    menu.add_command(label="Delete Session", icon="🗑️", is_danger=True,
+                                     command=lambda: self._prompt_delete_session(t_id, al))
+                    menu.show(event.x_root, event.y_root)
+                return _show
 
-            opts_btn.bind("<Button-1>", _show_menu)
+            show_menu = make_show_menu()
+            opts_btn.bind("<Button-1>", show_menu)
+
             card.config(cursor="hand2")
-            for w in (card, top_row, lbl_alias, lbl_id, lbl_seen, left_acts):
-                w.bind("<Button-3>", _show_menu)
-                if w in (card, lbl_alias, lbl_id, lbl_seen):
+            for w in (card, top_row, badge_icon, online_dot, lbl_alias, id_chip, lbl_id, lbl_seen, left_acts):
+                w.bind("<Button-3>", show_menu)
+                if w in (card, badge_icon, online_dot, lbl_alias, id_chip, lbl_id, lbl_seen):
                     w.bind("<Button-1>", lambda e, t=target_id: self._launch_session(t))
+
+            col += 1
+            if col >= max_cols:
+                col = 0
+                row += 1
 
             col += 1
             if col >= max_cols:
@@ -1161,6 +1380,8 @@ class OpenDeskGUI:
         name_entry.insert(0, current_alias)
         name_entry.select_range(0, tk.END)
         name_entry.focus_set()
+        name_entry.bind("<FocusIn>", lambda e, en=name_entry: en.config(highlightbackground="#ef4444"))
+        name_entry.bind("<FocusOut>", lambda e, en=name_entry: en.config(highlightbackground="#334155"))
 
         # Action Buttons
         btn_bar = tk.Frame(dialog, bg="#141822")
@@ -1222,6 +1443,8 @@ class OpenDeskGUI:
                             highlightthickness=1, highlightbackground="#334155")
         id_entry.pack(fill="x", ipady=3, pady=(0, 8))
         id_entry.insert(0, target_id)
+        id_entry.bind("<FocusIn>", lambda e, en=id_entry: en.config(highlightbackground="#ef4444"))
+        id_entry.bind("<FocusOut>", lambda e, en=id_entry: en.config(highlightbackground="#334155"))
 
         tk.Label(body, text="Display Name / Alias:", font=("Segoe UI", 9),
                  bg="#141822", fg="#94a3b8").pack(anchor="w", pady=(0, 2))
@@ -1230,6 +1453,8 @@ class OpenDeskGUI:
                                highlightthickness=1, highlightbackground="#334155")
         alias_entry.pack(fill="x", ipady=3, pady=(0, 8))
         alias_entry.insert(0, current_alias)
+        alias_entry.bind("<FocusIn>", lambda e, en=alias_entry: en.config(highlightbackground="#ef4444"))
+        alias_entry.bind("<FocusOut>", lambda e, en=alias_entry: en.config(highlightbackground="#334155"))
 
         fav_var = tk.BooleanVar(value=current_fav)
         fav_chk = tk.Checkbutton(body, text="⭐ Pin to Favorites", variable=fav_var,
