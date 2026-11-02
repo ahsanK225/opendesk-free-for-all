@@ -5,9 +5,9 @@ import os
 from unittest.mock import patch, MagicMock
 import numpy as np
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from opendesk.host.audio import AudioEngine, SAMPLE_RATE, BLOCK_SIZE
-from opendesk.common.protocol import MessageType, create_packet, parse_packet
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from host.audio import AudioEngine, SAMPLE_RATE, BLOCK_SIZE
+from common.protocol import MessageType, create_packet, parse_packet
 
 class TestAudioEngine(unittest.TestCase):
     def setUp(self):
@@ -77,7 +77,7 @@ class TestAudioEngine(unittest.TestCase):
         self.assertFalse(engine.mic_enabled)
 
     def test_available_audio_devices(self):
-        from opendesk.host.audio import get_available_audio_devices, find_best_input_device_id
+        from host.audio import get_available_audio_devices, find_best_input_device_id
         devs = get_available_audio_devices()
         self.assertIn("inputs", devs)
         self.assertIn("outputs", devs)

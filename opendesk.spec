@@ -1,100 +1,18 @@
-# -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_data_files
+# Windows x64 portable build. Run from repository root.
+from PyInstaller.utils.hooks import collect_data_files, copy_metadata
+from pathlib import Path
+import os
 
-block_cipher = None
-
-sounddevice_datas = collect_data_files('_sounddevice_data')
-
-a = Analysis(
-    ['opendesk_app.py'],
-    pathex=['.'],
+runtime = Path('.build-deps')
+notices = []
+for distribution in ('pillow','numpy','aiohttp','sounddevice','cryptography','cffi','pycparser','dxcam','comtypes'):
+    notices += copy_metadata(distribution)
+a = Analysis(['opendesk_app.py'], pathex=['.', str(runtime)] if runtime.exists() else ['.'],
     binaries=[],
-    datas=[
-        ('web', 'web'),
-        ('web', 'opendesk/web'),
-        ('bin', 'bin'),
-        ('bin', 'opendesk/bin'),
-    ] + sounddevice_datas,
-    hiddenimports=[
-        'aiohttp',
-        'websockets',
-        'PIL',
-        'PIL.Image',
-        'PIL.ImageDraw',
-        'PIL.ImageTk',
-        'mss',
-        'mss.windows',
-        'sounddevice',
-        'numpy',
-        '_sounddevice_data',
-        'tkinter',
-        'tkinter.ttk',
-        'tkinter.messagebox',
-        'tkinter.simpledialog',
-        'client',
-        'client.viewer',
-        'common',
-        'common.config',
-        'common.protocol',
-        'common.tunnel',
-        'common.updater',
-        'common.rendezvous',
-        'host',
-        'host.agent',
-        'host.audio',
-        'host.capture',
-        'host.clipboard',
-        'host.input_handler',
-        'relay',
-        'relay.server',
-        'opendesk.client',
-        'opendesk.client.viewer',
-        'opendesk.common',
-        'opendesk.common.config',
-        'opendesk.common.protocol',
-        'opendesk.common.tunnel',
-        'opendesk.common.updater',
-        'opendesk.common.rendezvous',
-        'opendesk.host',
-        'opendesk.host.agent',
-        'opendesk.host.audio',
-        'opendesk.host.capture',
-        'opendesk.host.clipboard',
-        'opendesk.host.input_handler',
-        'opendesk.relay',
-        'opendesk.relay.server',
-    ],
-    hookspath=[],
-    hooksconfig={},
-    runtime_hooks=[],
-    excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
-    noarchive=False,
-)
-
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
-
-exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    [],
-    name='OpenDesk',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,  # Windowed GUI application like AnyDesk
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon='opendesk.ico',
-)
+    datas=[('web','web'),('bin/cloudflared.exe','bin')] + collect_data_files('_sounddevice_data') + notices + [('THIRD_PARTY_NOTICES.md','.'),('LICENSE','.')],
+    hiddenimports=['sounddevice','_cffi_backend','client.files','dxcam','dxcam.processor.numpy_processor'],
+    hookspath=[], hooksconfig={}, runtime_hooks=[],
+    excludes=['pytest','IPython','matplotlib','pandas','scipy'], noarchive=False)
+pyz = PYZ(a.pure)
+exe = EXE(pyz,a.scripts,a.binaries,a.datas,[],name='OpenDeskDiagnostic' if os.environ.get('OPENDESK_CONSOLE_BUILD') else 'OpenDesk',debug=False,
+    strip=False,upx=False,console=bool(os.environ.get("OPENDESK_CONSOLE_BUILD")),icon='opendesk.ico',version='version_info.txt')

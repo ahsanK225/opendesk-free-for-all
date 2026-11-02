@@ -8,9 +8,14 @@ import os
 import json
 import random
 import time
+import threading
+import tempfile
+from functools import wraps
+from common.credentials import protect, unprotect
 from typing import Optional, List, Dict, Any
 
-CONFIG_DIR = os.path.expanduser("~/.opendesk")
+CONFIG_DIR = os.environ.get("OPENDESK_CONFIG_DIR", os.path.expanduser("~/.opendesk"))
+_CONFIG_LOCK = threading.RLock()
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 
 def _ensure_config_dir():
@@ -32,8 +37,17 @@ def load_config() -> dict:
 def save_config(cfg: dict):
     _ensure_config_dir()
     try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2)
+        directory = os.path.dirname(CONFIG_FILE)
+        os.makedirs(directory, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix='config_', suffix='.tmp', dir=directory)
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(cfg, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temporary, CONFIG_FILE)
+        finally:
+            if os.path.exists(temporary): os.unlink(temporary)
     except Exception as e:
         print(f"[Config] Warning saving config: {e}")
 
@@ -57,11 +71,7 @@ def get_recent_sessions() -> List[Dict[str, Any]]:
     if recents is not None:
         return recents
 
-    # Provide initial sample discovery cards
-    default_recents = [
-        {"id": "524 819 301", "alias": "Studio Workstation", "favorite": True, "last_seen": "Today, 14:20"},
-        {"id": "902 411 658", "alias": "Office Laptop", "favorite": False, "last_seen": "Yesterday"},
-    ]
+    default_recents = []
     cfg["recent_sessions"] = default_recents
     save_config(cfg)
     return default_recents
@@ -175,11 +185,16 @@ def clear_recent_sessions() -> bool:
 
 def get_unattended_password() -> str:
     cfg = load_config()
-    return cfg.get("unattended_password", "")
+    value = cfg.get('unattended_password', '')
+    if value and not value.startswith('dpapi:'):
+        # Migrate existing v1 credentials on first use.
+        set_unattended_password(value)
+        return value
+    return unprotect(value)
 
 def set_unattended_password(pw: str):
     cfg = load_config()
-    cfg["unattended_password"] = pw
+    cfg["unattended_password"] = protect(pw) if pw else ""
     save_config(cfg)
 
 def get_auto_update_enabled() -> bool:
@@ -217,3 +232,16 @@ def save_audio_settings(settings: Dict[str, Any]):
     cfg = load_config()
     cfg["audio"] = settings
     save_config(cfg)
+
+
+def _locked(fn):
+    @wraps(fn)
+    def call(*args, **kwargs):
+        with _CONFIG_LOCK:
+            return fn(*args, **kwargs)
+    return call
+
+# Hold one re-entrant lock across complete read/modify/write transactions.
+for _name in list(globals()):
+    if _name.startswith(('get_', 'set_', 'save_', 'load_', 'add_', 'toggle_', 'rename_', 'edit_', 'delete_', 'clear_')) and callable(globals()[_name]):
+        globals()[_name] = _locked(globals()[_name])

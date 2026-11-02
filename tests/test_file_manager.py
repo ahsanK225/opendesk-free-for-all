@@ -8,8 +8,8 @@ import shutil
 import tempfile
 import sys
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from opendesk.host.file_manager import FileManager
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from host.file_manager import FileManager
 
 class TestFileManager(unittest.TestCase):
     def setUp(self):

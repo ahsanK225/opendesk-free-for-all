@@ -8,7 +8,7 @@ class InputHandler {
   constructor(canvasElement, sendCallback) {
     this.canvas = canvasElement;
     this.send = sendCallback;
-    this.enabled = true;
+    this.enabled = false;
     
     this.lastMoveTime = 0;
     this.moveThrottleMs = 15; // ~60 Hz mouse sampling
@@ -27,6 +27,10 @@ class InputHandler {
   }
 
   _bindEvents() {
+    const release=()=>{ if(this.enabled) this.send({type:'input_reset',payload:{}}); };
+    this.canvas.addEventListener('blur',release);
+    window.addEventListener('blur',release);
+    window.addEventListener('mouseup',event=>{ if(event.target!==this.canvas) release(); });
     // Mouse Move
     this.canvas.addEventListener("mousemove", (e) => {
       if (!this.enabled) return;
@@ -104,7 +108,7 @@ class InputHandler {
 
     // Automatic Native Paste Synchronization
     window.addEventListener("paste", (e) => {
-      if (!this.enabled) return;
+      if (!this.enabled || document.activeElement !== this.canvas) return;
       const text = (e.clipboardData || window.clipboardData)?.getData("text");
       if (text) {
         e.preventDefault();
@@ -117,6 +121,7 @@ class InputHandler {
   }
 
   sendShortcut(name) {
+    if (!this.enabled) return;
     this.send({
       type: "shortcut",
       payload: { name }

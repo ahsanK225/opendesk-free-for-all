@@ -8,10 +8,10 @@ class FileTransferManager {
     this.send = sendCallback;
     this.currentPath = "";
     this.parentPath = null;
-    
+
     // Download state
     this.activeDownload = null; // { path, filename, chunks, totalSize, totalChunks }
-    
+
     // Upload state
     this.activeUpload = null; // { file, uploadId, targetDir, totalChunks, chunkSize }
   }
@@ -44,18 +44,19 @@ class FileTransferManager {
       const tr = document.createElement("tr");
       const icon = item.is_dir ? "📁" : "📄";
       const sizeStr = item.is_dir ? "-" : this._formatSize(item.size);
+      const safeName = String(item.name).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
       tr.innerHTML = `
         <td>
-          <span class="file-item-name" data-name="${item.name}" data-isdir="${item.is_dir}">
-            ${icon} ${item.name}
+          <span class="file-item-name" data-name="${safeName}" data-isdir="${item.is_dir}">
+            ${icon} ${safeName}
           </span>
         </td>
         <td style="font-family: var(--font-mono); color: var(--text-muted);">${sizeStr}</td>
         <td>
-          ${item.is_dir 
-            ? `<button class="btn btn-sm btn-secondary btn-open-dir" data-name="${item.name}">Open</button>` 
-            : `<button class="btn btn-sm btn-secondary btn-download-file" data-name="${item.name}">Download</button>`
+          ${item.is_dir
+            ? `<button class="btn btn-sm btn-secondary btn-open-dir" data-name="${safeName}">Open</button>`
+            : `<button class="btn btn-sm btn-secondary btn-download-file" data-name="${safeName}">Download</button>`
           }
         </td>
       `;
@@ -69,8 +70,8 @@ class FileTransferManager {
         if (isDir) {
           const dirName = elem.dataset.name;
           const separator = this.currentPath.includes("\\") ? "\\" : "/";
-          const newPath = this.currentPath.endsWith(separator) 
-            ? this.currentPath + dirName 
+          const newPath = this.currentPath.endsWith(separator)
+            ? this.currentPath + dirName
             : this.currentPath + separator + dirName;
           this.requestList(newPath);
         }
@@ -81,8 +82,8 @@ class FileTransferManager {
       btn.addEventListener("click", () => {
         const fileName = btn.dataset.name;
         const separator = this.currentPath.includes("\\") ? "\\" : "/";
-        const filePath = this.currentPath.endsWith(separator) 
-          ? this.currentPath + fileName 
+        const filePath = this.currentPath.endsWith(separator)
+          ? this.currentPath + fileName
           : this.currentPath + separator + fileName;
         this.startDownload(filePath);
       });
@@ -111,7 +112,7 @@ class FileTransferManager {
         byteNumbers[i] = byteCharacters.charCodeAt(i);
       }
       this.activeDownload.chunks.push(new Uint8Array(byteNumbers));
-      
+
       const pct = Math.round(((payload.chunk_index + 1) / payload.total_chunks) * 100);
       this._showProgress(`Downloading ${payload.filename} (${pct}%)...`, pct);
 
@@ -126,7 +127,7 @@ class FileTransferManager {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        
+
         this._showProgress("Download complete!", 100);
         setTimeout(() => this._hideProgress(), 2000);
         this.activeDownload = null;
@@ -158,7 +159,7 @@ class FileTransferManager {
   startUpload(file) {
     if (!file) return;
     const chunkSize = 64 * 1024;
-    const totalChunks = Math.ceil(file.size / chunkSize);
+    const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize));
     const uploadId = "up_" + Math.random().toString(36).substring(2, 9);
 
     this.activeUpload = {
@@ -188,7 +189,7 @@ class FileTransferManager {
   _uploadNextChunk(chunkIndex) {
     if (!this.activeUpload || chunkIndex >= this.activeUpload.totalChunks) return;
     const { file, uploadId, chunkSize, totalChunks } = this.activeUpload;
-    
+
     const start = chunkIndex * chunkSize;
     const end = Math.min(file.size, start + chunkSize);
     const slice = file.slice(start, end);
@@ -198,7 +199,7 @@ class FileTransferManager {
       const b64 = btoa(
         new Uint8Array(reader.result).reduce((data, byte) => data + String.fromCharCode(byte), "")
       );
-      
+
       const pct = Math.round(((chunkIndex + 1) / totalChunks) * 100);
       this._showProgress(`Uploading ${file.name} (${pct}%)...`, pct);
 

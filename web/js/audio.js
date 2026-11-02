@@ -1,202 +1,91 @@
-/**
- * OpenDesk Web Audio Engine
- * Real-time bidirectional voice communication (WhatsApp-style voice call)
- * Uses Web Audio API & MediaDevices getUserMedia with 16kHz 16-bit PCM streaming.
- */
-
+/** Explicit-rate 20ms PCM voice with browser AEC and bounded playback latency. */
 class WebAudioVoiceChat {
-  constructor(sendPacketFn) {
-    this.sendPacket = sendPacketFn;
+  constructor(sendPacket) {
+    this.sendPacket = sendPacket;
     this.audioCtx = null;
-    this.mediaStream = null;
-    this.sourceNode = null;
-    this.processorNode = null;
-    
     this.isActive = false;
     this.isMuted = false;
     this.nextPlayTime = 0;
-    this.onStateChange = null; // Callback for UI updates
+    this.sources = new Set();
   }
-
-  /**
-   * Initializes the AudioContext safely on user interaction.
-   */
   _ensureAudioContext() {
-    if (!this.audioCtx) {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      try {
-        this.audioCtx = new AudioContextClass({ sampleRate: 16000 });
-      } catch (e) {
-        this.audioCtx = new AudioContextClass();
-      }
-    }
+    if (!this.audioCtx) this.audioCtx = new AudioContext({sampleRate:48000, latencyHint:"interactive"});
     this.resumeContext();
   }
-
-  /**
-   * Resumes AudioContext if suspended by browser autoplay policy.
-   */
   resumeContext() {
-    if (this.audioCtx && this.audioCtx.state === "suspended") {
-      this.audioCtx.resume().catch(() => {});
-    }
+    if (this.audioCtx?.state === "suspended") this.audioCtx.resume().catch(()=>{});
   }
-
-  /**
-   * Pre-initializes audio context on session start so incoming host audio plays immediately.
-   */
-  initSpeaker() {
-    this._ensureAudioContext();
-  }
-
-  /**
-   * Starts bidirectional voice communication.
-   */
+  initSpeaker() { this._ensureAudioContext(); }
   async start() {
-    if (this.isActive) return;
-
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      alert("Microphone Access Notice:\nBrowsers require a Secure Context (HTTPS or localhost) for microphone access.\nPlease use the Cloudflare Worldwide HTTPS link or open via localhost.");
-      return;
-    }
-        audio: {
-          channelCount: 1,
-          sampleRate: 16000,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
-
-      this.sourceNode = this.audioCtx.createMediaStreamSource(this.mediaStream);
-      
-      // Buffer size: 2048 frames (~128ms per chunk at 16kHz)
-      this.processorNode = this.audioCtx.createScriptProcessor(2048, 1, 1);
-
-      this.processorNode.onaudioprocess = (e) => {
-        if (!this.isActive || this.isMuted) return;
-
-        const inputData = e.inputBuffer.getChannelData(0);
-        // Convert Float32Array (-1.0 to +1.0) to 16-bit signed PCM
-        const pcm16 = new Int16Array(inputData.length);
-        for (let i = 0; i < inputData.length; i++) {
-          const s = Math.max(-1, Math.min(1, inputData[i]));
-          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-        }
-
-        // Convert to Base64 binary string
-        const bytes = new Uint8Array(pcm16.buffer);
-        let binary = "";
-        const len = bytes.byteLength;
-        for (let i = 0; i < len; i++) {
-          binary += String.fromCharCode(bytes[i]);
-        }
-        const b64Data = btoa(binary);
-
-        this.sendPacket({
-          type: "audio_chunk",
-          payload: { data: b64Data }
-        });
-      };
-
-      this.sourceNode.connect(this.processorNode);
-      // Connect to dummy destination to keep processor node running
-      const dummyGain = this.audioCtx.createGain();
-      dummyGain.gain.value = 0;
-      this.processorNode.connect(dummyGain);
-      dummyGain.connect(this.audioCtx.destination);
-
-      this.isActive = true;
-      this.isMuted = false;
-      this.nextPlayTime = this.audioCtx.currentTime;
-
-      if (this.onStateChange) this.onStateChange("active");
-      console.log("[Audio] Voice communication started successfully.");
-    } catch (err) {
-      console.error("[Audio] Failed to access microphone:", err);
-      alert("Microphone access error: " + (err.message || err.name) + "\nPlease allow microphone permissions in your browser.");
-      if (this.onStateChange) this.onStateChange("off");
-    }
-  }
-
-  /**
-   * Toggles microphone mute state.
-   */
-  toggleMute() {
-    if (!this.isActive) return;
-    this.isMuted = !this.isMuted;
-    if (this.onStateChange) {
-      this.onStateChange(this.isMuted ? "muted" : "active");
-    }
-  }
-
-  /**
-   * Stops voice communication and releases microphone.
-   */
-  stop() {
-    this.isActive = false;
-    this.isMuted = false;
-
-    if (this.processorNode) {
-      try { this.processorNode.disconnect(); } catch (e) {}
-      this.processorNode = null;
-    }
-
-    if (this.sourceNode) {
-      try { this.sourceNode.disconnect(); } catch (e) {}
-      this.sourceNode = null;
-    }
-
-    if (this.mediaStream) {
-      this.mediaStream.getTracks().forEach(track => track.stop());
-      this.mediaStream = null;
-    }
-
-    if (this.onStateChange) this.onStateChange("off");
-    console.log("[Audio] Voice communication stopped.");
-  }
-
-  /**
-   * Plays an incoming 16kHz 16-bit PCM chunk from the remote host.
-   */
-  playChunk(b64Data) {
+    if (this.isActive || this.starting) return;
+    this.starting = true;
     try {
       this._ensureAudioContext();
-
-      // Decode base64 to Uint8Array
-      const binaryString = atob(b64Data);
-      const len = binaryString.length;
-      const bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+      this.mediaStream = await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,
+        echoCancellation:true, noiseSuppression:true, autoGainControl:true}, video:false});
+      if (!this.starting) { this.mediaStream.getTracks().forEach(t=>t.stop()); return; }
+      if (!this.workletLoaded) {
+        await this.audioCtx.audioWorklet.addModule('/js/audio-worklet.js');
+        this.workletLoaded = true;
       }
-
-      // Read as Int16 PCM
-      const int16 = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
-      const float32 = new Float32Array(int16.length);
-
-      // Convert Int16 (-32768 to 32767) to Float32 (-1.0 to 1.0)
-      for (let i = 0; i < int16.length; i++) {
-        float32[i] = int16[i] / 32768.0;
-      }
-
-      // Schedule into Web Audio queue
-      const audioBuffer = this.audioCtx.createBuffer(1, float32.length, 16000);
-      audioBuffer.getChannelData(0).set(float32);
-
-      const source = this.audioCtx.createBufferSource();
-      source.buffer = audioBuffer;
+      this.sourceNode = this.audioCtx.createMediaStreamSource(this.mediaStream);
+      this.processorNode = new AudioWorkletNode(this.audioCtx, 'voice-capture');
+      this.processorNode.port.onmessage = ({data}) => {
+        if (!this.isActive || this.isMuted) return;
+        const bytes = new Uint8Array(data);
+        let text = '';
+        for (const byte of bytes) text += String.fromCharCode(byte);
+        this.sendPacket({type:'audio_chunk',payload:{data:btoa(text),
+          sample_rate:this.audioCtx.sampleRate,channels:1,format:'pcm_s16le'}});
+      };
+      this.sourceNode.connect(this.processorNode);
+      this.processorNode.connect(this.audioCtx.destination); // worklet outputs silence
+      this.isActive = true;
+      this.isMuted = false;
+      this.onStateChange?.('active');
+    } catch(error) {
+      this.stop();
+      alert('Microphone could not start: '+error.message);
+    } finally { this.starting = false; }
+  }
+  toggleMute() {
+    this.isMuted = !this.isMuted;
+    this.onStateChange?.(this.isMuted?'muted':'active');
+  }
+  stop() {
+    this.starting = false;
+    this.isActive = false;
+    this.isMuted = false;
+    if (this.processorNode) { this.processorNode.port.onmessage=null; this.processorNode.disconnect(); }
+    this.sourceNode?.disconnect();
+    this.mediaStream?.getTracks().forEach(t=>t.stop());
+    this.processorNode=this.sourceNode=this.mediaStream=null;
+    for (const source of this.sources) { try { source.stop(); } catch {} }
+    this.sources.clear();
+    this.nextPlayTime=0;
+    this.onStateChange?.('off');
+  }
+  playChunk(data, rate=48000) {
+    if (![8000,16000,24000,44100,48000].includes(rate)) return;
+    try {
+      this._ensureAudioContext();
+      const binary=atob(data);
+      if (binary.length%2 || binary.length>rate*2/5) return;
+      const bytes=Uint8Array.from(binary,c=>c.charCodeAt(0));
+      const pcm=new DataView(bytes.buffer);
+      const buffer=this.audioCtx.createBuffer(1,bytes.length/2,rate);
+      const samples=buffer.getChannelData(0);
+      for(let i=0;i<samples.length;i++) samples[i]=pcm.getInt16(i*2,true)/32768;
+      const now=this.audioCtx.currentTime;
+      if(this.nextPlayTime>now+.12) return; // discard stale audio, never overlap it
+      if(this.nextPlayTime<now) this.nextPlayTime=now+.035;
+      const source=this.audioCtx.createBufferSource();
+      source.buffer=buffer;
       source.connect(this.audioCtx.destination);
-
-      const currentTime = this.audioCtx.currentTime;
-      if (this.nextPlayTime < currentTime || this.nextPlayTime > currentTime + 0.15) {
-        this.nextPlayTime = currentTime + 0.01; // Clamp maximum audio latency to <150ms
-      }
-
+      this.sources.add(source);
+      source.onended=()=>this.sources.delete(source);
       source.start(this.nextPlayTime);
-      this.nextPlayTime += audioBuffer.duration;
-    } catch (err) {
-      console.warn("[Audio] Error playing audio chunk:", err);
-    }
+      this.nextPlayTime+=buffer.duration;
+    } catch(error) { console.warn('Invalid voice block',error); }
   }
 }

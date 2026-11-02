@@ -1,0 +1,50 @@
+name: Windows validation and build
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements-build.txt
+      - name: Python regression suite
+        run: python -m unittest discover -s tests -t .
+      - name: Browser protocol and voice checks
+        run: node tests/test_web.cjs
+      - name: Source GUI smoke test
+        shell: pwsh
+        run: |
+          $env:OPENDESK_CONFIG_DIR = Join-Path $env:RUNNER_TEMP 'opendesk-smoke'
+          python opendesk_app.py --smoke-test --smoke-output smoke.json
+          if ($LASTEXITCODE -ne 0) { throw 'Source smoke test failed' }
+      - name: Build portable and installer
+        if: matrix.python == '3.11'
+        shell: pwsh
+        run: |
+          $env:ISCC_PATH = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $env:ISCC_PATH)) { throw 'Inno Setup compiler is missing' }
+          .\build.ps1 -SkipTests
+          $process = Start-Process -FilePath dist\OpenDesk.exe -ArgumentList '--smoke-test --smoke-output frozen-smoke.json' -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or -not (Test-Path frozen-smoke.json)) { throw 'Frozen smoke test failed' }
+      - uses: actions/upload-artifact@v4
+        if: matrix.python == '3.11'
+        with:
+          name: OpenDesk-Windows-x64
+          path: |
+            dist/OpenDesk_v2.0.0_Portable.exe
+            dist/OpenDesk_Setup_v2.0.0_Installer.exe
+            dist/version.json
+            dist/SHA256SUMS.txt

@@ -7,60 +7,59 @@ Runs on the machine being controlled.
 - Manages bidirectional clipboard sync
 - Handles remote file browsing and chunked transfers
 - Connects to OpenDesk Relay Server
-
-Latency design:
-- Screen capture, JPEG encoding and base64 are executed on a dedicated worker
-  thread so the asyncio loop stays free to inject mouse/keyboard events the
-  instant they arrive (previously a full-frame encode could stall input).
-- The outgoing frame queue keeps only the freshest frame; stale frames are
-  dropped instead of being queued (which is what creates growing delay).
-- Capture scale, JPEG quality and target FPS adapt automatically to measured
-  socket backpressure, so slow internet links stay smooth instead of laggy.
 """
 
+import sys
 import time
+import json
 import base64
 import asyncio
+import threading
+import os
+import math
 from concurrent.futures import ThreadPoolExecutor
+from collections import deque
+from PIL import Image
+import numpy as np
+from common.security import password_record
+from common.protocol import encode_video_packet
 from typing import Optional, Dict, Any, Callable
-
 import aiohttp
 
-try:
-    from opendesk.common.protocol import MessageType, create_packet, parse_packet
-    from opendesk.common.codec import DeskRTCodec
-    from opendesk.host.capture import WindowsScreenCapturer
-    from opendesk.host.input_controller import WindowsInputController
-    from opendesk.host.clipboard import WindowsClipboard
-    from opendesk.host.file_manager import FileManager
-    from opendesk.host.audio import AudioEngine
-except ImportError:
-    from common.protocol import MessageType, create_packet, parse_packet
-    from common.codec import DeskRTCodec
-    from host.capture import WindowsScreenCapturer
-    from host.input_controller import WindowsInputController
-    from host.clipboard import WindowsClipboard
-    from host.file_manager import FileManager
-    from host.audio import AudioEngine
-
+from common.protocol import MessageType, create_packet, parse_packet
+from common.codec import DeskRTCodec
+from host.capture import AdaptiveScreenCapturer
+from host.input_controller import WindowsInputController
+from host.clipboard import WindowsClipboard
+from host.file_manager import FileManager
+from host.audio import AudioEngine
 
 class HostAgent:
-    # Adaptive streaming bounds
-    MIN_SCALE = 0.5
-    MAX_SCALE = 1.0
-    MIN_FPS = 24
-    MAX_FPS = 60
-    MIN_QUALITY = 45
-    MAX_QUALITY = 70
-
-    def __init__(self, relay_url: str = "ws://localhost:8080/ws", host_id: Optional[str] = None, password: str = "",
+    def __init__(self, relay_url: str = "ws://localhost:8080/ws", host_id: Optional[str] = None, password: str = "", host_token: str = "",
                  on_connection_request: Optional[Callable[[str, str, Callable[[str, bool, Optional[Dict[str, bool]]], None]], None]] = None):
         self.relay_url = relay_url
         self.requested_id = host_id
         self.password = password
+        self.host_token = host_token or os.environ.get("OPENDESK_HOST_TOKEN", "")
+        self.auth_record = password_record(password)
+        self.session_id = None
+        self.pending_requests = {}
+        self.approved_requests = {}
+        self._capture_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="screen")
+        self._outstanding = deque()
+        self._ack_event = asyncio.Event()
+        self._force_keyframe = True
+        self.max_width = 1600
+        self._width_limit = 1600
+        self._last_adapt = 0.0
+        self._requested_fps = 30
+        self._requested_quality = 65
+        self._network_rtt = 0.0
+        self._network_congested = False
+        self._healthy_intervals = 0
         self.assigned_id: Optional[str] = None
         self.on_connection_request = on_connection_request
-
+        
         # Session Permissions
         self.permissions = {
             "input": True,
@@ -68,11 +67,12 @@ class HostAgent:
             "clipboard": True,
             "file_transfer": True
         }
-
+        
         # Subsystems
-        self.capturer = WindowsScreenCapturer(scale=0.75)
-        self.codec = DeskRTCodec(tile_size=128, quality=70)
+        self.capturer = None
+        self.codec = DeskRTCodec(tile_size=128, quality=65)
         self.input_controller = WindowsInputController()
+        self.input_controller.enabled = False
         self.clipboard = WindowsClipboard(on_change_callback=self._on_local_clipboard_changed)
         self.file_manager = FileManager()
         self.audio_engine = AudioEngine(on_mic_chunk_callback=self._on_mic_audio_chunk)
@@ -82,26 +82,13 @@ class HostAgent:
         self.ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self.session: Optional[aiohttp.ClientSession] = None
         self.loop: Optional[asyncio.AbstractEventLoop] = None
-
-        # Target FPS & throttle (adaptive)
-        self.target_fps = 60
+        
+        # Target FPS & throttle (Ultra-Smooth 60 FPS capable)
+        self.target_fps = 30
         self.frame_delay = 1.0 / self.target_fps
         self._clip_queue = asyncio.Queue()
-        self._audio_queue = asyncio.Queue()
-        self._video_queue = asyncio.Queue(maxsize=2)
-
-        # Adaptive encoder state (applied on the capture thread)
-        self._pending_scale = 0.75
-        self._pending_quality = 70
-        self._send_time_ewma = 0.0
-        self._dropped_frames = 0
-        self._adapt_at = time.monotonic()
-        self._keyframe_requested = False
-        self._healthy_streak = 0
-        self._client_rtt_ms = -1.0
-
-        # Single-thread executor keeps GDI/desktop affinity stable and serializes codec access
-        self._capture_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="opendesk-capture")
+        self._audio_queue = asyncio.Queue(maxsize=5)
+        self._video_queue = asyncio.Queue(maxsize=1)
 
         # Worker Task references for clean lifecycle without leaks
         self._video_stream_task: Optional[asyncio.Task] = None
@@ -120,38 +107,22 @@ class HostAgent:
         self._video_sender_task = None
         self._audio_stream_task = None
 
-    def _drain_video_queue(self):
-        while True:
-            try:
-                self._video_queue.get_nowait()
-            except Exception:
-                break
-
     def _on_mic_audio_chunk(self, b64_data: str):
         """Callback when local host microphone records an audio block."""
         if not self.running or not self.active_session:
             return
-
-        def _enqueue():
-            # 20ms per chunk: anything beyond ~300ms of backlog must be dropped,
-            # otherwise a slow link makes the voice stream fall further behind.
-            if self._audio_queue.qsize() > 15:
-                try:
-                    self._audio_queue.get_nowait()
-                except Exception:
-                    pass
-            try:
-                self._audio_queue.put_nowait(b64_data)
-            except Exception:
-                pass
-
         try:
             if self.loop and self.loop.is_running():
-                self.loop.call_soon_threadsafe(_enqueue)
+                self.loop.call_soon_threadsafe(self._queue_audio, b64_data)
             else:
-                _enqueue()
+                self._audio_queue.put_nowait(b64_data)
         except Exception:
             pass
+
+    def _queue_audio(self, data):
+        if self._audio_queue.full():
+            self._audio_queue.get_nowait()
+        self._audio_queue.put_nowait(data)
 
     def _on_local_clipboard_changed(self, text: str):
         """Callback when local host clipboard changes."""
@@ -162,185 +133,92 @@ class HostAgent:
 
     async def _send_packet(self, msg_type: str, payload: Optional[Dict[str, Any]] = None, **kwargs):
         if self.ws and not self.ws.closed:
+            if msg_type.startswith('file_') and payload and payload.get('error'):
+                msg_type = MessageType.FILE_ERROR
+                payload = {'message':payload['error']}
             pkt = create_packet(msg_type, payload, **kwargs)
             await self.ws.send_str(pkt)
 
-    # ------------------------------------------------------------------
-    # Capture / encode (runs on the dedicated worker thread)
-    # ------------------------------------------------------------------
-    def _capture_and_encode(self, force_keyframe: bool):
-        if not self.running or not self.active_session:
-            return None
-
-        # Apply pending adaptive changes lazily on the capture thread (GDI-safe)
-        if abs(self._pending_scale - self.capturer.scale) >= 0.005:
-            self.capturer.set_scale(self._pending_scale)
-            self.codec.reset()
-            force_keyframe = True
-        if self._pending_quality != self.codec.quality:
-            self.codec.set_quality(self._pending_quality)
-
-        try:
-            img, arr_u32 = self.capturer.grab_frame()
-            res = self.codec.encode(img, raw_u32=arr_u32, force_keyframe=force_keyframe)
-        except Exception as e:
-            print(f"[Host] Capture/encode warning: {e}")
-            return None
-
-        kind = res["kind"]
-        if kind == "full":
-            return (MessageType.VIDEO_FULL, {
-                "width": res["width"],
-                "height": res["height"],
-                "frame_id": res["frame_id"],
-                "image": base64.b64encode(res["data"]).decode("ascii")
-            })
-        if kind == "delta":
-            tiles = [{
-                "x": t["x"],
-                "y": t["y"],
-                "w": t["w"],
-                "h": t["h"],
-                "image": base64.b64encode(t["data"]).decode("ascii")
-            } for t in res["tiles"]]
-            return (MessageType.VIDEO_DELTA, {
-                "width": res["width"],
-                "height": res["height"],
-                "frame_id": res["frame_id"],
-                "tiles": tiles
-            })
-        return None
-
-    def _enqueue_frame(self, packet):
-        """Keep at most the freshest frames queued; never build up latency."""
-        if self._video_queue.full():
-            try:
-                self._video_queue.get_nowait()
-                self._dropped_frames += 1
-                # A dropped frame desyncs the client's tile state - recover with a keyframe
-                self._keyframe_requested = True
-            except Exception:
-                pass
-        try:
-            self._video_queue.put_nowait(packet)
-        except Exception:
-            pass
-
-    def _socket_backlog(self) -> int:
-        """Bytes still queued in the kernel/socket send buffer (real backpressure)."""
-        ws = self.ws
-        if ws is None:
-            return 0
-        try:
-            transport = getattr(getattr(ws, "_writer", None), "transport", None)
-            if transport is not None:
-                return int(transport.get_write_buffer_size() or 0)
-        except Exception:
-            pass
-        return 0
-
-    def _adapt_streaming(self):
-        """Tune resolution / quality / FPS from measured socket backpressure."""
-        now = time.monotonic()
-        if now - self._adapt_at < 1.0:
-            return
-        self._adapt_at = now
-
-        drops = self._dropped_frames
-        self._dropped_frames = 0
-        send_ms = self._send_time_ewma
-        backlog = self._socket_backlog()
-        rtt = self._client_rtt_ms
-
-        # Congestion is visible through dropped frames, a slow send, a growing
-        # kernel send buffer, or an inflated client-measured round-trip time
-        # (heartbeats queue behind video data, so high RTT == high backlog).
-        constrained = (
-            drops > 0
-            or send_ms > 0.022
-            or backlog > 192 * 1024
-            or rtt > 250.0
-        )
-        healthy = (
-            drops == 0
-            and send_ms < 0.010
-            and backlog < 48 * 1024
-            and 0.0 <= rtt < 120.0
-        )
-
-        if constrained:
-            self._healthy_streak = 0
-            if self._pending_scale > self.MIN_SCALE:
-                self._pending_scale = max(self.MIN_SCALE, round(self._pending_scale - 0.15, 2))
-            elif self.target_fps > self.MIN_FPS:
-                self.target_fps = max(self.MIN_FPS, self.target_fps - 6)
-                self.frame_delay = 1.0 / self.target_fps
-            self._pending_quality = max(self.MIN_QUALITY, self._pending_quality - 5)
-        elif healthy:
-            # Require a sustained healthy streak so recovery never oscillates
-            # (every scale change forces a keyframe, which is costly on tunnels).
-            self._healthy_streak += 1
-            if self._healthy_streak >= 3:
-                self._healthy_streak = 0
-                if self.target_fps < self.MAX_FPS:
-                    self.target_fps = min(self.MAX_FPS, self.target_fps + 6)
-                    self.frame_delay = 1.0 / self.target_fps
-                elif self._pending_scale < self.MAX_SCALE:
-                    self._pending_scale = min(self.MAX_SCALE, round(self._pending_scale + 0.05, 2))
-                self._pending_quality = min(self.MAX_QUALITY, self._pending_quality + 2)
-
-    async def _video_sender_worker(self):
-        """Transmits queued frames and measures socket backpressure for adaptation."""
-        while self.running and self.active_session:
-            try:
-                msg_type, payload = await self._video_queue.get()
-            except asyncio.CancelledError:
-                break
-            try:
-                t0 = time.perf_counter()
-                await self._send_packet(msg_type, payload)
-                dt = time.perf_counter() - t0
-                self._send_time_ewma = dt if self._send_time_ewma == 0.0 else (0.85 * self._send_time_ewma + 0.15 * dt)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                print(f"[Host] Video sender worker notice: {e}")
+    def _capture_encode(self, force):
+        # GDI objects remain on one worker; network/audio never wait for JPEG work.
+        if self.capturer is None:
+            self.capturer = AdaptiveScreenCapturer()
+        img, pixels = self.capturer.grab_frame()
+        max_width = self.max_width
+        if img.width > max_width:
+            height = max(1, round(img.height * max_width / img.width))
+            img = img.resize((max_width, height), Image.Resampling.BILINEAR)
+            pixels = np.asarray(img.convert('RGBA')).view(np.uint32).reshape((height,max_width))
+        self.input_controller.update_screen_size(self.capturer.width, self.capturer.height)
+        return self.codec.encode(img, raw_u32=pixels, force_keyframe=force)
 
     async def _video_stream_loop(self):
-        """
-        Adaptive screen capture / delta encoding loop.
-        Capture+encode runs on a worker thread; the event loop stays responsive
-        so remote mouse/keyboard injection is never delayed by JPEG encoding.
-        """
-        print(f"[Host] Video streaming loop started (target {self.target_fps} FPS).")
-        force_keyframe = True
-        loop = asyncio.get_running_loop()
-
         while self.running and self.active_session:
-            t0 = time.perf_counter()
+            t0 = time.monotonic()
             try:
-                force = force_keyframe or self._keyframe_requested
-                self._keyframe_requested = False
-                packet = await loop.run_in_executor(self._capture_executor, self._capture_and_encode, force)
-                force_keyframe = False
-                if packet is not None:
-                    self._enqueue_frame(packet)
+                # Keep a small bounded dependency chain; never discard an encoded delta.
+                window = min(10,max(3,math.ceil(self.target_fps*self._network_rtt)+1))
+                if len(self._outstanding) >= window:
+                    self._ack_event.clear()
+                    await asyncio.wait_for(self._ack_event.wait(), timeout=3)
+                    continue
+                force = self._force_keyframe
+                self._force_keyframe = False
+                frame = await self.loop.run_in_executor(self._capture_executor, self._capture_encode, force)
+                if not self.active_session:
+                    break
+                if frame['kind'] != 'empty':
+                    self._outstanding.append((frame['frame_id'], time.monotonic()))
+                    await self.ws.send_bytes(encode_video_packet(frame, self.session_id))
+                elapsed = time.monotonic()-t0
+                self._adapt_stream(elapsed,t0)
+                await asyncio.sleep(max(.001, 1/self.target_fps-(time.monotonic()-t0)))
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                print(f"[Host] Video loop warning: {e}")
-                force_keyframe = True
+            except asyncio.TimeoutError:
+                await self._send_packet(MessageType.SESSION_END, message='Viewer stopped acknowledging frames.')
+                self._end_session()
+            except Exception as exc:
+                print(f'[Host] Video error: {exc}')
+                self._force_keyframe = True
+                await asyncio.sleep(.1)
 
-            self._adapt_streaming()
+    def _adapt_stream(self, elapsed, now):
+        if now-self._last_adapt < 2: return
+        self._last_adapt = now
+        if self._network_congested:
+            self.max_width = max(640,round(self.max_width*.85))
+            self.target_fps = max(10,round(self.target_fps*.8))
+            self.codec.set_quality(max(35,self.codec.quality-5))
+            self._healthy_intervals = 0
+        elif elapsed > .080 and self.max_width > 960:
+            self.max_width = max(960,self.max_width-160)
+            self.codec.set_quality(max(45,self.codec.quality-5))
+            self._healthy_intervals = 0
+        else:
+            self._healthy_intervals += 1
+            if self._healthy_intervals >= 3:
+                self.max_width = min(self._width_limit,self.max_width+160)
+                self.target_fps = min(self._requested_fps,self.target_fps+5)
+                self.codec.set_quality(min(self._requested_quality,self.codec.quality+3))
+                self._healthy_intervals = 0
+        self._network_congested = False
 
-            elapsed = time.perf_counter() - t0
-            remaining = self.frame_delay - elapsed
-            if remaining > 0.001:
-                await asyncio.sleep(remaining)
-            else:
-                await asyncio.sleep(0)
-
-        print("[Host] Video streaming loop stopped.")
+    def _end_session(self):
+        self.active_session = False
+        self.session_id = None
+        self._network_rtt = 0.0
+        self._network_congested = False
+        self._healthy_intervals = 0
+        self.input_controller.release_all()
+        self.input_controller.enabled = False
+        self._cancel_stream_tasks()
+        self.audio_engine.stop()
+        self.file_manager.cancel_all()
+        self._outstanding.clear()
+        for q in (self._audio_queue, self._clip_queue):
+            while not q.empty():
+                q.get_nowait()
 
     async def _audio_stream_loop(self):
         """Streams microphone audio blocks to the remote peer."""
@@ -348,9 +226,7 @@ class HostAgent:
             try:
                 b64_chunk = await self._audio_queue.get()
                 if self.active_session and self.permissions.get("audio", True):
-                    await self._send_packet(MessageType.AUDIO_CHUNK, {"data": b64_chunk})
-            except asyncio.CancelledError:
-                break
+                    await self._send_packet(MessageType.AUDIO_CHUNK, {"data": b64_chunk, "sample_rate": 48000, "channels": 1, "format": "pcm_s16le"})
             except Exception:
                 pass
 
@@ -367,25 +243,6 @@ class HostAgent:
                 pass
             await asyncio.sleep(0.3)
 
-    # ------------------------------------------------------------------
-    # Session lifecycle
-    # ------------------------------------------------------------------
-    def _start_stream_tasks(self, allow_audio: bool):
-        self._cancel_stream_tasks()
-        self._drain_video_queue()
-        self._keyframe_requested = True
-        self._client_rtt_ms = -1.0
-        self._healthy_streak = 0
-        self._send_time_ewma = 0.0
-        self._pending_scale = 0.75
-        self._pending_quality = 70
-        self.target_fps = self.MAX_FPS
-        self.frame_delay = 1.0 / self.target_fps
-        self._video_stream_task = asyncio.create_task(self._video_stream_loop())
-        self._video_sender_task = asyncio.create_task(self._video_sender_worker())
-        if allow_audio:
-            self._audio_stream_task = asyncio.create_task(self._audio_stream_loop())
-
     def handle_decision(self, client_id: str, accepted: bool, permissions: Optional[Dict[str, bool]] = None):
         """Thread-safe dispatcher for UI connection decision (Accept/Reject)."""
         if self.loop and self.loop.is_running():
@@ -394,38 +251,14 @@ class HostAgent:
                 self._async_handle_decision(client_id, accepted, permissions or {})
             )
 
-    async def _async_handle_decision(self, client_id: str, accepted: bool, permissions: Dict[str, bool]):
+    async def _async_handle_decision(self, client_id, accepted, permissions):
+        request_id = self.pending_requests.pop(client_id, None)
+        if not request_id or self.active_session:
+            return
         if accepted:
-            self.permissions = permissions
-            self.input_controller.enabled = bool(permissions.get("input", True))
-            allow_audio = bool(permissions.get("audio", True))
-            self.active_session = True
-            self.codec.reset()
-            if allow_audio:
-                self.audio_engine.start()
-
-            print(f"[Host] Session accepted for client [{client_id}]. Permissions: {permissions}")
-            await self._send_packet(MessageType.SESSION_ACCEPT, {
-                "client_id": client_id,
-                "permissions": permissions
-            })
-            self._start_stream_tasks(allow_audio)
-        else:
-            print(f"[Host] Session declined for client [{client_id}].")
-            await self._send_packet(MessageType.SESSION_REJECT, {
-                "client_id": client_id,
-                "message": "Connection request declined by remote host."
-            })
-
-    def _end_session(self):
-        self.active_session = False
-        self.codec.reset()
-        self._cancel_stream_tasks()
-        self._drain_video_queue()
-        try:
-            self.audio_engine.stop()
-        except Exception:
-            pass
+            self.approved_requests[request_id] = dict(permissions)
+        await self._send_packet(MessageType.SESSION_ACCEPT if accepted else MessageType.SESSION_REJECT,
+                                client_id=client_id, request_id=request_id, permissions=permissions)
 
     async def _handle_message(self, packet: Dict[str, Any]):
         mtype = packet.get("type")
@@ -441,81 +274,91 @@ class HostAgent:
             print(f"  Client Web UI: http://localhost:8080")
             print("=" * 50 + "\n")
 
-        # --- Latency probe echo (client measures real round-trip time) ---
-        elif mtype == MessageType.HEARTBEAT:
-            client_rtt = payload.get("rtt")
-            if isinstance(client_rtt, (int, float)) and client_rtt >= 0:
-                self._client_rtt_ms = float(client_rtt)
-            await self._send_packet(MessageType.HEARTBEAT, {"t": payload.get("t")})
-
-        # --- Interactive Session Request (AnyDesk-style Incoming Dialog) ---
         elif mtype == MessageType.SESSION_REQUEST:
-            client_id = payload.get("client_id")
-            display_id = payload.get("display_id", client_id)
-            print(f"[Host] Received incoming connection request from [{display_id}].")
+            client_id = payload.get('client_id')
+            if not payload.get('request_id') or self.active_session:
+                return
+            self.pending_requests[client_id] = payload['request_id']
             if self.on_connection_request:
-                self.on_connection_request(client_id, display_id, self.handle_decision)
+                self.on_connection_request(client_id, payload.get('display_id', client_id), self.handle_decision)
             else:
-                self.handle_decision(client_id, True, {
-                    "input": True, "audio": True, "clipboard": True, "file_transfer": True
-                })
+                # Headless hosts require an unattended password; never auto-approve.
+                self.handle_decision(client_id, False)
 
-        # --- Direct Session Start (Unattended Access or Legacy) ---
+        elif mtype == 'request_cancelled':
+            self.pending_requests.pop(payload.get('client_id'), None)
+            self.approved_requests.pop(payload.get('request_id'), None)
+
         elif mtype == MessageType.SESSION_START:
-            client_id = payload.get("client_id")
-            print(f"[Host] Incoming connection from client [{client_id}]. Starting stream...")
+            approved = self.approved_requests.pop(payload.get('request_id'), None)
+            unattended = payload.get('unattended') and self.auth_record is not None
+            if self.active_session or (approved is None and not unattended) or not payload.get('session_id'):
+                return
+            self.permissions = dict(payload.get('permissions', {})) if unattended else approved
+            self.session_id = payload['session_id']
             self.active_session = True
-            self.codec.reset()
-            self.input_controller.enabled = True
-            self.audio_engine.start()
-            self._start_stream_tasks(allow_audio=True)
+            self.input_controller.enabled = bool(self.permissions.get('input', False))
+            self._force_keyframe = True
+            self._outstanding.clear()
+            self._cancel_stream_tasks()
+            self._video_stream_task = asyncio.create_task(self._video_stream_loop())
+            if self.permissions.get('audio', False):
+                self.audio_engine.start()
+                self._audio_stream_task = asyncio.create_task(self._audio_stream_loop())
 
         elif mtype == MessageType.SESSION_END:
-            print("[Host] Client disconnected.")
             self._end_session()
 
-        # --- Keyframe recovery request (client missed a frame) ---
-        elif mtype == MessageType.KEYFRAME_REQUEST:
-            self._keyframe_requested = True
+        elif not self.active_session or payload.get('session_id') != self.session_id:
+            return
 
-        # --- Input Events ---
-        elif mtype == MessageType.INPUT_MOUSE_MOVE:
-            self.input_controller.move_mouse(payload.get("x", 0), payload.get("y", 0))
+        elif mtype == MessageType.INPUT_RESET:
+            self.input_controller.release_all()
 
-        elif mtype == MessageType.INPUT_MOUSE_DOWN:
-            self.input_controller.mouse_down(
-                payload.get("button", 0),
-                payload.get("x"),
-                payload.get("y")
-            )
+        elif mtype.startswith(('mouse_', 'key_')) or mtype == MessageType.INPUT_SHORTCUT:
+            if not self.permissions.get('input', False):
+                return
+            methods = {
+                'mouse_move': lambda: self.input_controller.move_mouse(payload.get('x',0), payload.get('y',0)),
+                'mouse_down': lambda: self.input_controller.mouse_down(payload.get('button',0),payload.get('x'),payload.get('y')),
+                'mouse_up': lambda: self.input_controller.mouse_up(payload.get('button',0),payload.get('x'),payload.get('y')),
+                'mouse_scroll': lambda: self.input_controller.mouse_scroll(payload.get('delta_x',0),payload.get('delta_y',0)),
+                'key_down': lambda: self.input_controller.key_down(payload.get('code',''),payload.get('key','')),
+                'key_up': lambda: self.input_controller.key_up(payload.get('code',''),payload.get('key','')),
+                'shortcut': lambda: self.input_controller.execute_shortcut(payload.get('name','')),
+            }
+            if mtype in methods:
+                methods[mtype]()
 
-        elif mtype == MessageType.INPUT_MOUSE_UP:
-            self.input_controller.mouse_up(
-                payload.get("button", 0),
-                payload.get("x"),
-                payload.get("y")
-            )
+        elif mtype == MessageType.VIDEO_ACK:
+            frame_id = payload.get('frame_id', -1)
+            reported_rtt = payload.get('rtt_ms',0)
+            if isinstance(reported_rtt,(int,float)) and 0 < reported_rtt <= 2000:
+                self._network_rtt = reported_rtt/1000
+            if self._outstanding and self._network_rtt:
+                age = time.monotonic()-self._outstanding[0][1]
+                if age > self._network_rtt + max(.08,self._network_rtt*.5):
+                    self._network_congested = True
+            while self._outstanding and self._outstanding[0][0] <= frame_id:
+                self._outstanding.popleft()
+            self._ack_event.set()
 
-        elif mtype == MessageType.INPUT_MOUSE_SCROLL:
-            self.input_controller.mouse_scroll(
-                payload.get("delta_x", 0),
-                payload.get("delta_y", 0)
-            )
+        elif mtype == MessageType.VIDEO_REFRESH:
+            self._outstanding.clear()
+            self._ack_event.set()
+            self._force_keyframe = True
 
-        elif mtype == MessageType.INPUT_KEY_DOWN:
-            self.input_controller.key_down(
-                payload.get("code", ""),
-                payload.get("key", "")
-            )
+        elif mtype == MessageType.VIDEO_CONFIG:
+            self.target_fps = max(10, min(60, int(payload.get('fps', 30))))
+            self.max_width = max(640, min(2560, int(payload.get('max_width', 1600))))
+            self._width_limit = self.max_width
+            self._requested_fps = self.target_fps
+            self._requested_quality = max(10,min(95,int(payload.get('quality',65))))
+            self.codec.set_quality(int(payload.get('quality',65)))
+            self._force_keyframe = True
 
-        elif mtype == MessageType.INPUT_KEY_UP:
-            self.input_controller.key_up(
-                payload.get("code", ""),
-                payload.get("key", "")
-            )
-
-        elif mtype == MessageType.INPUT_SHORTCUT:
-            self.input_controller.execute_shortcut(payload.get("name", ""))
+        elif mtype.startswith('file_') and not self.permissions.get('file_transfer',False):
+            await self._send_packet(MessageType.FILE_ERROR, message='File transfer disabled by host.')
 
         # --- Clipboard Events ---
         elif mtype == MessageType.CLIPBOARD_TEXT:
@@ -537,7 +380,7 @@ class HostAgent:
                 return
             b64_audio = payload.get("data")
             if b64_audio:
-                self.audio_engine.play_chunk(b64_audio)
+                self.audio_engine.play_chunk(b64_audio, payload.get("sample_rate", 48000))
 
         elif mtype == MessageType.AUDIO_CONTROL:
             action = payload.get("action")
@@ -567,7 +410,7 @@ class HostAgent:
             filename = payload.get("filename")
             total_chunks = payload.get("total_chunks")
             file_size = payload.get("file_size")
-            res = self.file_manager.start_upload(upload_id, target_dir, filename, total_chunks, file_size)
+            res = self.file_manager.start_upload(upload_id, target_dir, filename, total_chunks, file_size, payload.get("sha256"))
             await self._send_packet(MessageType.FILE_UPLOAD_START, res)
 
         elif mtype == MessageType.FILE_CHUNK:
@@ -576,16 +419,6 @@ class HostAgent:
             b64_data = payload.get("data")
             res = self.file_manager.write_upload_chunk(upload_id, chunk_idx, b64_data)
             await self._send_packet(MessageType.FILE_CHUNK, res)
-
-    # ------------------------------------------------------------------
-    # Relay connection
-    # ------------------------------------------------------------------
-    async def _close_ws(self):
-        try:
-            if self.ws and not self.ws.closed:
-                await self.ws.close()
-        except Exception:
-            pass
 
     async def start(self):
         """Connect to relay and maintain session loop."""
@@ -598,13 +431,15 @@ class HostAgent:
                 async with aiohttp.ClientSession() as session:
                     self.session = session
                     print(f"[Host] Connecting to relay server at {self.relay_url} ...")
-                    async with session.ws_connect(self.relay_url, max_msg_size=16 * 1024 * 1024,
-                                                  heartbeat=20.0) as ws:
+                    async with session.ws_connect(self.relay_url, max_msg_size=8*1024*1024, heartbeat=20, compress=0) as ws:
                         self.ws = ws
+                        # Register as host
                         await self._send_packet(MessageType.REGISTER, {
                             "role": "host",
                             "id": self.requested_id,
-                            "password": self.password
+                            "protocol": 2,
+                            "host_token": self.host_token,
+                            "password_record": self.auth_record
                         })
 
                         async for msg in ws:
@@ -613,46 +448,29 @@ class HostAgent:
                                 if pkt:
                                     try:
                                         await self._handle_message(pkt)
-                                    except Exception as e:
-                                        print(f"[Host] Message handler warning: {e}")
+                                    except (ValueError, TypeError, KeyError, OSError) as exc:
+                                        await self._send_packet(MessageType.FILE_ERROR, message=str(exc))
                             elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
                                 break
-            except asyncio.CancelledError:
-                break
+                self._end_session()
             except Exception as e:
                 print(f"[Host] Connection error: {e}. Reconnecting in 3s ...")
-            finally:
-                # A dropped relay socket means no client can receive frames - stop the DSP
-                self.ws = None
-                if self.active_session:
-                    self._end_session()
-                try:
-                    if self.session and not self.session.closed:
-                        await self.session.close()
-                except Exception:
-                    pass
-                self.session = None
+                self._end_session()
+                await asyncio.sleep(3)
 
-            if not self.running:
-                break
-            await asyncio.sleep(3)
+    def update_password(self, password):
+        async def change():
+            self.auth_record = await asyncio.to_thread(password_record, password)
+            await self._send_packet('host_config', password_record=self.auth_record)
+        if self.loop and self.loop.is_running():
+            asyncio.run_coroutine_threadsafe(change(), self.loop)
 
     def stop(self):
         self.running = False
-        loop = self.loop
-        if loop and loop.is_running():
-            try:
-                # Task.cancel() must run on the loop thread
-                loop.call_soon_threadsafe(self._end_session)
-            except Exception:
-                self._end_session()
-        else:
-            self._end_session()
-        try:
-            self._capture_executor.shutdown(wait=True)
-        except Exception:
-            pass
-        try:
-            self.capturer.close()
-        except Exception:
-            pass
+        if self.loop and self.loop.is_running():
+            self.loop.call_soon_threadsafe(self._end_session)
+            if self.ws and not self.ws.closed:
+                asyncio.run_coroutine_threadsafe(self.ws.close(), self.loop)
+        if self.capturer:
+            self._capture_executor.submit(self.capturer.close)
+        self._capture_executor.shutdown(wait=False, cancel_futures=True)

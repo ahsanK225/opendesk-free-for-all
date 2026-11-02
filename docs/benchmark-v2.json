@@ -1,0 +1,31 @@
+{
+  "scope": "Local synthetic codec timings; excludes network RTT and viewer rendering",
+  "resolution": [
+    1600,
+    900
+  ],
+  "idle": {
+    "mean_ms": 1.38,
+    "p95_ms": 1.51
+  },
+  "small_changes": {
+    "mean_ms": 16.24,
+    "p95_ms": 17.26
+  },
+  "legacy_json_bytes": 365825,
+  "binary_bytes": 274451,
+  "wire_reduction_pct": 25.0,
+  "capture_resolution": [
+    1280,
+    960
+  ],
+  "gdi_capture": {
+    "mean_ms": 33.26,
+    "p95_ms": 37.82
+  },
+  "preferred_capture_backend": "dxgi",
+  "adaptive_capture": {
+    "mean_ms": 6.56,
+    "p95_ms": 18.02
+  }
+}

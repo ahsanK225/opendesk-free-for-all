@@ -62,7 +62,7 @@ class DeskRTCodec:
         q = quality if quality is not None else self.quality
         rgb_img = img if img.mode == 'RGB' else img.convert('RGB')
         buffer = io.BytesIO()
-        rgb_img.save(buffer, format='JPEG', quality=q, optimize=False, subsampling='4:2:0')
+        rgb_img.save(buffer, format='JPEG', quality=q, optimize=False, subsampling=0 if q >= 80 else 2)
         return buffer.getvalue()
 
     # ------------------------------------------------------------------

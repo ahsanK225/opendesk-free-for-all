@@ -7,8 +7,8 @@ from PIL import Image, ImageDraw
 import sys
 import os
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from opendesk.common.codec import DeskRTCodec
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from common.codec import DeskRTCodec
 
 class TestDeskRTCodec(unittest.TestCase):
     def setUp(self):

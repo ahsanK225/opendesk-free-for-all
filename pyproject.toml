@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opendesk-remote"
+version = "2.0.0"
+description = "Windows remote desktop with explicit session authorization and adaptive JPEG streaming"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = "MIT"
+dynamic = ["dependencies"]
+
+[project.scripts]
+opendesk = "opendesk_app:main"
+opendesk-host = "run_host:main"
+opendesk-relay = "run_relay:main"
+
+[tool.setuptools]
+packages = ["common", "host", "client", "relay", "tools"]
+py-modules = ["opendesk_app", "run_host", "run_relay"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.data-files]
+"share/opendesk/web" = ["web/index.html"]
+"share/opendesk/web/js" = ["web/js/*.js"]
+"share/opendesk/web/css" = ["web/css/*.css"]

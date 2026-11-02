@@ -13,7 +13,7 @@ import urllib.request
 import urllib.error
 import subprocess
 import tempfile
-from typing import Optional, Dict, Any, Callable, Tuple
+from typing import Optional, Dict, Any, Callable, Tuple, List
 
 from common.incremental_updater import (
     IncrementalUpdater,
@@ -21,7 +21,7 @@ from common.incremental_updater import (
     compute_file_sha256,
 )
 
-APP_VERSION = "1.2.3"
+APP_VERSION = "2.0.0"
 UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/ahsanK225/opendesk-free-for-all/main/version.json"
 
 
@@ -81,24 +81,13 @@ def check_for_updates(current_version: str = APP_VERSION,
 
                 plan = None
                 is_incremental = False
-                if "files" in data and isinstance(data["files"], list):
-                    try:
-                        inc_updater = IncrementalUpdater(
-                            install_dir=get_install_dir(),
-                            manifest_url=manifest_url,
-                            current_version=current_version,
-                        )
-                        plan = inc_updater.compute_differential(data)
-                        is_incremental = True
-                    except Exception as plan_err:
-                        print(f"[Updater] Differential plan computation notice: {plan_err}")
-
                 return {
                     "available": available,
                     "version": remote_ver,
                     "current_version": current_version,
                     "release_date": data.get("release_date", "Recent"),
                     "download_url": data.get("download_url", ""),
+                    "sha256": data.get("sha256", ""),
                     "installer_url": data.get("installer_url", ""),
                     "changelog": changelog_text,
                     "manifest_data": data,
@@ -115,11 +104,20 @@ def download_update_file(url: str,
                          dest_path: str,
                          progress_callback: Optional[Callable[[int, int], None]] = None,
                          cancel_flag: Optional[Callable[[], bool]] = None,
-                         error_holder: Optional[List[str]] = None) -> bool:
+                         error_holder: Optional[List[str]] = None,
+                         expected_sha256: Optional[str] = None) -> bool:
     """
     Download update executable in chunks with progress reporting.
     progress_callback(bytes_downloaded, total_bytes)
     """
+    if not expected_sha256 or not re.fullmatch(r'[a-fA-F0-9]{64}',expected_sha256):
+        if error_holder is not None: error_holder.append('Update manifest is missing a valid SHA-256 digest.')
+        return False
+    from urllib.parse import urlsplit
+    target = urlsplit(url)
+    if target.scheme != 'https' or target.hostname != 'github.com' or not target.path.startswith('/ahsanK225/opendesk-free-for-all/releases/download/'):
+        if error_holder is not None: error_holder.append('Update URL is not an official HTTPS release asset.')
+        return False
     req = urllib.request.Request(
         url,
         headers={"User-Agent": "OpenDesk-AutoUpdater"}
@@ -141,6 +139,8 @@ def download_update_file(url: str,
                     downloaded += len(chunk)
                     if progress_callback:
                         progress_callback(downloaded, total_size)
+        if compute_file_sha256(dest_path) != expected_sha256.lower():
+            raise ValueError('Downloaded update SHA-256 mismatch')
         return True
     except urllib.error.HTTPError as he:
         err_msg = f"HTTP {he.code}: {he.reason} (File may not be uploaded to GitHub release yet)"
@@ -166,65 +166,39 @@ def download_update_file(url: str,
         return False
 
 
-def apply_update_and_restart(new_file_path: str, is_installer: bool = False):
-    """
-    Replace the currently running executable or run the installer,
-    then terminate the current instance to complete the update.
-    """
-    if not os.path.isfile(new_file_path):
-        raise FileNotFoundError(f"Update file not found: {new_file_path}")
-
-    # Case 1: An installer was downloaded (.exe setup)
-    if is_installer or "setup" in os.path.basename(new_file_path).lower():
-        subprocess.Popen([new_file_path, "/SILENT"], shell=True)
-        time.sleep(0.5)
-        sys.exit(0)
-
-    # Case 2: Portable standalone executable replacement
-    target_exe = sys.executable
-    is_frozen = getattr(sys, "frozen", False)
-
-    if not is_frozen:
-        # Running from Python source; replace OpenDesk.exe in repo directory if present
-        repo_exe = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "OpenDesk.exe")
-        if os.path.exists(repo_exe):
-            target_exe = repo_exe
-        else:
-            # Nothing to overwrite directly, just inform caller
-            return
-
-    # Generate a lightweight updater batch helper
-    temp_dir = tempfile.gettempdir()
-    bat_path = os.path.join(temp_dir, "opendesk_self_update.bat")
-
-    bat_content = f"""@echo off
-setlocal
-echo ========================================================
-echo   OpenDesk In-App Self-Update in Progress...
-echo ========================================================
-echo Waiting for existing OpenDesk process to shut down...
-timeout /t 2 /nobreak >nul
-
-:RETRY_COPY
-copy /y "{new_file_path}" "{target_exe}" >nul 2>&1
-if errorlevel 1 (
-    timeout /t 1 /nobreak >nul
-    goto RETRY_COPY
-)
-
-echo Update successfully applied!
-echo Relaunching OpenDesk...
-start "" "{target_exe}"
-
-timeout /t 1 /nobreak >nul
-del /f /q "{new_file_path}" >nul 2>&1
-del "%~f0" >nul 2>&1
-exit
+def apply_update_and_restart(new_file_path: str, is_installer: bool = False, expected_sha256: str = ''):
+    """Stage an external, bounded Windows helper; caller must close the main application."""
+    if not getattr(sys, 'frozen', False):
+        raise RuntimeError('Source checkout: update with Git. Executable replacement is available in packaged builds.')
+    if not expected_sha256 or compute_file_sha256(new_file_path) != expected_sha256.lower():
+        raise ValueError('Refusing to apply an unverified update')
+    target = os.path.abspath(sys.executable)
+    source = os.path.abspath(new_file_path)
+    if os.path.normcase(target) == os.path.normcase(source):
+        raise ValueError('Update source must differ from the running executable')
+    def quote(value):
+        return "'" + str(value).replace("'", "''") + "'"
+    pid = os.getpid()
+    if is_installer:
+        install = f"Start-Process -FilePath {quote(source)} -ArgumentList '/SILENT' -WindowStyle Hidden"
+    else:
+        install = f"""$backup = {quote(target+'.previous')}
+Copy-Item -LiteralPath {quote(target)} -Destination $backup -Force
+try {{
+    Copy-Item -LiteralPath {quote(source)} -Destination {quote(target)} -Force
+    Start-Process -FilePath {quote(target)} -WorkingDirectory {quote(os.path.dirname(target))}
+}} catch {{
+    Copy-Item -LiteralPath $backup -Destination {quote(target)} -Force
+    throw
+}}"""
+    script = f"""$ErrorActionPreference = 'Stop'
+Wait-Process -Id {pid} -Timeout 30 -ErrorAction SilentlyContinue
+if (Get-Process -Id {pid} -ErrorAction SilentlyContinue) {{ throw 'OpenDesk did not exit within 30 seconds' }}
+if ((Get-FileHash -LiteralPath {quote(source)} -Algorithm SHA256).Hash.ToLower() -ne {quote(expected_sha256.lower())}) {{ throw 'Update hash changed after staging' }}
+{install}
 """
-    with open(bat_path, "w", encoding="utf-8") as f:
-        f.write(bat_content)
-
-    # Launch batch updater in separate process
-    subprocess.Popen(["cmd.exe", "/c", bat_path], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    time.sleep(0.2)
-    sys.exit(0)
+    fd, helper = tempfile.mkstemp(prefix='opendesk_update_',suffix='.ps1')
+    with os.fdopen(fd,'w',encoding='utf-8-sig') as stream: stream.write(script)
+    subprocess.Popen(['powershell.exe','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',helper],
+                     creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+    return True

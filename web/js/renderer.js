@@ -1,80 +1,35 @@
-/**
- * OpenDesk Canvas Renderer
- * Handles full-frame rasterization and DeskRT-style dirty tile blitting.
- */
-
+/** Sequential JPEG presentation: a delta is never painted ahead of its base frame. */
 class RemoteRenderer {
-  constructor(canvasElement) {
-    this.canvas = canvasElement;
-    this.ctx = this.canvas.getContext('2d', { alpha: false });
-    this.ctx.imageSmoothingEnabled = false;
-
-    this.width = 0;
-    this.height = 0;
-    this.framesCount = 0;
-    this.lastFpsTimestamp = performance.now();
-    this.currentFps = 0;
+  constructor(canvas) {
+    this.canvas=canvas; this.ctx=canvas.getContext('2d',{alpha:false});
+    this.framesCount=0; this.lastFpsTimestamp=performance.now(); this.generation=0;
+    this.lastFrame=0;
   }
-
-  setDimensions(w, h) {
-    if (this.width !== w || this.height !== h) {
-      this.width = w;
-      this.height = h;
-      this.canvas.width = w;
-      this.canvas.height = h;
-      this.ctx.imageSmoothingEnabled = false;
-    }
-  }
-
-  renderFullFrame(width, height, b64Image, onComplete) {
-    this.setDimensions(width, height);
-    const img = new Image();
-    img.onload = () => {
-      this.ctx.drawImage(img, 0, 0);
-      this._updateFps();
-      if (onComplete) onComplete();
-    };
-    img.src = "data:image/jpeg;base64," + b64Image;
-  }
-
-  renderDeltaFrame(width, height, tiles, onComplete) {
-    this.setDimensions(width, height);
-    if (!tiles || tiles.length === 0) {
-      this._updateFps();
-      if (onComplete) onComplete();
-      return;
-    }
-
-    let loaded = 0;
-    const total = tiles.length;
-
-    for (const tile of tiles) {
-      const img = new Image();
-      img.onload = () => {
-        this.ctx.drawImage(img, tile.x, tile.y, tile.w, tile.h);
-        loaded++;
-        if (loaded >= total) {
-          this._updateFps();
-          if (onComplete) onComplete();
-        }
-      };
-      img.src = "data:image/jpeg;base64," + tile.image;
-    }
-  }
-
-  _updateFps() {
-    this.framesCount++;
-    const now = performance.now();
-    const elapsed = now - this.lastFpsTimestamp;
-    if (elapsed >= 1000) {
-      this.currentFps = Math.round((this.framesCount * 1000) / elapsed);
-      this.framesCount = 0;
-      this.lastFpsTimestamp = now;
-      
-      const fpsElem = document.getElementById("statFps");
-      if (fpsElem) {
-        fpsElem.textContent = this.currentFps;
+  reset() { this.generation++; this.lastFrame=0; }
+  async renderPacket(message) {
+    const generation=this.generation, p=message.payload;
+    if(p.frame_id<=this.lastFrame) return;
+    if(message.type==='video_delta' && (!this.lastFrame || this.canvas.width!==p.width || this.canvas.height!==p.height))
+      throw new Error('Missing video base frame');
+    const tiles=message.type==='video_full'?[{image:p.image,x:0,y:0}]:p.tiles;
+    const images=await Promise.all(tiles.map(async tile=>{
+      const data=typeof tile.image==='string'?Uint8Array.from(atob(tile.image),c=>c.charCodeAt(0)):tile.image;
+      return {tile,image:await createImageBitmap(new Blob([data],{type:'image/jpeg'}))};
+    }));
+    try {
+      if(generation!==this.generation) return;
+      if(this.canvas.width!==p.width || this.canvas.height!==p.height) {
+        this.canvas.width=p.width; this.canvas.height=p.height;
       }
-    }
+      this.ctx.imageSmoothingEnabled=false;
+      for(const {tile,image} of images) this.ctx.drawImage(image,tile.x,tile.y);
+      this.lastFrame=p.frame_id;
+      this.framesCount++;
+      const now=performance.now();
+      if(now-this.lastFpsTimestamp>=1000) {
+        document.getElementById('statFps').textContent=Math.round(this.framesCount*1000/(now-this.lastFpsTimestamp));
+        this.framesCount=0; this.lastFpsTimestamp=now;
+      }
+    } finally { for(const {image} of images) image.close(); }
   }
 }

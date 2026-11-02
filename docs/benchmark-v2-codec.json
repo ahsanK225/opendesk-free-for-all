@@ -1,0 +1,18 @@
+{
+  "scope": "Local synthetic codec timings; excludes network RTT and viewer rendering",
+  "resolution": [
+    1600,
+    900
+  ],
+  "idle": {
+    "mean_ms": 1.03,
+    "p95_ms": 1.4
+  },
+  "small_changes": {
+    "mean_ms": 14.08,
+    "p95_ms": 15.74
+  },
+  "legacy_json_bytes": 365825,
+  "binary_bytes": 274450,
+  "wire_reduction_pct": 25.0
+}

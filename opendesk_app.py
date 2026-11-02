@@ -17,6 +17,7 @@ Features:
 import sys
 import os
 import socket
+import secrets
 import threading
 import queue
 import asyncio
@@ -24,7 +25,7 @@ import time
 import webbrowser
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Callable
 
 # Ensure opendesk directory and parent are in sys.path
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -38,10 +39,10 @@ if PARENT_DIR not in sys.path:
     sys.path.insert(0, PARENT_DIR)
 
 try:
-    from opendesk.relay.server import RelayServer
-    from opendesk.host.agent import HostAgent
-    from opendesk.common.tunnel import CloudflareTunnel
-    from opendesk.common.config import (
+    from relay.server import RelayServer
+    from host.agent import HostAgent
+    from common.tunnel import CloudflareTunnel
+    from common.config import (
         get_persistent_host_id,
         get_recent_sessions,
         add_recent_session,
@@ -57,20 +58,20 @@ try:
         get_audio_settings,
         save_audio_settings
     )
-    from opendesk.host.audio import get_available_audio_devices, AudioEngine
-    from opendesk.common.updater import (
+    from host.audio import get_available_audio_devices, AudioEngine
+    from common.updater import (
         APP_VERSION,
         check_for_updates,
         download_update_file,
         apply_update_and_restart
     )
-    from opendesk.common.rendezvous import (
+    from common.rendezvous import (
         publish_host_rendezvous,
         resolve_host_rendezvous,
         parse_connect_target,
         RendezvousHeartbeat
     )
-    from opendesk.client.viewer import EmbeddedSessionView, NativeSessionViewer
+    from client.viewer import EmbeddedSessionView, NativeSessionViewer
 except ImportError:
     from relay.server import RelayServer
     from host.agent import HostAgent
@@ -707,46 +708,6 @@ class OpenDeskGUI:
             cancel_btn.configure(text="Cancel")
 
             def run_dl():
-                if is_inc and diff_plan:
-                    from common.incremental_updater import IncrementalUpdater
-                    from common.updater import get_install_dir
-
-                    def on_delta_prog(downloaded, total, cur_file, idx, total_files):
-                        pct = int((downloaded / total) * 100) if total > 0 else 50
-                        txt = f"Downloading delta ({idx}/{total_files}): {cur_file} ({downloaded/1024:.1f} KB / {total/1024:.1f} KB)"
-                        self.post_ui(lambda: [
-                            progress_bar.configure(value=pct) if progress_bar.winfo_exists() else None,
-                            status_lbl.configure(text=txt, fg="#f1f5f9") if status_lbl.winfo_exists() else None
-                        ])
-
-                    inc = IncrementalUpdater(install_dir=get_install_dir(), manifest_url="", current_version=APP_VERSION)
-                    success, staging_or_err = inc.download_delta(diff_plan, progress_callback=on_delta_prog, cancel_flag=lambda: cancel_flag[0])
-
-                    if success and not cancel_flag[0]:
-                        self.post_ui(lambda: [
-                            status_lbl.configure(text="✓ SHA-256 hashes verified! Applying staged files...", fg="#22c55e") if status_lbl.winfo_exists() else None,
-                        ])
-                        apply_ok, msg = inc.apply_staged_update(diff_plan, staging_or_err)
-                        if apply_ok:
-                            def restart_soon():
-                                time.sleep(0.8)
-                                apply_update_and_restart(sys.executable)
-                            self.post_ui(lambda: [
-                                status_lbl.configure(text="✓ Update applied! Relaunching in 1 second...", fg="#22c55e") if status_lbl.winfo_exists() else None,
-                            ])
-                            threading.Thread(target=restart_soon, daemon=True).start()
-                        else:
-                            self.post_ui(lambda: [
-                                status_lbl.configure(text=f"Failed to apply: {msg}", fg="#ef4444") if status_lbl.winfo_exists() else None,
-                                apply_btn.configure(state="normal", text="Retry Update") if apply_btn.winfo_exists() else None
-                            ])
-                    elif not cancel_flag[0]:
-                        self.post_ui(lambda: [
-                            status_lbl.configure(text=f"Download failed: {staging_or_err}", fg="#ef4444") if status_lbl.winfo_exists() else None,
-                            apply_btn.configure(state="normal", text="Retry Update") if apply_btn.winfo_exists() else None
-                        ])
-                    return
-
                 # Fallback full binary download
                 download_url = update_info.get("download_url", "")
                 if not download_url:
@@ -768,12 +729,16 @@ class OpenDeskGUI:
                         ])
 
                 err_holder = []
-                success = download_update_file(download_url, temp_exe, on_progress, cancel_flag=lambda: cancel_flag[0], error_holder=err_holder)
+                success = download_update_file(download_url, temp_exe, on_progress, cancel_flag=lambda: cancel_flag[0], error_holder=err_holder, expected_sha256=update_info.get("sha256"))
 
                 if success and not cancel_flag[0]:
                     def restart_exe():
                         time.sleep(0.8)
-                        apply_update_and_restart(temp_exe)
+                        try:
+                            apply_update_and_restart(temp_exe, expected_sha256=update_info.get('sha256',''))
+                            self.post_ui(self._on_close)
+                        except Exception as exc:
+                            self.post_ui(messagebox.showerror, 'Update could not be applied', str(exc))
                     self.post_ui(lambda: [
                         status_lbl.configure(text="✓ Download complete! Relaunching into new version in 1 second...", fg="#22c55e") if status_lbl.winfo_exists() else None,
                     ])
@@ -918,6 +883,13 @@ class OpenDeskGUI:
         self._update_sidebar_active(key)
         if key == "settings":
             self._open_settings()
+        elif key == 'files':
+            tab = next((t for t in self.tabs if t['id']==self.active_tab_id), None)
+            viewer = tab.get('viewer') if tab else None
+            if viewer:
+                viewer.open_files()
+            else:
+                messagebox.showinfo('Files', 'Open a remote session tab, then choose Files.')
         elif key in ("home", "favorites", "recent"):
             self.switch_tab("home")
             if hasattr(self, "recent_filter_var"):
@@ -1226,7 +1198,7 @@ class OpenDeskGUI:
             badge_icon.pack(side="left")
 
             # Online status indicator dot
-            online_dot = tk.Label(top_row, text="● Online", font=("Segoe UI", 7, "bold"), bg="#161926", fg="#22c55e")
+            online_dot = tk.Label(top_row, text="● Saved", font=("Segoe UI", 7, "bold"), bg="#161926", fg="#22c55e")
             online_dot.pack(side="left", padx=(6, 0))
 
             # Right action: 3-Dot Options button (⋮)
@@ -1571,7 +1543,7 @@ class OpenDeskGUI:
         voice_center = tk.Frame(bottom_bar, bg="#12151e")
         voice_center.pack(side="left", padx=16)
 
-        tk.Label(voice_center, text="🎧 Discord HD Voice:", font=("Segoe UI", 8, "bold"),
+        tk.Label(voice_center, text="🎧 Voice:", font=("Segoe UI", 8, "bold"),
                  bg="#12151e", fg="#38bdf8").pack(side="left", padx=(0, 4))
 
         self.b_test_mic_btn = tk.Button(voice_center, text="🎙️ Let's Check Mic", font=("Segoe UI", 8),
@@ -1583,7 +1555,7 @@ class OpenDeskGUI:
                   bg="#1a1e2b", fg="#94a3b8", activebackground="#24283b",
                   bd=0, padx=8, pady=2, cursor="hand2", command=self._open_settings).pack(side="left", padx=4)
 
-        tk.Label(bottom_bar, text=f"DeskRT 60FPS Delta Engine • 48kHz Discord HD Voice • v{APP_VERSION} (Digitally Signed)",
+        tk.Label(bottom_bar, text=f"Adaptive JPEG streaming • 48kHz voice • v{APP_VERSION}",
                  font=("Segoe UI", 8), bg="#12151e", fg="#64748b").pack(side="right", padx=14, pady=4)
 
     def _toggle_bottom_mic_test(self):
@@ -1596,6 +1568,8 @@ class OpenDeskGUI:
             self.b_test_mic_btn.config(text="⏹️ Stop Mic Test", bg="#ef4444", fg="#ffffff")
         else:
             engine.stop_loopback_test()
+            if not self.host_agent.active_session:
+                engine.stop()
             self.b_test_mic_btn.config(text="🎙️ Let's Check Mic", bg="#1a1e2b", fg="#10b981")
 
     # =========================================================================
@@ -1610,17 +1584,22 @@ class OpenDeskGUI:
         self._launch_session(raw_target, pw)
 
     def _launch_session(self, raw_target: str, password: str = ""):
-        parsed_id, direct_ws_url = parse_connect_target(raw_target)
+        try:
+            parsed_id, direct_ws_url = parse_connect_target(raw_target)
+        except ValueError as exc:
+            messagebox.showerror('Invalid remote address',str(exc))
+            return
         if not parsed_id:
             return
 
+        tab_id = direct_ws_url if parsed_id == "remote_host" else parsed_id
         # Record in recent sessions
-        add_recent_session(parsed_id)
+        add_recent_session(raw_target if direct_ws_url else parsed_id)
 
         # Check if tab already open for this session
-        existing = next((t for t in self.tabs if t["id"] == parsed_id), None)
+        existing = next((t for t in self.tabs if t["id"] == tab_id), None)
         if existing:
-            self.switch_tab(parsed_id)
+            self.switch_tab(tab_id)
             return
 
         formatted = self._format_id(parsed_id)
@@ -1643,12 +1622,12 @@ class OpenDeskGUI:
             relay_url=effective_relay,
             target_id=parsed_id,
             password=password,
-            on_close=lambda: self.close_tab(parsed_id)
+            on_close=lambda: self.close_tab(tab_id)
         )
         viewer.pack(fill="both", expand=True)
 
         tab_data = {
-            "id": parsed_id,
+            "id": tab_id,
             "title": formatted,
             "type": "session",
             "frame": session_frame,
@@ -1658,7 +1637,7 @@ class OpenDeskGUI:
 
         self.tabs.append(tab_data)
         self._render_tab_button(tab_data)
-        self.switch_tab(parsed_id)
+        self.switch_tab(tab_id)
 
     # =========================================================================
     # ACTIONS, DIALOGS & CLIPBOARD
@@ -1689,7 +1668,12 @@ class OpenDeskGUI:
         new_pw = simpledialog.askstring("Unattended Access", "Enter password for unattended remote access:\n(Leave empty to disable)",
                                         parent=self.root, show="*")
         if new_pw is not None:
+            if new_pw and len(new_pw) < 12:
+                messagebox.showerror('Password too short', 'Use at least 12 characters for unattended access.')
+                return
             set_unattended_password(new_pw)
+            if self.host_agent:
+                self.host_agent.update_password(new_pw)
             status_txt = "Password updated successfully!" if new_pw else "Unattended password disabled."
             messagebox.showinfo("Security", status_txt)
 
@@ -1705,7 +1689,7 @@ class OpenDeskGUI:
 
     def _on_incoming_connection_request(self, client_id: str, display_id: str, on_decision: Callable):
         """Dispatches incoming AnyDesk connection request dialog to Tkinter UI main thread."""
-        if self.root and self.root.winfo_exists():
+        if self.root and not getattr(self, "_is_closing", False):
             self.post_ui(self._show_incoming_connection_dialog, client_id, display_id, on_decision)
         else:
             on_decision(client_id, False, {})
@@ -1830,12 +1814,19 @@ class OpenDeskGUI:
         webbrowser.open(f"http://localhost:{self.port}")
 
     def _open_settings(self):
+        from common.identity import device_key, public_key, fingerprint
+        identity_fingerprint = fingerprint(public_key(device_key()))
         settings_win = tk.Toplevel(self.root)
         settings_win.title("OpenDesk Settings & Voice Configuration")
         settings_win.geometry("620x760")
         settings_win.minsize(580, 680)
         settings_win.configure(bg="#141822")
         settings_win.grab_set()
+        identity_entry = tk.Entry(settings_win,font=('Consolas',8),bg='#202534',fg='#cbd5e1',bd=0)
+        identity_entry.insert(0,identity_fingerprint)
+        identity_entry.configure(state='readonly')
+        tk.Label(settings_win,text='Device identity fingerprint — compare on first connection',bg='#141822',fg='#94a3b8').pack(fill='x',padx=20,pady=(8,0))
+        identity_entry.pack(fill='x',padx=20,pady=4)
 
         tk.Label(settings_win, text="⚙️ OpenDesk Settings & Discord HD Voice Suite", font=("Segoe UI", 12, "bold"),
                  bg="#141822", fg="#f1f5f9").pack(anchor="w", padx=20, pady=(14, 4))
@@ -1936,7 +1927,7 @@ class OpenDeskGUI:
                     chosen_spk = out_combo.get()
                     chosen_gain = float(gain_scale.get()) / 100.0
                     chosen_vol = float(vol_scale.get()) / 100.0
-                    engine = AudioEngine(on_mic_level_callback=on_test_level)
+                    engine = AudioEngine(on_mic_level_callback=lambda level:self.post_ui(on_test_level,level))
                     engine.preferred_input = chosen_mic
                     engine.preferred_output = chosen_spk
                     engine.set_gain(chosen_gain)
@@ -1995,18 +1986,18 @@ class OpenDeskGUI:
         vad_scale.pack(fill="x", pady=2)
 
         # Discord Voice Processing Checkboxes
-        echo_var = tk.BooleanVar(value=audio_cfg.get("echo_cancellation", True))
+        echo_var = tk.BooleanVar(value=False)
         noise_var = tk.BooleanVar(value=audio_cfg.get("noise_suppression", True))
         agc_var = tk.BooleanVar(value=audio_cfg.get("agc_enabled", True))
 
         proc_row = tk.Frame(audio_card, bg="#1a1e2b")
         proc_row.pack(fill="x", padx=14, pady=(2, 8))
 
-        tk.Checkbutton(proc_row, text="Echo Cancellation", variable=echo_var,
+        tk.Checkbutton(proc_row, text="AEC (browser only)", variable=echo_var, state="disabled",
                        bg="#1a1e2b", fg="#94a3b8", selectcolor="#141822", activebackground="#1a1e2b",
                        activeforeground="#f1f5f9", font=("Segoe UI", 8)).pack(side="left", padx=(0, 10))
 
-        tk.Checkbutton(proc_row, text="Noise Suppression (Fan/Hum)", variable=noise_var,
+        tk.Checkbutton(proc_row, text="DC / rumble filter", variable=noise_var,
                        bg="#1a1e2b", fg="#94a3b8", selectcolor="#141822", activebackground="#1a1e2b",
                        activeforeground="#f1f5f9", font=("Segoe UI", 8)).pack(side="left", padx=(0, 10))
 
@@ -2105,10 +2096,11 @@ class OpenDeskGUI:
     # BACKGROUND ENGINE SERVICES
     # =========================================================================
     def _start_services(self):
+        self._host_token = secrets.token_urlsafe(32)
         # 1. Start Relay Server thread
         def run_relay():
             try:
-                server = RelayServer(host="0.0.0.0", port=self.port)
+                server = RelayServer(host="127.0.0.1", port=self.port, host_token=self._host_token)
                 server.run()
             except Exception as e:
                 print(f"[Relay Server] Thread notice: {e}")
@@ -2127,6 +2119,7 @@ class OpenDeskGUI:
                     relay_url=self.relay_url,
                     host_id=self.assigned_id,
                     password=unattended_pw,
+                    host_token=self._host_token,
                     on_connection_request=self._on_incoming_connection_request
                 )
 
@@ -2192,68 +2185,73 @@ class OpenDeskGUI:
             self.internet_link_label.config(text=self.public_url, fg="#9ece6a")
             self.status_badge.config(text="● WORLDWIDE ONLINE", bg="#1f382a", fg="#9ece6a")
             self.bottom_status_label.config(text=f"Global: {self.public_url}")
+        else:
+            self.internet_link_label.config(text='Internet tunnel reconnecting…',fg='#e0af68')
+            self.status_badge.config(text='● LOCAL READY',bg='#1f382a',fg='#9ece6a')
+            self.bottom_status_label.config(text='Internet tunnel unavailable; local relay is ready')
 
     def _on_close(self):
-        """
-        Instant, hang-proof application shutdown.
-        Immediately hides the window (0ms perceived lag), stops services in background,
-        destroys Tkinter, and calls os._exit(0) to eliminate Python/PortAudio thread deadlocks.
-        """
+        if getattr(self, '_is_closing', False):
+            return
         self._is_closing = True
-        if hasattr(self, "_ui_queue_timer") and self._ui_queue_timer:
+        self.root.withdraw()
+        for tab in self.tabs:
+            if tab.get('viewer'):
+                tab['viewer'].close()
+        done = threading.Event()
+        def cleanup():
             try:
-                self.root.after_cancel(self._ui_queue_timer)
-            except Exception:
-                pass
-
-        # 1. Immediately hide window so user sees instant close with zero freeze
-        try:
-            self.root.withdraw()
-        except Exception:
-            pass
-
-        # 2. Fast background cleanup for subprocesses and sockets
-        def background_cleanup():
-            try:
-                if hasattr(self, "rendezvous_heartbeat") and self.rendezvous_heartbeat:
+                if getattr(self, 'rendezvous_heartbeat', None):
                     self.rendezvous_heartbeat.stop()
-            except Exception:
-                pass
-
-            for t in self.tabs:
-                if t.get("viewer"):
-                    try:
-                        t["viewer"].close()
-                    except Exception:
-                        pass
-
-            try:
                 if self.host_agent:
                     self.host_agent.stop()
-            except Exception:
-                pass
-
-            try:
-                if self.tunnel:
+                if getattr(self, 'tunnel', None):
                     self.tunnel.stop()
-            except Exception:
-                pass
-
-        cleanup_thread = threading.Thread(target=background_cleanup, daemon=True)
-        cleanup_thread.start()
-
-        # 3. Destroy Tkinter UI
-        try:
-            self.root.destroy()
-        except Exception:
-            pass
-
-        # 4. Immediate kernel-level exit (prevents thread-join deadlocks and C-runtime hangs)
-        import os
-        os._exit(0)
+            finally:
+                done.set()
+        threading.Thread(target=cleanup, daemon=True).start()
+        deadline = time.monotonic()+5
+        def finish():
+            if done.is_set() or time.monotonic() >= deadline:
+                self.root.destroy()
+                # PortAudio drivers may retain native threads; cleanup has completed or timed out.
+                os._exit(0)
+            else:
+                self.root.after(50, finish)
+        finish()
 
 
 def main():
+    from common.windows import enable_dpi_awareness
+    enable_dpi_awareness()
+    if '--smoke-test' in sys.argv:
+        import json
+        import tempfile
+        from unittest.mock import patch
+        root = tk.Tk()
+        root.withdraw()
+        with patch.object(OpenDeskGUI,'_start_services',lambda self:None):
+            app = OpenDeskGUI(root,8080)
+            root.update_idletasks()
+            result = {'version':APP_VERSION,'gui':True,'tabs':len(app.tabs),'services_started':False}
+            if '--capture-test' in sys.argv:
+                import sounddevice
+                from host.capture import AdaptiveScreenCapturer
+                result['portaudio'] = sounddevice.get_portaudio_version()[0]
+                capturer = AdaptiveScreenCapturer()
+                try:
+                    frame,pixels = capturer.grab_frame()
+                    result['capture_backend'] = capturer.backend
+                    result['capture_resolution'] = list(frame.size)
+                    result['capture_valid'] = pixels.shape == (frame.height,frame.width)
+                finally:
+                    capturer.close()
+            if '--smoke-output' in sys.argv:
+                target = sys.argv[sys.argv.index('--smoke-output')+1]
+                with open(target,'w',encoding='utf-8') as stream: json.dump(result,stream)
+            app.destroy()
+            root.destroy()
+        return
     port = find_free_port(8080)
     root = tk.Tk()
     app = OpenDeskGUI(root, port)

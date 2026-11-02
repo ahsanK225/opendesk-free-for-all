@@ -1,213 +1,131 @@
-"""
-Integration Tests for OpenDesk
-Spins up the Relay server and tests Host registration,
-Client session pairing, video packet relay, input handling, and clipboard sync.
-"""
-
-import unittest
+"""Protocol-v2 authorization, revocation and transport regression tests."""
 import asyncio
-import json
-import threading
-import time
-import sys
-import os
-import aiohttp
-from aiohttp import web
+import unittest
+from aiohttp import web, ClientSession
+from relay.server import RelayServer
+from common.security import password_record, password_proof
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from opendesk.relay.server import RelayServer
-from opendesk.common.protocol import MessageType, create_packet, parse_packet
-
-TEST_PORT = 9876
-TEST_URL = f"http://127.0.0.1:{TEST_PORT}/ws"
-
-class TestOpenDeskIntegration(unittest.IsolatedAsyncioTestCase):
-    @classmethod
-    def setUpClass(cls):
-        # Run relay server in background thread with its own event loop
-        cls.server = RelayServer(host="127.0.0.1", port=TEST_PORT)
-        cls.loop = asyncio.new_event_loop()
-        
-        def run_srv():
-            asyncio.set_event_loop(cls.loop)
-            app = cls.server.create_app()
-            runner = web.AppRunner(app)
-            cls.loop.run_until_complete(runner.setup())
-            site = web.TCPSite(runner, "127.0.0.1", TEST_PORT)
-            cls.loop.run_until_complete(site.start())
-            cls.loop.run_forever()
-
-        cls.thread = threading.Thread(target=run_srv, daemon=True)
-        cls.thread.start()
-        time.sleep(0.5)
-
-    async def test_full_session_handshake_and_relay(self):
-        async with aiohttp.ClientSession() as session:
-            # 1. Host Connects & Registers
-            async with session.ws_connect(TEST_URL) as host_ws:
-                await host_ws.send_str(create_packet(MessageType.REGISTER, {
-                    "role": "host",
-                    "id": "111 222 333",
-                    "password": "secret"
-                }))
-                host_resp_raw = await host_ws.receive_str()
-                host_resp = parse_packet(host_resp_raw)
-                self.assertEqual(host_resp["type"], MessageType.REGISTER_RESP)
-                self.assertEqual(host_resp["payload"]["clean_id"], "111222333")
-
-                # 2. Client Connects & Registers
-                async with session.ws_connect(TEST_URL) as client_ws:
-                    await client_ws.send_str(create_packet(MessageType.REGISTER, {
-                        "role": "client"
-                    }))
-                    client_resp_raw = await client_ws.receive_str()
-                    client_resp = parse_packet(client_resp_raw)
-                    self.assertEqual(client_resp["type"], MessageType.REGISTER_RESP)
-
-                    # 3. Client requests connection with wrong password -> should fail
-                    await client_ws.send_str(create_packet(MessageType.CONNECT, {
-                        "target_id": "111 222 333",
-                        "password": "wrong_password"
-                    }))
-                    fail_resp_raw = await client_ws.receive_str()
-                    fail_resp = parse_packet(fail_resp_raw)
-                    self.assertEqual(fail_resp["payload"]["status"], "error")
-
-                    # 4. Client requests connection with valid password -> should succeed
-                    await client_ws.send_str(create_packet(MessageType.CONNECT, {
-                        "target_id": "111 222 333",
-                        "password": "secret"
-                    }))
-                    # Client receives connect_resp
-                    succ_resp_raw = await client_ws.receive_str()
-                    succ_resp = parse_packet(succ_resp_raw)
-                    self.assertEqual(succ_resp["payload"]["status"], "ok")
-
-                    # Host receives session_start
-                    session_start_raw = await host_ws.receive_str()
-                    session_start = parse_packet(session_start_raw)
-                    self.assertEqual(session_start["type"], MessageType.SESSION_START)
-
-                    # 5. Host sends DeskRT delta video frame -> Client receives it
-                    sample_delta = {
-                        "width": 1920,
-                        "height": 1080,
-                        "tiles": [{"x": 0, "y": 0, "w": 128, "h": 128, "image": "fakejpegbase64"}]
-                    }
-                    await host_ws.send_str(create_packet(MessageType.VIDEO_DELTA, sample_delta))
-                    video_recv_raw = await client_ws.receive_str()
-                    video_recv = parse_packet(video_recv_raw)
-                    self.assertEqual(video_recv["type"], MessageType.VIDEO_DELTA)
-                    self.assertEqual(video_recv["payload"]["width"], 1920)
-
-                    # 6. Client sends remote input event -> Host receives it
-                    await client_ws.send_str(create_packet(MessageType.INPUT_MOUSE_MOVE, {"x": 0.5, "y": 0.5}))
-                    input_recv_raw = await host_ws.receive_str()
-                    input_recv = parse_packet(input_recv_raw)
-                    self.assertEqual(input_recv["type"], MessageType.INPUT_MOUSE_MOVE)
-                    self.assertEqual(input_recv["payload"]["x"], 0.5)
-
-                    # 7. Host sends clipboard sync -> Client receives it
-                    await host_ws.send_str(create_packet(MessageType.CLIPBOARD_TEXT, {"text": "Copied from Host"}))
-                    clip_recv_raw = await client_ws.receive_str()
-                    clip_recv = parse_packet(clip_recv_raw)
-                    self.assertEqual(clip_recv["type"], MessageType.CLIPBOARD_TEXT)
-                    self.assertEqual(clip_recv["payload"]["text"], "Copied from Host")
-
-    async def test_interactive_session_request_accept_flow(self):
-        """Test AnyDesk-style interactive session request -> waiting_approval -> accept -> session pairing."""
-        async with aiohttp.ClientSession() as session:
-            # 1. Host registers without password (interactive mode)
-            async with session.ws_connect(TEST_URL) as host_ws:
-                await host_ws.send_str(create_packet(MessageType.REGISTER, {
-                    "role": "host",
-                    "id": "444 555 666",
-                    "password": ""
-                }))
-                await host_ws.receive_str()
-
-                # 2. Client registers
-                async with session.ws_connect(TEST_URL) as client_ws:
-                    await client_ws.send_str(create_packet(MessageType.REGISTER, {
-                        "role": "client",
-                        "id": "777 888 999"
-                    }))
-                    client_reg_raw = await client_ws.receive_str()
-                    client_reg = parse_packet(client_reg_raw)
-                    client_clean_id = client_reg["payload"]["clean_id"]
-
-                    # 3. Client sends connect request
-                    await client_ws.send_str(create_packet(MessageType.CONNECT, {
-                        "target_id": "444 555 666"
-                    }))
-
-                    # 4. Host receives session_request
-                    req_raw = await host_ws.receive_str()
-                    req_pkt = parse_packet(req_raw)
-                    self.assertEqual(req_pkt["type"], MessageType.SESSION_REQUEST)
-                    self.assertEqual(req_pkt["payload"]["client_id"], client_clean_id)
-
-                    # 5. Client receives waiting_approval
-                    wait_raw = await client_ws.receive_str()
-                    wait_pkt = parse_packet(wait_raw)
-                    self.assertEqual(wait_pkt["type"], MessageType.CONNECT_RESP)
-                    self.assertEqual(wait_pkt["payload"]["status"], "waiting_approval")
-
-                    # 6. Host sends session_accept with custom permissions
-                    granted_perms = {"input": False, "audio": True, "clipboard": True, "file_transfer": False}
-                    await host_ws.send_str(create_packet(MessageType.SESSION_ACCEPT, {
-                        "client_id": client_clean_id,
-                        "permissions": granted_perms
-                    }))
-
-                    # 7. Client receives connect_resp ok with granted permissions
-                    accepted_raw = await client_ws.receive_str()
-                    accepted_pkt = parse_packet(accepted_raw)
-                    self.assertEqual(accepted_pkt["type"], MessageType.CONNECT_RESP)
-                    self.assertEqual(accepted_pkt["payload"]["status"], "ok")
-                    self.assertEqual(accepted_pkt["payload"]["permissions"]["input"], False)
-
-    async def test_interactive_session_request_reject_flow(self):
-        """Test AnyDesk-style interactive session request -> reject flow."""
-        async with aiohttp.ClientSession() as session:
-            async with session.ws_connect(TEST_URL) as host_ws:
-                await host_ws.send_str(create_packet(MessageType.REGISTER, {
-                    "role": "host",
-                    "id": "555 666 777",
-                    "password": ""
-                }))
-                await host_ws.receive_str()
-
-                async with session.ws_connect(TEST_URL) as client_ws:
-                    await client_ws.send_str(create_packet(MessageType.REGISTER, {
-                        "role": "client"
-                    }))
-                    client_reg_raw = await client_ws.receive_str()
-                    client_clean_id = parse_packet(client_reg_raw)["payload"]["clean_id"]
-
-                    # Client connects
-                    await client_ws.send_str(create_packet(MessageType.CONNECT, {
-                        "target_id": "555 666 777"
-                    }))
-
-                    # Host receives request
-                    await host_ws.receive_str()
-
-                    # Client receives waiting_approval
-                    await client_ws.receive_str()
-
-                    # Host declines request
-                    await host_ws.send_str(create_packet(MessageType.SESSION_REJECT, {
-                        "client_id": client_clean_id,
-                        "message": "User declined connection request."
-                    }))
-
-                    # Client receives rejected response
-                    rejected_raw = await client_ws.receive_str()
-                    rejected_pkt = parse_packet(rejected_raw)
-                    self.assertEqual(rejected_pkt["type"], MessageType.CONNECT_RESP)
-                    self.assertEqual(rejected_pkt["payload"]["status"], "rejected")
-                    self.assertIn("declined", rejected_pkt["payload"]["message"].lower())
-
-if __name__ == "__main__":
-    unittest.main()
+class TestRelay(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.relay=RelayServer(host_token='test-only-token')
+        self.runner=web.AppRunner(self.relay.create_app())
+        await self.runner.setup()
+        site=web.TCPSite(self.runner,'127.0.0.1',0)
+        await site.start()
+        port=site._server.sockets[0].getsockname()[1]
+        self.url=f'http://127.0.0.1:{port}/ws'
+        self.http=ClientSession()
+        self.sockets=[]
+    async def asyncTearDown(self):
+        for socket in self.sockets: await socket.close()
+        await self.http.close()
+        await self.runner.cleanup()
+    async def send(self, ws, typ, **payload):
+        await ws.send_json({'type':typ,'payload':payload})
+    async def receive(self, ws):
+        return await ws.receive_json(timeout=2)
+    async def peer(self, role='client', id=None, password=''):
+        ws=await self.http.ws_connect(self.url)
+        self.sockets.append(ws)
+        await self.send(ws,'register',role=role,id=id,protocol=2,host_token='test-only-token',password_record=password_record(password))
+        packet=await self.receive(ws)
+        self.assertEqual(packet['type'],'register_resp')
+        return ws,packet['payload']['clean_id']
+    async def pair(self, permissions=None):
+        host,hid=await self.peer('host','111222333')
+        client,cid=await self.peer()
+        await self.send(client,'connect',target_id=hid)
+        self.assertEqual((await self.receive(client))['payload']['status'],'waiting_approval')
+        req=(await self.receive(host))['payload']
+        await self.send(host,'session_accept',client_id=cid,request_id=req['request_id'],
+                        permissions=permissions or {k:True for k in ('input','audio','clipboard','file_transfer')})
+        start=await self.receive(host)
+        response=await self.receive(client)
+        self.assertEqual(start['type'],'session_start')
+        self.assertEqual(response['payload']['status'],'ok')
+        return host,hid,client,cid
+    async def test_interactive_and_binary_stream(self):
+        host,hid,client,cid=await self.pair()
+        await host.send_bytes(b'ODV2-test')
+        self.assertEqual((await client.receive(timeout=2)).data,b'ODV2-test')
+        await self.send(client,'mouse_move',x=.5,y=.5,session_id='forged')
+        packet=await self.receive(host)
+        self.assertEqual(packet['payload']['session_id'],self.relay.peer_meta[hid]['session_id'])
+    async def test_client_cannot_accept_or_start(self):
+        host,hid=await self.peer('host','111222333',password='test password')
+        client,cid=await self.peer()
+        await self.send(client,'session_accept',client_id=hid)
+        self.assertEqual((await self.receive(client))['payload']['status'],'error')
+        await self.send(client,'session_start',client_id=cid)
+        await asyncio.sleep(.02)
+        self.assertEqual(self.relay.sessions,{})
+        with self.assertRaises(asyncio.TimeoutError): await host.receive(timeout=.05)
+    async def test_host_registration_requires_secret(self):
+        ws=await self.http.ws_connect(self.url); self.sockets.append(ws)
+        await self.send(ws,'register',role='host',id='111222333',protocol=2)
+        self.assertEqual((await self.receive(ws))['payload']['status'],'error')
+        self.assertFalse(self.relay.peers)
+    async def test_duplicate_host_id_rejected(self):
+        host,hid=await self.peer('host','111222333')
+        other=await self.http.ws_connect(self.url); self.sockets.append(other)
+        await self.send(other,'register',role='host',id=hid,protocol=2,host_token='test-only-token')
+        self.assertEqual((await self.receive(other))['payload']['status'],'error')
+        self.assertIs(self.relay.peers[hid],next(iter(self.relay.peers.values())))
+    async def test_wrong_id_does_not_fallback(self):
+        await self.peer('host','111222333')
+        client,cid=await self.peer()
+        await self.send(client,'connect',target_id='999999999')
+        self.assertEqual((await self.receive(client))['payload']['status'],'error')
+        self.assertFalse(self.relay.pending)
+    async def test_disconnect_revokes_session(self):
+        host,hid,client,cid=await self.pair()
+        await self.send(client,'session_end')
+        self.assertEqual((await self.receive(client))['type'],'session_end')
+        self.assertEqual((await self.receive(host))['type'],'session_end')
+        self.assertFalse(self.relay.sessions)
+        await self.send(client,'key_down',code='KeyA')
+        with self.assertRaises(asyncio.TimeoutError): await host.receive(timeout=.05)
+    async def test_permissions_enforced_by_relay(self):
+        host,hid,client,cid=await self.pair({'input':False,'file_transfer':False,'audio':False,'clipboard':False})
+        for typ in ('key_down','file_download_req','file_upload_start','file_chunk','audio_chunk','clipboard_text'):
+            await self.send(client,typ)
+        with self.assertRaises(asyncio.TimeoutError): await host.receive(timeout=.05)
+    async def test_host_busy(self):
+        host,hid,client,cid=await self.pair()
+        other,oid=await self.peer()
+        await self.send(other,'connect',target_id=hid)
+        self.assertIn('busy',(await self.receive(other))['payload']['message'])
+        self.assertEqual(self.relay.sessions[hid],cid)
+    async def test_password_challenge_and_replay(self):
+        host,hid=await self.peer('host','111222333',password='a strong test password')
+        client,cid=await self.peer()
+        await self.send(client,'connect',target_id=hid)
+        challenge=(await self.receive(client))['payload']
+        bad=password_proof('wrong',challenge)
+        await self.send(client,'connect',target_id=hid,proof=bad)
+        self.assertEqual((await self.receive(client))['payload']['status'],'error')
+        await self.send(client,'connect',target_id=hid)
+        challenge=(await self.receive(client))['payload']
+        proof=password_proof('a strong test password',challenge)
+        await self.send(client,'connect',target_id=hid,proof=proof)
+        self.assertEqual((await self.receive(host))['type'],'session_start')
+        self.assertEqual((await self.receive(client))['payload']['status'],'ok')
+        await self.send(client,'session_end'); await self.receive(host); await self.receive(client)
+        await self.send(client,'connect',target_id=hid,proof=proof)
+        self.assertEqual((await self.receive(client))['payload']['status'],'error')
+    async def test_rejected_and_expired_decision(self):
+        host,hid=await self.peer('host','111222333'); client,cid=await self.peer()
+        await self.send(client,'connect',target_id=hid)
+        await self.receive(client); req=(await self.receive(host))['payload']
+        await self.send(host,'session_accept',client_id=cid,request_id='wrong',permissions={})
+        self.assertEqual((await self.receive(host))['payload']['status'],'error')
+        self.assertFalse(self.relay.sessions)
+        await self.send(host,'session_reject',client_id=cid,request_id=req['request_id'])
+        self.assertEqual((await self.receive(client))['payload']['status'],'rejected')
+    async def test_malformed_packets_do_not_disconnect(self):
+        client,cid=await self.peer()
+        for raw in ('[]','null','{"payload":[]}'):
+            await client.send_str(raw)
+            self.assertEqual((await self.receive(client))['payload']['status'],'error')
+        await self.send(client,'heartbeat',sent_at=123)
+        self.assertEqual((await self.receive(client))['payload']['echo'],123)

@@ -87,7 +87,7 @@ class TestUpdater(unittest.TestCase):
             dest = tf.name
 
         try:
-            success = download_update_file("http://fake.url/OpenDesk.exe", dest, progress_callback=on_prog)
+            success = download_update_file("https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.0.0/OpenDesk.exe", dest, progress_callback=on_prog, expected_sha256=__import__("hashlib").sha256(content).hexdigest())
             self.assertTrue(success)
             with open(dest, "rb") as f:
                 self.assertEqual(f.read(), content)

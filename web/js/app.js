@@ -48,12 +48,16 @@ document.addEventListener("DOMContentLoaded", () => {
   let inSession = false;
   let pingInterval = null;
   let lastPingTime = 0;
+  let rttMs = 0;
+  let sessionId = null;
+  let videoChain = Promise.resolve();
 
   // Initialize Sub-Controllers
   const renderer = new RemoteRenderer(remoteCanvas);
   
   function sendPacket(data) {
     if (ws && ws.readyState === WebSocket.OPEN) {
+      if (data.type === 'audio_chunk' && ws.bufferedAmount > 128*1024) return;
       if (typeof data === "object") {
         data.timestamp = Date.now();
         ws.send(JSON.stringify(data));
@@ -90,6 +94,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const wsUrl = `${protocol}//${location.host}/ws`;
 
     ws = new WebSocket(wsUrl);
+    ws.binaryType = "arraybuffer";
 
     ws.onopen = () => {
       connectionBadge.textContent = "Online";
@@ -98,7 +103,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // Register as client
       sendPacket({
         type: "register",
-        payload: { role: "client" }
+        payload: { role: "client", protocol: 2 }
       });
 
       // Start ping loop for RTT measurement
@@ -113,8 +118,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     ws.onmessage = (event) => {
       try {
-        const msg = JSON.parse(event.data);
-        handleMessage(msg);
+        let msg;
+        if(event.data instanceof ArrayBuffer) {
+          msg=OpenDeskWire.decode(event.data);
+        } else msg=JSON.parse(event.data);
+        handleMessage(msg).catch(console.error);
       } catch (err) {
         console.error("Message parse error:", err);
       }
@@ -134,11 +142,20 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // --- Packet Handling ---
-  function handleMessage(msg) {
+  async function handleMessage(msg) {
     const type = msg.type;
     const payload = msg.payload || {};
 
+    if (['video_full','video_delta','audio_chunk','clipboard_text'].includes(type) &&
+        (!inSession || payload.session_id !== sessionId)) return;
     switch (type) {
+      case 'auth_challenge': {
+        try {
+          const proof=await OpenDeskWire.passwordProof(targetPasswordInput.value,payload);
+          sendPacket({type:'connect',payload:{target_id:payload.target_id,proof}});
+        } catch(error) { showError('Secure password authentication requires HTTPS or localhost. '+error.message); }
+        break;
+      }
       case "register_resp":
         myClientId = payload.id;
         if (myClientIdDisplay) {
@@ -148,7 +165,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       case "connect_resp":
         if (payload.status === "ok") {
-          startSession(payload.target_id);
+          sessionId = payload.session_id;
+          startSession(payload.target_id, payload.permissions);
+        } else if (payload.status === 'waiting_approval') {
+          showError('Waiting for the host to approve this connection...');
         } else {
           showError(payload.message || "Failed to connect to remote desk.");
         }
@@ -161,17 +181,24 @@ document.addEventListener("DOMContentLoaded", () => {
       case "heartbeat":
         if (lastPingTime > 0) {
           const rtt = Math.round(performance.now() - lastPingTime);
+          rttMs = rtt;
           if (statLatency) statLatency.textContent = rtt + "ms";
         }
         break;
 
-      case "video_full":
-        renderer.renderFullFrame(payload.width, payload.height, payload.image);
+      case 'video_full':
+      case 'video_delta': {
+        const expected=sessionId;
+        videoChain=videoChain.then(async()=>{
+          if(expected!==sessionId || !inSession) return;
+          await renderer.renderPacket(msg);
+          sendPacket({type:'video_ack',payload:{frame_id:payload.frame_id,rtt_ms:rttMs}});
+        }).catch(error=>{
+          console.warn(error);
+          if(expected===sessionId) sendPacket({type:'video_refresh',payload:{}});
+        });
         break;
-
-      case "video_delta":
-        renderer.renderDeltaFrame(payload.width, payload.height, payload.tiles);
-        break;
+      }
 
       case "clipboard_text":
         const clipText = payload.text || "";
@@ -187,20 +214,31 @@ document.addEventListener("DOMContentLoaded", () => {
         fileManager.handleListResponse(payload);
         break;
 
+      case 'file_error':
+        showError(payload.message || 'File transfer failed.');
+        fileManager.activeUpload = fileManager.activeDownload = null;
+        fileManager._hideProgress();
+        break;
       case "file_chunk":
         fileManager.handleFileChunk(payload);
         break;
 
       case "audio_chunk":
         if (voiceChat) {
-          voiceChat.playChunk(payload.data);
+          voiceChat.playChunk(payload.data, payload.sample_rate);
         }
         break;
     }
   }
 
   // --- Session Lifecycle ---
-  function startSession(targetId) {
+  function startSession(targetId, permissions = {}) {
+    renderer.reset();
+    document.getElementById('streamProfile').value='Balanced';
+    sendPacket({type:'video_config',payload:{fps:30,max_width:1600,quality:65}});
+    btnFiles.disabled = !permissions.file_transfer;
+    btnClipboard.disabled = !permissions.clipboard;
+    btnVoiceToggle.disabled = !permissions.audio;
     inSession = true;
     activeTargetId = targetId;
     hideError();
@@ -216,12 +254,14 @@ document.addEventListener("DOMContentLoaded", () => {
     sessionActions.style.display = "flex";
 
     remoteCanvas.focus();
-    inputHandler.enabled = true;
+    inputHandler.enabled = permissions.input === true;
     if (statMode) statMode.textContent = "Relay/Direct";
   }
 
   function endSession(reason) {
     inSession = false;
+    sessionId = null;
+    renderer.reset();
     activeTargetId = null;
     inputHandler.enabled = false;
     if (voiceChat) {
@@ -272,34 +312,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     hideError();
 
-    // If target is a 9-digit remote ID, verify if it belongs to a remote tunnel
-    if (/^\d{9}$/.test(rawTarget)) {
-      try {
-        const resp = await fetch(`https://keyvalue.immanuel.co/api/KeyVal/GetValue/s460x9wm/${rawTarget}`);
-        if (resp.ok) {
-          let val = await resp.text();
-          val = val.replace(/^"|"$/g, "").trim();
-          if (val && val !== "null") {
-            const padded = val.replace(/-/g, "/") + "=".repeat((4 - (val.length % 4)) % 4);
-            const decoded = atob(padded);
-            if (decoded.startsWith("http://") || decoded.startsWith("https://")) {
-              if (!decoded.includes(window.location.host)) {
-                window.location.href = `${decoded.replace(/\/$/, "")}/?connect=${rawTarget}`;
-                return;
-              }
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("Rendezvous web check notice:", e);
-      }
-    }
-
     sendPacket({
       type: "connect",
       payload: {
-        target_id: rawTarget,
-        password: targetPasswordInput.value
+        target_id: rawTarget
       }
     });
   });
@@ -422,6 +438,12 @@ document.addEventListener("DOMContentLoaded", () => {
       clipboardTextarea.select();
       document.execCommand("copy");
     });
+  });
+
+  document.getElementById('streamProfile').addEventListener('change',event=>{
+    const profiles={Balanced:{fps:30,max_width:1600,quality:65},
+      Performance:{fps:60,max_width:1280,quality:55},Sharp:{fps:30,max_width:2560,quality:85}};
+    sendPacket({type:'video_config',payload:profiles[event.target.value]});
   });
 
   // Start connection

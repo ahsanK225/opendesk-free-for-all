@@ -19,7 +19,7 @@ from typing import Optional, Callable, Dict, Any, List, Tuple
 import numpy as np
 
 try:
-    from opendesk.common.config import get_audio_settings
+    from common.config import get_audio_settings
 except ImportError:
     try:
         from common.config import get_audio_settings
@@ -182,7 +182,8 @@ class AudioEngine:
         
         # Discord "Let's Check" Mic Test Loopback state
         self.loopback_test_active = False
-        self.ambient_noise_floor = 0.003
+        self.ambient_noise_floor = 0.001
+        self._vad_hold_until = 0.0
         
         self.input_stream = None
         self.output_stream = None
@@ -245,7 +246,7 @@ class AudioEngine:
             rms = float(np.sqrt(np.mean(mono_in ** 2))) / 32768.0
             
             # Dynamic ambient noise floor tracking
-            if rms < 0.05:
+            if rms < max(.003, self.ambient_noise_floor*1.5):
                 self.ambient_noise_floor = 0.95 * self.ambient_noise_floor + 0.05 * rms
 
             # Live VU bar visual scaling (dB-like curve)
@@ -262,11 +263,13 @@ class AudioEngine:
             else:
                 # Voice Activity mode
                 if self.auto_sensitivity:
-                    vad_threshold = max(0.007, self.ambient_noise_floor * 2.5)
+                    vad_threshold = max(0.003, self.ambient_noise_floor * 2.0)
                 else:
                     # User slider maps 0.0 (very sensitive) to 1.0 (strict)
                     vad_threshold = 0.002 + (self.vad_sensitivity * 0.078)
-                allow_transmission = (rms >= vad_threshold)
+                if rms >= vad_threshold:
+                    self._vad_hold_until = time.monotonic() + .180
+                allow_transmission = time.monotonic() < self._vad_hold_until
 
             # Noise gate / silence cutoff
             if not allow_transmission:
@@ -303,12 +306,20 @@ class AudioEngine:
 
             # Discord 'Let's Check' self-hearing loopback
             if self.loopback_test_active:
+                if self.output_samplerate != VOIP_SAMPLE_RATE:
+                    count = round(len(clipped)*self.output_samplerate/VOIP_SAMPLE_RATE)
+                    loop_samples = np.interp(np.arange(count)*VOIP_SAMPLE_RATE/self.output_samplerate,
+                                             np.arange(len(clipped)), clipped).astype(np.int16)
+                else:
+                    loop_samples = clipped
                 with self.play_lock:
                     max_buffer_samples = int(self.output_samplerate * 0.080)
                     if len(self.play_samples) > max_buffer_samples:
                         self.play_samples = self.play_samples[-max_buffer_samples:]
-                    self.play_samples = np.concatenate((self.play_samples, clipped))
+                    self.play_samples = np.concatenate((self.play_samples, loop_samples))[-max_buffer_samples:]
 
+            if self.loopback_test_active:
+                return
             raw_bytes = clipped.tobytes()
             b64_audio = base64.b64encode(raw_bytes).decode("ascii")
 
@@ -364,7 +375,7 @@ class AudioEngine:
             except Exception:
                 pass
 
-    def play_chunk(self, b64_audio: str):
+    def play_chunk(self, b64_audio: str, sample_rate: int = VOIP_SAMPLE_RATE):
         """
         Ingest incoming remote audio chunk (supports both 48kHz HD Voice and legacy 16kHz),
         resample if needed, and append to continuous sample ring buffer with low-latency jitter protection.
@@ -372,7 +383,11 @@ class AudioEngine:
         if not self.speaker_enabled:
             return
         try:
-            raw_bytes = base64.b64decode(b64_audio)
+            if sample_rate not in (8000, 16000, 24000, 44100, 48000):
+                raise ValueError('Unsupported audio sample rate')
+            raw_bytes = base64.b64decode(b64_audio, validate=True)
+            if len(raw_bytes) % 2 or len(raw_bytes) > sample_rate * 2 // 5:
+                raise ValueError('Invalid PCM block')
             samples = np.frombuffer(raw_bytes, dtype=np.int16).astype(np.float32)
             if len(samples) == 0:
                 return
@@ -382,7 +397,7 @@ class AudioEngine:
                 samples = samples * self.speaker_volume
 
             # Detect whether packet is legacy 16kHz (<600 samples for 25ms) or 48kHz HD Voice
-            incoming_rate = 16000 if len(samples) < 600 else VOIP_SAMPLE_RATE
+            incoming_rate = sample_rate
 
             # Resample to output device native sample rate (e.g. 48000 Hz)
             if self.output_samplerate != incoming_rate:
@@ -397,11 +412,11 @@ class AudioEngine:
             with self.play_lock:
                 # Smooth conversational jitter guard: 180ms buffer (~8640 samples at 48kHz)
                 # Prevents packet-jitter audio drops and robotic clipping while maintaining real-time conversation
-                max_buffer_samples = int(self.output_samplerate * 0.180)
+                max_buffer_samples = int(self.output_samplerate * 0.120)
                 if len(self.play_samples) > max_buffer_samples:
                     self.play_samples = self.play_samples[-max_buffer_samples:]
 
-                self.play_samples = np.concatenate((self.play_samples, out_samples))
+                self.play_samples = np.concatenate((self.play_samples, out_samples))[-max_buffer_samples:]
 
             # Backward-compatible queue update
             try:
@@ -444,6 +459,7 @@ class AudioEngine:
                     channels=self.output_channels,
                     dtype='int16',
                     blocksize=out_blocksize,
+                    latency='low',
                     callback=self._speaker_callback
                 )
                 self.output_stream.start()
@@ -469,6 +485,7 @@ class AudioEngine:
                     channels=self.input_channels,
                     dtype='int16',
                     blocksize=in_blocksize,
+                    latency='low',
                     callback=self._mic_callback
                 )
                 self.input_stream.start()

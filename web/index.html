@@ -27,7 +27,8 @@
       </div>
 
       <div class="nav-actions" id="sessionActions" style="display: none;">
-        <button id="btnVoiceToggle" class="btn-icon" title="Voice Communication (WhatsApp Style)">🎙️ Voice: Off</button>
+        <select id="streamProfile" class="btn-icon" title="Streaming quality"><option>Balanced</option><option>Performance</option><option>Sharp</option></select>
+        <button id="btnVoiceToggle" class="btn-icon" title="Voice Communication (20ms PCM)">🎙️ Voice: Off</button>
         <button id="btnFiles" class="btn-icon" title="File Transfer">📁 Files</button>
         <button id="btnClipboard" class="btn-icon" title="Clipboard Sync">📋 Clipboard</button>
         
@@ -166,6 +167,7 @@
 
   </div>
 
+  <script src="js/protocol.js"></script>
   <script src="js/renderer.js"></script>
   <script src="js/input.js"></script>
   <script src="js/file_transfer.js"></script>

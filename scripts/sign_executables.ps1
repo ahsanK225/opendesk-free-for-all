@@ -4,7 +4,7 @@
 [CmdletBinding()]
 param(
     [string[]]$Files,
-    [string]$Password = "OpenDesk2026!",
+    [string]$Password = $env:OPENDESK_SIGN_PASSWORD,
     [string[]]$TimestampServers = @(
         "http://timestamp.digicert.com",
         "http://timestamp.sectigo.com",
@@ -13,6 +13,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if (-not $Password) { throw "Set OPENDESK_SIGN_PASSWORD explicitly for development signing." }
 
 $RootDir = Split-Path -Parent $PSScriptRoot
 $CertsDir = Join-Path $RootDir "certs"

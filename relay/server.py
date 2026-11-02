@@ -1,275 +1,270 @@
-"""
-OpenDesk Signaling & Fallback Relay Server
-Provides:
-- Unique 9-digit AnyDesk-style ID registration
-- WebRTC P2P Signaling (SDP Offer/Answer & ICE candidate exchange)
-- High-Throughput Fallback Relay (tunnels video, input, file & clipboard if P2P fails)
-- Built-in HTTP server delivering the responsive Web Client
-"""
-
-import os
-import sys
-import json
-import random
+"""Local host relay with explicit request, approval and revocation states."""
 import asyncio
-from typing import Dict, Any, Optional
+import json
+import os
+import secrets
+import sys
+import time
+from collections import defaultdict, deque
 from aiohttp import web, WSMsgType
+from common.security import verify_proof
+from common.identity import device_key, sign_identity
+
+PERMISSIONS = ('input', 'audio', 'clipboard', 'file_transfer')
+INPUT = {'mouse_move', 'mouse_down', 'mouse_up', 'mouse_scroll', 'key_down', 'key_up', 'shortcut', 'input_reset'}
+CLIENT_MESSAGES = INPUT | {'clipboard_text', 'audio_chunk', 'file_list_req', 'file_download_req',
+                         'file_upload_start', 'file_chunk', 'video_config', 'video_ack', 'video_refresh'}
+HOST_MESSAGES = {'clipboard_text', 'audio_chunk', 'video_full', 'video_delta', 'file_list_resp',
+                 'file_upload_start', 'file_chunk', 'file_complete', 'file_error'}
+
 
 class RelayServer:
-    def __init__(self, host: str = "0.0.0.0", port: int = 8080, web_dir: Optional[str] = None):
-        self.host = host
-        self.port = port
-        
-        if web_dir:
-            self.web_dir = web_dir
-        elif hasattr(sys, "_MEIPASS"):
-            candidate1 = os.path.join(sys._MEIPASS, "opendesk", "web")
-            candidate2 = os.path.join(sys._MEIPASS, "web")
-            self.web_dir = candidate1 if os.path.exists(candidate1) else candidate2
-        else:
-            self.web_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "web"))
-        
-        # Mapping: peer_id -> WebSocketResponse
-        self.peers: Dict[str, web.WebSocketResponse] = {}
-        # Mapping: peer_id -> metadata { "role": "host"|"client", "target_id": ..., "auth": ... }
-        self.peer_meta: Dict[str, Dict[str, Any]] = {}
-        # Mapping: host_id -> client_id (active sessions)
-        self.sessions: Dict[str, str] = {}
+    def __init__(self, host='127.0.0.1', port=8080, web_dir=None, host_token=None):
+        self.host, self.port = host, port
+        self.host_token = host_token or os.environ.get('OPENDESK_HOST_TOKEN', '')
+        base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.dirname(__file__)))
+        self.web_dir = web_dir or os.path.join(base, 'web')
+        if not web_dir and not os.path.isdir(self.web_dir):
+            self.web_dir = os.path.join(sys.prefix,'share','opendesk','web')
+        self.peers, self.peer_meta, self.sessions = {}, {}, {}
+        self.pending, self.challenges = {}, {}
+        self.failures = defaultdict(deque)
+        self.identity = device_key()
+        self._connections = set()
 
-    def _generate_id(self) -> str:
-        """Generate a random 9-digit AnyDesk-style ID."""
+    def _generate_id(self):
         while True:
-            candidate = f"{random.randint(100, 999)} {random.randint(100, 999)} {random.randint(100, 999)}"
-            clean = candidate.replace(" ", "")
-            if clean not in self.peers:
+            candidate = str(secrets.randbelow(900_000_000) + 100_000_000)
+            if candidate not in self.peers:
                 return candidate
 
-    async def handle_ws(self, request: web.Request) -> web.WebSocketResponse:
-        ws = web.WebSocketResponse(max_msg_size=16 * 1024 * 1024, heartbeat=20.0)
-        await ws.prepare(request)
-        peer_id: Optional[str] = None
+    async def _send(self, peer, typ, **payload):
+        ws = self.peers.get(peer)
+        if ws is not None and not ws.closed:
+            await ws.send_json({'type': typ, 'payload': payload})
 
+    async def _end(self, peer, reason='Session disconnected.'):
+        partner = self.sessions.pop(peer, None)
+        if partner:
+            self.sessions.pop(partner, None)
+            for pid in (peer, partner):
+                self.peer_meta.get(pid, {}).pop('permissions', None)
+                self.peer_meta.get(pid, {}).pop('session_id', None)
+                await self._send(pid, 'session_end', message=reason)
+        for client, req in list(self.pending.items()):
+            if client == peer or req['host'] == peer:
+                self.pending.pop(client, None)
+                await self._send(req['host'], 'request_cancelled', request_id=req['id'], client_id=client)
+                await self._send(client, 'connect_resp', status='error', message=reason)
+        self.challenges.pop(peer, None)
+
+    async def _pair(self, host, client, permissions, request_id=None, unattended=False):
+        if host in self.sessions or client in self.sessions:
+            await self._send(client, 'connect_resp', status='error', message='Host or client is busy.')
+            return
+        session_id = secrets.token_urlsafe(24)
+        perms = {key: bool(permissions.get(key, False)) for key in PERMISSIONS}
+        self.sessions[host], self.sessions[client] = client, host
+        for pid in (host, client):
+            self.peer_meta[pid].update(permissions=perms, session_id=session_id)
+        await self._send(host, 'session_start', client_id=client, session_id=session_id,
+                         request_id=request_id, unattended=unattended, permissions=perms)
+        await self._send(client, 'connect_resp', status='ok', target_id=host,
+                         session_id=session_id, permissions=perms, protocol=2)
+
+    def _allowed(self, peer, typ):
+        meta = self.peer_meta[peer]
+        allowed = HOST_MESSAGES if meta['role'] == 'host' else CLIENT_MESSAGES
+        if typ not in allowed:
+            return False
+        perms = meta.get('permissions', {})
+        gate = ('input' if typ in INPUT else 'audio' if typ.startswith('audio_') else
+                'clipboard' if typ.startswith('clipboard_') else
+                'file_transfer' if typ.startswith('file_') else None)
+        return gate is None or perms.get(gate, False)
+
+    async def handle_ws(self, request):
+        from urllib.parse import urlsplit
+        origin = request.headers.get('Origin')
+        if origin and urlsplit(origin).netloc != request.host:
+            raise web.HTTPForbidden(text='Cross-origin WebSocket denied')
+        if len(self._connections) >= 64:
+            raise web.HTTPServiceUnavailable(text='Connection limit reached')
+        ws = web.WebSocketResponse(max_msg_size=8*1024*1024, heartbeat=20, compress=False)
+        await ws.prepare(request)
+        self._connections.add(ws)
+        peer = None
+        async def registration_deadline():
+            await asyncio.sleep(10)
+            if peer is None: await ws.close(code=1008,message=b'Registration timeout')
+        deadline_task = asyncio.create_task(registration_deadline())
+        recent_messages = deque()
+        remote = request.remote or ''
+        async def error(message):
+            await ws.send_json({'type':'connect_resp', 'payload':{'status':'error', 'message':message}})
         try:
             async for msg in ws:
-                if msg.type == WSMsgType.TEXT:
-                    try:
-                        packet = json.loads(msg.data)
-                    except Exception:
-                        continue
-                        
-                    mtype = packet.get("type")
-                    payload = packet.get("payload", {})
-
-                    # --- Registration ---
-                    if mtype == "register":
-                        role = payload.get("role", "host") # "host" or "client"
-                        requested_id = payload.get("id")
-                        password = payload.get("password", "")
-                        
-                        if not requested_id:
-                            assigned_id = self._generate_id()
-                        else:
-                            assigned_id = requested_id
-                            
-                        clean_id = assigned_id.replace(" ", "")
-                        peer_id = clean_id
-
-                        # Drop any stale socket still registered under this ID (e.g. a
-                        # host restart that left the old tunnel connection half-open).
-                        previous_ws = self.peers.get(peer_id)
-                        if previous_ws is not None and previous_ws is not ws:
-                            stale_partner = self.sessions.pop(peer_id, None)
-                            if stale_partner and self.sessions.get(stale_partner) == peer_id:
-                                self.sessions.pop(stale_partner, None)
-                            try:
-                                await previous_ws.close(code=4000, message=b"Replaced by new registration")
-                            except Exception:
-                                pass
-
-                        self.peers[peer_id] = ws
-                        self.peer_meta[peer_id] = {
-                            "display_id": assigned_id,
-                            "role": role,
-                            "password": password
-                        }
-
-                        await ws.send_str(json.dumps({
-                            "type": "register_resp",
-                            "payload": {
-                                "status": "ok",
-                                "id": assigned_id,
-                                "clean_id": clean_id,
-                                "role": role
-                            }
-                        }))
-
-                    # --- Connection Request (Client -> Relay -> Host) ---
-                    elif mtype == "connect":
-                        raw_target = str(payload.get("target_id", ""))
-                        target_id = raw_target.replace(" ", "").replace("-", "").strip()
-                        password = payload.get("password", "")
-                        
-                        target_ws = self.peers.get(target_id)
-                        target_meta = self.peer_meta.get(target_id)
-                        
-                        # Fallback: If client connected directly to a host's tunnel endpoint,
-                        # automatically pair with the active host peer on this relay
-                        if not target_ws or target_ws.closed or not target_meta:
-                            for pid, pmeta in self.peer_meta.items():
-                                if pmeta.get("role") == "host":
-                                    cand_ws = self.peers.get(pid)
-                                    if cand_ws and not cand_ws.closed:
-                                        target_id = pid
-                                        target_ws = cand_ws
-                                        target_meta = pmeta
-                                        break
-
-                        if not target_ws or target_ws.closed or not target_meta:
-                            print(f"[Relay] Connect failed: target '{target_id}' not found. Active peers: {list(self.peers.keys())}")
-                            await ws.send_str(json.dumps({
-                                "type": "connect_resp",
-                                "payload": {"status": "error", "message": f"Host [{raw_target}] is offline or ID not found. Ensure the desktop OpenDesk app is running."}
-                            }))
-                            continue
-
-                        # Verify password if host explicitly configured one
-                        expected_pw = target_meta.get("password")
-                        if expected_pw and expected_pw.strip():
-                            if expected_pw != password:
-                                await ws.send_str(json.dumps({
-                                    "type": "connect_resp",
-                                    "payload": {"status": "error", "message": "Invalid password."}
-                                }))
-                                continue
-                            # Unattended Access authenticated successfully
-                            self.sessions[target_id] = peer_id
-                            self.sessions[peer_id] = target_id
-                            await target_ws.send_str(json.dumps({
-                                "type": "session_start",
-                                "payload": {
-                                    "client_id": peer_id,
-                                    "display_id": self.peer_meta[peer_id]["display_id"],
-                                    "unattended": True
-                                }
-                            }))
-                            await ws.send_str(json.dumps({
-                                "type": "connect_resp",
-                                "payload": {
-                                    "status": "ok",
-                                    "target_id": target_id,
-                                    "message": "Connected to host via Unattended Access."
-                                }
-                            }))
-                            continue
-
-                        # Standard Interactive Session: Ask Host to Accept or Reject
-                        await target_ws.send_str(json.dumps({
-                            "type": "session_request",
-                            "payload": {
-                                "client_id": peer_id,
-                                "display_id": self.peer_meta.get(peer_id, {}).get("display_id", peer_id)
-                            }
-                        }))
-
-                        await ws.send_str(json.dumps({
-                            "type": "connect_resp",
-                            "payload": {
-                                "status": "waiting_approval",
-                                "target_id": target_id,
-                                "message": f"Waiting for remote host [{raw_target}] to accept the connection..."
-                            }
-                        }))
-
-                    # --- Host Accepts Connection Request ---
-                    elif mtype == "session_accept":
-                        client_id = payload.get("client_id")
-                        permissions = payload.get("permissions", {})
-                        if client_id and client_id in self.peers:
-                            client_ws = self.peers[client_id]
-                            if not client_ws.closed:
-                                self.sessions[peer_id] = client_id
-                                self.sessions[client_id] = peer_id
-                                await client_ws.send_str(json.dumps({
-                                    "type": "connect_resp",
-                                    "payload": {
-                                        "status": "ok",
-                                        "target_id": peer_id,
-                                        "permissions": permissions,
-                                        "message": "Connected to host. Initiating stream."
-                                    }
-                                }))
-
-                    # --- Host Declines Connection Request ---
-                    elif mtype == "session_reject":
-                        client_id = payload.get("client_id")
-                        reason = payload.get("message", "Connection request was declined by remote host.")
-                        if client_id and client_id in self.peers:
-                            client_ws = self.peers[client_id]
-                            if not client_ws.closed:
-                                await client_ws.send_str(json.dumps({
-                                    "type": "connect_resp",
-                                    "payload": {
-                                        "status": "rejected",
-                                        "message": reason
-                                    }
-                                }))
-
-                    # --- P2P WebRTC Signaling (Offer / Answer / Candidate) ---
-                    elif mtype == "p2p_signal":
-                        target = self.sessions.get(peer_id)
-                        if target and target in self.peers:
-                            await self.peers[target].send_str(json.dumps({
-                                "type": "p2p_signal",
-                                "payload": payload
-                            }))
-
-                    # --- Transparent Relay Fallback (Video, Input, File, Clipboard) ---
-                    else:
-                        target = self.sessions.get(peer_id)
-                        if target and target in self.peers and not self.peers[target].closed:
-                            await self.peers[target].send_str(msg.data)
-
-                elif msg.type == WSMsgType.ERROR:
+                now = time.monotonic()
+                while recent_messages and now-recent_messages[0]>1: recent_messages.popleft()
+                recent_messages.append(now)
+                if len(recent_messages)>2000:
+                    await ws.close(code=1008,message=b'Message rate exceeded')
                     break
-
+                if msg.type == WSMsgType.BINARY:
+                    if peer and peer in self.sessions and self.peer_meta[peer]['role'] == 'host':
+                        target = self.peers.get(self.sessions[peer])
+                        if target is not None and not target.closed:
+                            await target.send_bytes(msg.data)
+                    continue
+                if msg.type != WSMsgType.TEXT:
+                    continue
+                try:
+                    packet = json.loads(msg.data)
+                    if not isinstance(packet, dict) or not isinstance(packet.get('payload', {}), dict):
+                        raise ValueError()
+                    typ, payload = packet.get('type'), packet.get('payload', {})
+                    if not isinstance(typ,str): raise ValueError()
+                except (ValueError, TypeError):
+                    await error('Malformed packet.')
+                    continue
+                if typ == 'register':
+                    if peer:
+                        await error('Already registered.')
+                        continue
+                    role = payload.get('role', 'client')
+                    if role not in ('host', 'client') or payload.get('protocol') != 2:
+                        await error('OpenDesk v2 required. Upgrade both devices.')
+                        continue
+                    if role == 'host':
+                        # A tunnel's source can be loopback; authorize with a per-process secret.
+                        if not self.host_token or not secrets.compare_digest(str(payload.get('host_token', '')), self.host_token):
+                            await error('Host registration is not authorized.')
+                            continue
+                        requested = str(payload.get('id', '')).replace(' ', '').replace('-', '')
+                        if requested and (not requested.isdigit() or len(requested) != 9):
+                            await error('Invalid host ID.')
+                            continue
+                        assigned = requested or self._generate_id()
+                    else:
+                        assigned = self._generate_id()
+                    if assigned in self.peers:
+                        await error('ID already registered.')
+                        continue
+                    record = payload.get('password_record') if role == 'host' else None
+                    if record and (not isinstance(record, dict) or not all(k in record for k in ('salt', 'iterations', 'key'))):
+                        await error('Invalid authentication record.')
+                        continue
+                    peer = assigned
+                    self.peers[peer] = ws
+                    self.peer_meta[peer] = {'role':role, 'password_record':record}
+                    await self._send(peer, 'register_resp', status='ok', id=assigned, clean_id=assigned, role=role, protocol=2)
+                    continue
+                if not peer:
+                    await error('Register first.')
+                    continue
+                if typ == 'identify':
+                    nonce = payload.get('nonce','')
+                    if isinstance(nonce,str) and 16 <= len(nonce) <= 128:
+                        await self._send(peer, 'identity', **sign_identity(self.identity, nonce))
+                elif typ == 'host_config'  and self.peer_meta[peer]['role'] == 'host':
+                    self.peer_meta[peer]['password_record'] = payload.get('password_record')
+                    for client, challenge in list(self.challenges.items()):
+                        if challenge['host'] == peer: self.challenges.pop(client, None)
+                elif typ == 'heartbeat':
+                    await self._send(peer, 'heartbeat', echo=payload.get('sent_at'))
+                elif typ == 'connect':
+                    if self.peer_meta[peer]['role'] != 'client' or peer in self.sessions or peer in self.pending:
+                        await error('Connection already active or pending.')
+                        continue
+                    target = str(payload.get('target_id', '')).replace(' ', '').replace('-', '').strip()
+                    if target == 'remote_host':
+                        hosts = [p for p,m in self.peer_meta.items() if m['role'] == 'host']
+                        target = hosts[0] if len(hosts) == 1 else target
+                    meta = self.peer_meta.get(target)
+                    if not meta or meta['role'] != 'host':
+                        await error('Host ID not found.')
+                        continue
+                    if target in self.sessions:
+                        await error('Host is busy.')
+                        continue
+                    attempts = self.failures[remote]
+                    now = time.monotonic()
+                    while attempts and now-attempts[0] > 60:
+                        attempts.popleft()
+                    if len(attempts) >= 5:
+                        await error('Too many attempts. Retry in one minute.')
+                        continue
+                    record = meta.get('password_record')
+                    if record:
+                        previous = self.challenges.pop(peer, None)
+                        proof = payload.get('proof')
+                        if proof:
+                            if not previous or previous['host'] != target or previous['expires'] < now or not verify_proof(record, previous['nonce'], proof):
+                                attempts.append(now)
+                                await error('Invalid or expired password proof.')
+                                continue
+                            await self._pair(target, peer, {k:True for k in PERMISSIONS}, unattended=True)
+                        else:
+                            nonce = secrets.token_urlsafe(32)
+                            self.challenges[peer] = {'host':target, 'nonce':nonce, 'expires':now+30}
+                            await self._send(peer, 'auth_challenge', target_id=target, salt=record['salt'],
+                                             iterations=record['iterations'], nonce=nonce)
+                        continue
+                    if sum(req['host']==target for req in self.pending.values())>=8:
+                        await error('Too many pending requests for this host.')
+                        continue
+                    request_id = secrets.token_urlsafe(24)
+                    self.pending[peer] = {'id':request_id, 'host':target, 'expires':now+60}
+                    await self._send(peer, 'connect_resp', status='waiting_approval', target_id=target)
+                    await self._send(target, 'session_request', client_id=peer, display_id=peer, request_id=request_id)
+                elif typ in ('session_accept', 'session_reject'):
+                    client = payload.get('client_id')
+                    req = self.pending.get(client)
+                    if self.peer_meta[peer]['role'] != 'host' or not req or req['host'] != peer or req['id'] != payload.get('request_id') or req['expires'] < time.monotonic():
+                        await error('Invalid session decision.')
+                        continue
+                    self.pending.pop(client, None)
+                    if typ == 'session_accept':
+                        await self._pair(peer, client, payload.get('permissions', {}), request_id=req['id'])
+                    else:
+                        await self._send(client, 'connect_resp', status='rejected', message='Connection declined by host.')
+                elif typ == 'session_end':
+                    await self._end(peer)
+                elif peer in self.sessions and self._allowed(peer, typ):
+                    payload['session_id'] = self.peer_meta[peer]['session_id']
+                    await self._send(self.sessions[peer], typ, **payload)
         finally:
-            # Only tear down state that still belongs to this socket; a newer
-            # registration may already have replaced us under the same ID.
-            if peer_id and self.peers.get(peer_id) is ws:
-                partner = self.sessions.pop(peer_id, None)
-                if partner and self.sessions.get(partner) == peer_id:
-                    self.sessions.pop(partner, None)
-                    partner_ws = self.peers.get(partner)
-                    if partner_ws and not partner_ws.closed:
-                        await partner_ws.send_str(json.dumps({
-                            "type": "session_end",
-                            "payload": {"message": "Remote peer disconnected."}
-                        }))
-                self.peers.pop(peer_id, None)
-                self.peer_meta.pop(peer_id, None)
-
+            deadline_task.cancel()
+            self._connections.discard(ws)
+            if peer and self.peers.get(peer) is ws:
+                await self._end(peer, 'Remote peer disconnected.')
+                self.peers.pop(peer, None)
+                self.peer_meta.pop(peer, None)
         return ws
 
-    def create_app(self) -> web.Application:
+    async def _expire_requests(self, app):
+        async def expire():
+            while True:
+                await asyncio.sleep(5)
+                for client, req in list(self.pending.items()):
+                    if req['expires'] < time.monotonic():
+                        await self._end(client, 'Connection request expired.')
+        task = asyncio.create_task(expire())
+        yield
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    def create_app(self):
         app = web.Application()
-        app.router.add_get("/ws", self.handle_ws)
-        
-        # Serve web client
-        if os.path.exists(self.web_dir):
-            index_path = os.path.join(self.web_dir, "index.html")
-            if os.path.isfile(index_path):
-                async def handle_index(request):
-                    return web.FileResponse(index_path)
-                app.router.add_get("/", handle_index)
-            app.router.add_static("/", path=self.web_dir, name="web", show_index=False)
-            
+        app.cleanup_ctx.append(self._expire_requests)
+        app.router.add_get('/ws', self.handle_ws)
+        if os.path.isdir(self.web_dir):
+            async def index(request):
+                return web.FileResponse(os.path.join(self.web_dir, 'index.html'), headers={
+                    'X-Content-Type-Options':'nosniff', 'Referrer-Policy':'no-referrer'})
+            app.router.add_get('/', index)
+            app.router.add_static('/', self.web_dir, show_index=False)
         return app
 
     def run(self):
-        app = self.create_app()
-        web.run_app(app, host=self.host, port=self.port)
-
-if __name__ == "__main__":
-    server = RelayServer()
-    print(f"Starting OpenDesk Relay & Web Server on http://0.0.0.0:8080 ...")
-    server.run()
+        web.run_app(self.create_app(), host=self.host, port=self.port, handle_signals=False)

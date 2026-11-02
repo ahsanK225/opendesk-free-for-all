@@ -2,14 +2,21 @@
 ; OpenDesk Professional Standalone Installer Script
 
 #define MyAppName "OpenDesk"
-#define MyAppVersion "1.2.3"
+#define MyAppVersion "2.0.0"
 #define MyAppPublisher "OpenDesk Project"
-#define MyAppURL "https://github.com/OpenDesk"
+#define MyAppURL "https://github.com/ahsanK225/opendesk-free-for-all"
 #define MyAppExeName "OpenDesk.exe"
+#ifndef PortablePath
+  #define PortablePath "dist\OpenDesk.exe"
+#endif
+
+#ifndef BuildAppId
+  #define BuildAppId "{{5C16C978-B541-4E65-8A5B-A47E53B25091}"
+#endif
 
 [Setup]
 ; Basic Application Info
-AppId={{5C16C978-B541-4E65-8A5B-A47E53B25091}
+AppId={#BuildAppId}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
@@ -24,10 +31,12 @@ DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 
 ; Output configuration
 OutputDir=installer_output
-OutputBaseFilename=OpenDesk_Setup_v1.2.3
+OutputBaseFilename=OpenDesk_Setup_v2.0.0
 SetupIconFile=opendesk.ico
 
 ; Compression & Modern Visual Style
@@ -48,7 +57,7 @@ Name: "startmenuicon"; Description: "Create a Start Menu shortcut"; GroupDescrip
 Name: "startupicon"; Description: "Launch OpenDesk automatically when Windows starts"; GroupDescription: "Windows Startup:"; Flags: unchecked
 
 [Files]
-Source: "OpenDesk.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PortablePath}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "opendesk.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 

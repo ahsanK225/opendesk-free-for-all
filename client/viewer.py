@@ -21,6 +21,9 @@ import base64
 import asyncio
 import threading
 import queue
+import secrets
+from common.identity import verify_identity, trusted_key, trust_device, fingerprint
+from common.security import password_proof
 import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import Optional, Dict, Any, Callable
@@ -28,14 +31,14 @@ from PIL import Image, ImageTk
 import aiohttp
 
 try:
-    from opendesk.common.protocol import MessageType, create_packet, parse_packet
-    from opendesk.common.rendezvous import resolve_host_rendezvous, parse_connect_target, build_ws_url
-    from opendesk.common.config import get_audio_settings, save_audio_settings
-    from opendesk.host.audio import AudioEngine, get_available_audio_devices
-    from opendesk.host.clipboard import WindowsClipboard
+    from common.protocol import MessageType, create_packet, parse_packet
+    from common.rendezvous import resolve_host_rendezvous, parse_connect_target
+    from common.config import get_audio_settings, save_audio_settings
+    from host.audio import AudioEngine, get_available_audio_devices
+    from host.clipboard import WindowsClipboard
 except ImportError:
     from common.protocol import MessageType, create_packet, parse_packet
-    from common.rendezvous import resolve_host_rendezvous, parse_connect_target, build_ws_url
+    from common.rendezvous import resolve_host_rendezvous, parse_connect_target
     from common.config import get_audio_settings, save_audio_settings
     from host.audio import AudioEngine, get_available_audio_devices
     from host.clipboard import WindowsClipboard
@@ -53,6 +56,14 @@ class EmbeddedSessionView(tk.Frame):
         self.relay_url = relay_url
         self.target_id = target_id.replace(" ", "").replace("-", "").strip()
         self.password = password
+        self.session_id = None
+        self._identity_nonce = secrets.token_urlsafe(32)
+        self._identity_checked = False
+        self._directory_key = None
+        self._last_video_frame = 0
+        self._render_queued = False
+        self._pending_move = None
+        self._move_after_id = None
         self.on_close_cb = on_close
 
         # Networking & Asyncio State
@@ -75,23 +86,9 @@ class EmbeddedSessionView(tk.Frame):
         self.offset_x = 0
         self.offset_y = 0
         self._render_pending = False
-        self._render_dirty = False
         self.perf_mode = "fluid"     # "fluid" (Adaptive 60 FPS) or "sharp" (Always Bilinear)
         self.last_packet_time = time.time()
         self._idle_hd_after_id = None
-
-        # Dedicated JPEG decode thread - keeps the websocket reader free so a burst of
-        # frames can never turn into a growing end-to-end delay.
-        self._decode_queue: queue.Queue = queue.Queue(maxsize=2)
-        self._decode_stop = threading.Event()
-        self._decode_drops = 0
-        self._decode_thread = threading.Thread(target=self._decode_loop, name="opendesk-decode", daemon=True)
-
-        # Input coalescing, keyframe recovery & latency probe
-        self._pending_move = None
-        self._move_after_id = None
-        self._keyframe_req_at = 0.0
-        self._last_frame_id = 0
 
         # Display Modes & Zoom / Pan State
         self.view_mode = "fit"       # "fit" (Aspect Ratio), "stretch" (Fill Screen), "original" (1:1 Native)
@@ -109,7 +106,7 @@ class EmbeddedSessionView(tk.Frame):
         # Subsystems
         self.clipboard = WindowsClipboard(on_change_callback=self._on_local_clipboard_changed)
         self.audio_engine = AudioEngine(on_mic_chunk_callback=self._on_mic_chunk,
-                                       on_mic_level_callback=self._on_mic_level)
+                                       on_mic_level_callback=lambda level:self.post_ui(self._on_mic_level,level))
         self.audio_active = False
 
         # Stats & High-FPS Display
@@ -117,7 +114,7 @@ class EmbeddedSessionView(tk.Frame):
         self.recv_frame_count = 0
         self.fps = 0
         self.last_fps_time = time.time()
-        self.rtt_ms = -1
+        self.rtt_ms = 0
         self.canvas_img_id = None
         self._fps_after_id = None
 
@@ -126,7 +123,6 @@ class EmbeddedSessionView(tk.Frame):
         self._is_closed = False
 
         self._build_ui()
-        self._decode_thread.start()
         self._start_connection()
         self._process_ui_queue()
         self._fps_after_id = self.after(1000, self._tick_fps)
@@ -153,10 +149,26 @@ class EmbeddedSessionView(tk.Frame):
             if not getattr(self, "_is_closed", False) and self._safe_exists():
                 self._ui_queue_timer = self.after(16, self._process_ui_queue)
 
+    def open_files(self):
+        if not self.in_session or not self.granted_permissions.get('file_transfer',False):
+            messagebox.showinfo('Files', 'Connect to a host that permits file transfer first.')
+            return
+        from client.files import FileDialog
+        existing = getattr(self, 'files_dialog', None)
+        if existing and existing.win.winfo_exists():
+            existing.win.lift()
+        else:
+            self.files_dialog = FileDialog(self)
+
     def _build_ui(self):
         # --- Top Session Toolbar ---
         self.toolbar = tk.Frame(self, bg="#161922", height=40)
         self.toolbar.pack(fill="x", side="top")
+        tk.Button(self.toolbar,text='Files',command=self.open_files,bg='#252a38',fg='#e0e5f0',bd=0).pack(side='right',padx=4)
+        self.stream_profile = ttk.Combobox(self.toolbar,values=('Balanced','Performance','Sharp'),state='readonly',width=13)
+        self.stream_profile.set('Balanced')
+        self.stream_profile.pack(side='right',padx=4)
+        self.stream_profile.bind('<<ComboboxSelected>>', self._set_stream_profile)
 
         brand_frame = tk.Frame(self.toolbar, bg="#161922")
         brand_frame.pack(side="left", padx=12, pady=5)
@@ -170,7 +182,7 @@ class EmbeddedSessionView(tk.Frame):
         self.fps_label = tk.Label(self.toolbar, text="0 FPS", font=("Segoe UI", 8, "bold"), bg="#161922", fg="#38bdf8")
         self.fps_label.pack(side="left", padx=4)
 
-        self.rtt_label = tk.Label(self.toolbar, text="<10ms", font=("Segoe UI", 8), bg="#161922", fg="#94a3b8")
+        self.rtt_label = tk.Label(self.toolbar, text="RTT: —", font=("Segoe UI", 8), bg="#161922", fg="#94a3b8")
         self.rtt_label.pack(side="left", padx=4)
 
         # Actions on Right
@@ -299,10 +311,16 @@ class EmbeddedSessionView(tk.Frame):
         # Keyboard Events
         self.canvas.bind("<KeyPress>", self._on_key_press)
         self.canvas.bind("<KeyRelease>", self._on_key_release)
+        self.canvas.bind('<FocusOut>', self._release_remote_input)
 
         # Focus canvas on click
         self.canvas.bind("<Button-1>", lambda e: self.canvas.focus_set(), add="+")
         self.canvas.focus_set()
+
+    def _release_remote_input(self, event=None):
+        self.audio_engine.set_push_to_talk(False)
+        if self.in_session:
+            self._send_payload(MessageType.INPUT_RESET,{})
 
     # --- Display Modes, Zoom & Pan Controls ---
     def set_view_mode(self, mode: str):
@@ -513,22 +531,18 @@ class EmbeddedSessionView(tk.Frame):
         self.canvas.config(cursor="")
 
     def _on_mouse_move(self, event):
-        if not self.in_session or not self.granted_permissions.get("input", True):
-            return
-        nx, ny = self._normalize_coords(event.x, event.y)
-        if nx is None or ny is None:
-            return
-        # Coalesce high-frequency <Motion> events into <=60 updates/sec
-        self._pending_move = (nx, ny)
+        if not self.in_session or not self.granted_permissions.get('input',False): return
+        nx,ny = self._normalize_coords(event.x,event.y)
+        if nx is None or ny is None: return
+        self._pending_move = (nx,ny)
         if self._move_after_id is None:
-            self._move_after_id = self.after(15, self._flush_pending_move)
+            self._move_after_id = self.after(15,self._flush_pending_move)
 
     def _flush_pending_move(self):
         self._move_after_id = None
-        move = self._pending_move
-        self._pending_move = None
+        move,self._pending_move = self._pending_move,None
         if move and self.in_session:
-            self._send_payload(MessageType.INPUT_MOUSE_MOVE, {"x": move[0], "y": move[1]})
+            self._send_payload(MessageType.INPUT_MOUSE_MOVE,{'x':move[0],'y':move[1]})
 
     def _on_mouse_button(self, event, button: int, is_down: bool):
         if not self.in_session or not self.granted_permissions.get("input", True):
@@ -620,7 +634,7 @@ class EmbeddedSessionView(tk.Frame):
     # --- Audio / Voice Communication ---
     def _on_mic_chunk(self, b64_chunk: str):
         if self.in_session and self.audio_active:
-            self._send_payload(MessageType.AUDIO_CHUNK, {"data": b64_chunk})
+            self._send_payload(MessageType.AUDIO_CHUNK, {"data": b64_chunk, "sample_rate": 48000, "channels": 1, "format": "pcm_s16le"})
 
     def _on_mic_level(self, level: float):
         """Update live mini VU meter in the session toolbar."""
@@ -723,7 +737,7 @@ class EmbeddedSessionView(tk.Frame):
         def toggle_quick_test():
             if not is_testing[0]:
                 is_testing[0] = True
-                self.audio_engine.on_mic_level_callback = on_quick_level
+                self.audio_engine.on_mic_level_callback = lambda level:self.post_ui(on_quick_level,level)
                 self.audio_engine.preferred_input = in_combo.get()
                 self.audio_engine.preferred_output = out_combo.get()
                 self.audio_engine.set_gain(float(gain_scale.get()) / 100.0)
@@ -733,7 +747,7 @@ class EmbeddedSessionView(tk.Frame):
             else:
                 is_testing[0] = False
                 self.audio_engine.stop_loopback_test()
-                self.audio_engine.on_mic_level_callback = self._on_mic_level
+                self.audio_engine.on_mic_level_callback = lambda level:self.post_ui(self._on_mic_level,level)
                 q_test_btn.config(text="🎙️ Let's Check", bg="#202534", fg="#f1f5f9")
                 if quick_canvas.winfo_exists():
                     quick_canvas.coords(q_vu, 0, 0, 0, 16)
@@ -838,7 +852,6 @@ class EmbeddedSessionView(tk.Frame):
 
     def _trigger_render(self):
         """Schedule immediate fast non-blocking canvas redraw without event starvation."""
-        self._render_dirty = True
         if self._render_pending:
             return
         try:
@@ -875,39 +888,37 @@ class EmbeddedSessionView(tk.Frame):
                 return
             try:
                 resized = self.remote_image.resize((dw, dh), Image.Resampling.BILINEAR)
-            except Exception:
-                return
-        try:
-            self.tk_photo = ImageTk.PhotoImage(resized)
-            if self.canvas_img_id is not None and self._safe_exists():
-                self.canvas.itemconfig(self.canvas_img_id, image=self.tk_photo)
-        except Exception:
-            pass
-
-    def destroy(self):
-        self._is_closed = True
-        self.running = False
-        self._decode_stop.set()
-        for attr in ("_ui_queue_timer", "_fps_after_id", "_render_after_id",
-                     "_idle_hd_after_id", "_move_after_id"):
-            after_id = getattr(self, attr, None)
-            if after_id:
-                try:
-                    self.after_cancel(after_id)
-                except Exception:
-                    pass
-            setattr(self, attr, None)
-        loop = getattr(self, "loop", None)
-        if loop and not loop.is_closed() and loop.is_running():
-            try:
-                loop.call_soon_threadsafe(self._shutdown_network)
+                self.tk_photo = ImageTk.PhotoImage(resized)
+                if self.canvas_img_id is not None:
+                    self.canvas.itemconfig(self.canvas_img_id, image=self.tk_photo)
             except Exception:
                 pass
-        try:
-            self.audio_active = False
-            self.audio_engine.stop()
-        except Exception:
-            pass
+
+    def destroy(self):
+        if hasattr(self, "_ui_queue_timer") and self._ui_queue_timer:
+            try:
+                self.after_cancel(self._ui_queue_timer)
+            except Exception:
+                pass
+            self._ui_queue_timer = None
+        if hasattr(self, "_fps_after_id") and self._fps_after_id:
+            try:
+                self.after_cancel(self._fps_after_id)
+            except Exception:
+                pass
+            self._fps_after_id = None
+        if hasattr(self, "_render_after_id") and self._render_after_id:
+            try:
+                self.after_cancel(self._render_after_id)
+            except Exception:
+                pass
+            self._render_after_id = None
+        if hasattr(self, "_idle_hd_after_id") and self._idle_hd_after_id:
+            try:
+                self.after_cancel(self._idle_hd_after_id)
+            except Exception:
+                pass
+            self._idle_hd_after_id = None
         super().destroy()
 
     def _tick_fps(self):
@@ -915,28 +926,23 @@ class EmbeddedSessionView(tk.Frame):
         self._fps_after_id = None
         if not self._safe_exists():
             return
-        active_fps = self.recv_frame_count
+        active_fps = self.frame_count
+        self.frame_count = 0
         self.recv_frame_count = 0
-        self.fps = active_fps
         if active_fps > 0:
             self.fps_label.config(text=f"{active_fps} FPS", fg="#38bdf8")
         else:
-            self.fps_label.config(text="0 FPS · idle", fg="#64748b")
+            self.fps_label.config(text="Idle", fg="#10b981")
         self._fps_after_id = self.after(1000, self._tick_fps)
 
     def _safe_render_frame(self):
         self._render_pending = False
         self._render_after_id = None
-        self._render_dirty = False
         try:
             if self._safe_exists():
                 self._render_frame()
         except Exception:
             pass
-        finally:
-            # Frames that arrived while we were rendering must not be lost
-            if self._render_dirty and not self._is_closed and self._safe_exists():
-                self._trigger_render()
 
     def _render_frame(self):
         self._render_pending = False
@@ -978,17 +984,16 @@ class EmbeddedSessionView(tk.Frame):
             final_x = self.offset_x + self.pan_x
             final_y = self.offset_y + self.pan_y
 
-            # Adaptive Motion Resampling: ultra-fast resample during active motion,
-            # followed by a crisp stationary HD pass when movement stops.
-            # Resizing under the lock produces an independent snapshot, so the Tk photo
-            # conversion below can run without blocking incoming tile pasting.
+            # Adaptive Motion Resampling: 1ms ultra-fast resample during active motion,
+            # followed by crisp stationary HD pass when movement stops
             if dw == rw and dh == rh:
-                snapshot = self.remote_image.copy()
+                resized = self.remote_image
             else:
                 now = time.time()
                 is_active_motion = (now - self.last_packet_time < 0.200)
                 if self.perf_mode == "fluid" and is_active_motion:
-                    snapshot = self.remote_image.resize((dw, dh), Image.Resampling.NEAREST)
+                    # Ultra-fast nearest resample (<1ms) unlocks silky smooth 60 FPS motion
+                    resized = self.remote_image.resize((dw, dh), Image.Resampling.NEAREST)
                     # Schedule automatic stationary HD pass
                     if self._idle_hd_after_id:
                         try:
@@ -997,28 +1002,32 @@ class EmbeddedSessionView(tk.Frame):
                             pass
                     self._idle_hd_after_id = self.after(180, self._render_stationary_hd)
                 else:
-                    snapshot = self.remote_image.resize((dw, dh), Image.Resampling.BILINEAR)
+                    resized = self.remote_image.resize((dw, dh), Image.Resampling.BILINEAR)
 
-        self.tk_photo = ImageTk.PhotoImage(snapshot)
+            self.tk_photo = ImageTk.PhotoImage(resized)
 
-        # High-performance Tkinter canvas blitting: reuse canvas image ID without destroying items
-        if self.canvas_img_id is None:
-            self.canvas_img_id = self.canvas.create_image(final_x, final_y, anchor="nw", image=self.tk_photo)
-        else:
-            self.canvas.coords(self.canvas_img_id, final_x, final_y)
-            self.canvas.itemconfig(self.canvas_img_id, image=self.tk_photo)
+            # High-performance Tkinter canvas blitting: reuse canvas image ID without destroying items
+            if self.canvas_img_id is None:
+                self.canvas_img_id = self.canvas.create_image(final_x, final_y, anchor="nw", image=self.tk_photo)
+            else:
+                self.canvas.coords(self.canvas_img_id, final_x, final_y)
+                self.canvas.itemconfig(self.canvas_img_id, image=self.tk_photo)
 
         # Update frame counter
         self.frame_count += 1
 
     # --- Network WebSocket Engine ---
     def _send_payload(self, msg_type: str, payload: Dict[str, Any]):
-        try:
-            if self.loop and self._send_queue:
-                pkt = create_packet(msg_type, payload)
-                self.loop.call_soon_threadsafe(self._send_queue.put_nowait, pkt)
-        except Exception:
-            pass
+        if self.loop and self.loop.is_running() and self._send_queue is not None and self.running:
+            pkt = create_packet(msg_type, payload)
+            def enqueue():
+                try:
+                    self._send_queue.put_nowait(pkt)
+                except asyncio.QueueFull:
+                    # Never leave modifier keys held because their release was dropped.
+                    if msg_type not in ('audio_chunk','mouse_move') and self.ws:
+                        asyncio.create_task(self.ws.close())
+            self.loop.call_soon_threadsafe(enqueue)
 
     def _start_connection(self):
         self.running = True
@@ -1026,40 +1035,21 @@ class EmbeddedSessionView(tk.Frame):
         def run_network():
             self.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.loop)
-            self._send_queue = asyncio.Queue()
+            self._send_queue = asyncio.Queue(maxsize=128)
 
             async def send_worker():
                 while self.running:
-                    try:
-                        pkt = await self._send_queue.get()
-                    except asyncio.CancelledError:
-                        break
-                    try:
-                        if self.ws and not self.ws.closed:
-                            await self.ws.send_str(pkt)
-                    except Exception:
-                        pass
+                    pkt = await self._send_queue.get()
+                    if self.ws and not self.ws.closed:
+                        await self.ws.send_str(pkt)
 
-            async def heartbeat_loop(ws):
-                """Measures real round-trip latency to the host.
-
-                The RTT travels over the same socket as the video, so it also
-                reveals queueing delay when the host is sending faster than the
-                link can drain. It is reported back so the host can throttle.
-                """
-                while self.running and not ws.closed:
+            async def heartbeat_loop():
+                while self.running:
                     if self.in_session:
-                        self._send_payload(MessageType.HEARTBEAT, {
-                            "t": time.time(),
-                            "rtt": self.rtt_ms,
-                            "fps": self.fps,
-                            "drops": self._decode_drops,
-                        })
-                    await asyncio.sleep(2.0)
+                        self._send_payload(MessageType.HEARTBEAT,{'sent_at':time.monotonic()})
+                    await asyncio.sleep(2)
 
             async def main_ws():
-                sender_task = None
-                hb_task = None
                 # 0. Automatically resolve remote host ID if relay is set to auto or not explicitly provided
                 effective_relay = self.relay_url
                 if not effective_relay or effective_relay == "auto":
@@ -1072,23 +1062,15 @@ class EmbeddedSessionView(tk.Frame):
                     except Exception as e:
                         print(f"[Viewer] Rendezvous resolution notice: {e}")
 
-                    if resolved_url and not self._is_closed:
-                        effective_relay = build_ws_url(resolved_url)
+                    if resolved_url:
+                        self._directory_key = getattr(resolved_url,"public_key",None)
+                        _, effective_relay = parse_connect_target(resolved_url)
                     else:
-                        effective_relay = None
-
-                    if not effective_relay:
-                        if not self._is_closed:
-                            self.post_ui(lambda: self._on_connection_error(
-                                f"Host [{self.target_id}] is offline or ID not found in global registry.\n\n"
-                                f"Ensure the remote OpenDesk app is running on the host machine and connected to the internet."
-                            ) if self._safe_exists() else None)
+                        self.post_ui(lambda: self._on_connection_error(
+                            f"Host [{self.target_id}] is offline or ID not found in global registry.\n\n"
+                            f"Ensure the remote OpenDesk app is running on the host machine and connected to the internet."
+                        ) if self._safe_exists() else None)
                         return
-
-                if self._is_closed:
-                    return
-
-                effective_relay = build_ws_url(effective_relay) or effective_relay
 
                 self.post_ui(lambda: self.status_badge.config(
                     text=f"● Connecting [{self.target_id}]...", bg="#252a38", fg="#e0af68"
@@ -1097,132 +1079,95 @@ class EmbeddedSessionView(tk.Frame):
                 async with aiohttp.ClientSession() as session:
                     self.session = session
                     try:
-                        async with session.ws_connect(effective_relay, max_msg_size=16*1024*1024,
-                                                      heartbeat=20.0) as ws:
+                        async with session.ws_connect(effective_relay, max_msg_size=8*1024*1024, heartbeat=20, compress=0) as ws:
                             self.ws = ws
                             # 1. Register as client
-                            await ws.send_str(create_packet(MessageType.REGISTER, {"role": "client"}))
+                            await ws.send_str(create_packet(MessageType.REGISTER, {"role": "client", "protocol": 2}))
 
-                            # 2. Start sender + latency probe loops
-                            sender_task = asyncio.create_task(send_worker())
-                            hb_task = asyncio.create_task(heartbeat_loop(ws))
+                            # 2. Start sender loop
+                            asyncio.create_task(send_worker())
+                            asyncio.create_task(heartbeat_loop())
 
                             async for msg in ws:
-                                if msg.type == aiohttp.WSMsgType.TEXT:
+                                if msg.type in (aiohttp.WSMsgType.TEXT, aiohttp.WSMsgType.BINARY):
                                     pkt = parse_packet(msg.data)
                                     if pkt:
                                         self._handle_incoming_packet(pkt)
                                 elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
                                     break
-                    except asyncio.CancelledError:
-                        pass
                     except Exception as e:
                         print(f"[Viewer] Connection error: {e}")
-                        if not self._is_closed:
-                            self.post_ui(lambda: self._on_connection_error(str(e)) if self._safe_exists() else None)
-                    finally:
-                        for task in (sender_task, hb_task):
-                            if task and not task.done():
-                                task.cancel()
-                        self.ws = None
+                        self.post_ui(lambda error=str(e): self._on_connection_error(error) if self._safe_exists() else None)
 
             try:
                 self.loop.run_until_complete(main_ws())
-            except RuntimeError:
-                # Loop was stopped intentionally while closing the session
-                pass
-            except Exception as e:
-                print(f"[Viewer] Network thread notice: {e}")
             finally:
-                self.running = False
-                # Cancel any stragglers (e.g. the shutdown close task) so the loop
-                # can be closed without "Task was destroyed but it is pending".
-                try:
-                    pending = [t for t in asyncio.all_tasks(self.loop) if not t.done()]
-                except Exception:
-                    pending = []
-                for t in pending:
-                    t.cancel()
-                if pending:
-                    try:
-                        self.loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-                    except Exception:
-                        pass
-                try:
-                    self.loop.close()
-                except Exception:
-                    pass
-                self.loop = None
-                self._send_queue = None
+                self.running = self.in_session = False
+                tasks = asyncio.all_tasks(self.loop)
+                for task in tasks: task.cancel()
+                self.loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+                self.loop.run_until_complete(self.loop.shutdown_asyncgens())
+                self.loop.close()
+                if not self._is_closed:
+                    self.post_ui(self._on_remote_disconnected)
 
-        t = threading.Thread(target=run_network, name="opendesk-viewer-net", daemon=True)
+        t = threading.Thread(target=run_network, daemon=True)
         t.start()
-
-    def _shutdown_network(self):
-        """Close the websocket/HTTP session from the network loop thread."""
-        loop = self.loop
-        if not loop or loop.is_closed():
-            return
-
-        async def _close():
-            try:
-                if self.ws and not self.ws.closed:
-                    await self.ws.close()
-            except Exception:
-                pass
-            try:
-                if self.session and not self.session.closed:
-                    await self.session.close()
-            except Exception:
-                pass
-
-        try:
-            loop.create_task(_close())
-            loop.call_later(2.0, loop.stop)
-        except Exception:
-            pass
-
-    # --- Incoming packet dispatch (network thread - must stay fast) ---
-    def _enqueue_video(self, mtype: str, payload: Dict[str, Any]):
-        """Hand frames to the decoder without ever blocking the socket reader."""
-        try:
-            self._decode_queue.put_nowait((mtype, payload))
-        except queue.Full:
-            self._decode_drops += 1
-            try:
-                self._decode_queue.get_nowait()
-            except Exception:
-                pass
-            try:
-                self._decode_queue.put_nowait((mtype, payload))
-            except Exception:
-                pass
-            self._request_keyframe()
-
-    def _request_keyframe(self):
-        now = time.time()
-        if now - self._keyframe_req_at < 1.0:
-            return
-        self._keyframe_req_at = now
-        self._send_payload(MessageType.KEYFRAME_REQUEST, {})
 
     def _handle_incoming_packet(self, packet: Dict[str, Any]):
         mtype = packet.get("type")
         payload = packet.get("payload", {})
 
         if mtype == MessageType.REGISTER_RESP:
-            self._send_payload(MessageType.CONNECT, {
-                "target_id": self.target_id,
-                "password": self.password
-            })
+            self._send_payload('identify', {'nonce':self._identity_nonce})
+
+        elif mtype == 'identity':
+            try:
+                key = verify_identity(payload, self._identity_nonce)
+                if self._directory_key and self._directory_key != key:
+                    raise ValueError('Directory key does not match the connected device')
+                device = self.target_id if self.target_id != 'remote_host' else self.relay_url
+                pinned = trusted_key(device)
+                if pinned and pinned != key:
+                    self.post_ui(self._on_connection_error, 'Device identity changed. Verify the host fingerprint before clearing the saved trust record.')
+                    return
+                def approve():
+                    if self._is_closed: return
+                    if not pinned:
+                        digest = fingerprint(key)
+                        if not messagebox.askyesno('Verify remote device',
+                            f'First connection to {device}. Compare this fingerprint with the host Settings before trusting it.\n\n{digest}\n\nTrust this device?', parent=self):
+                            self.close()
+                            return
+                        trust_device(device,key)
+                    self._identity_checked = True
+                    self._send_payload(MessageType.CONNECT, {'target_id':self.target_id})
+                self.post_ui(approve)
+            except Exception as exc:
+                self.post_ui(self._on_connection_error, 'Remote identity verification failed: '+str(exc))
+
+        elif mtype == MessageType.HEARTBEAT:
+            if isinstance(payload.get('echo'),(int,float)):
+                self.rtt_ms = max(0,round((time.monotonic()-payload['echo'])*1000))
+                self.post_ui(lambda:self.rtt_label.config(text=f'{self.rtt_ms} ms'))
+
+        elif mtype == 'auth_challenge':
+            if not self._identity_checked: return
+            async def authenticate():
+                try:
+                    proof = await asyncio.to_thread(password_proof, self.password, payload)
+                    self._send_payload(MessageType.CONNECT, {'target_id':payload['target_id'], 'proof':proof})
+                except Exception as exc:
+                    self.post_ui(self._on_connection_error, str(exc))
+            asyncio.create_task(authenticate())
 
         elif mtype == MessageType.CONNECT_RESP:
             status = payload.get("status")
-            if status == "ok":
+            if status == "ok" and self._identity_checked:
                 self.in_session = True
+                self.session_id = payload.get("session_id")
+                self._last_video_frame = 0
                 self.granted_permissions = payload.get("permissions", {}) or {"input": True, "audio": True, "clipboard": True, "file_transfer": True}
-                with self.image_lock:
-                    self.remote_image = None
                 self.post_ui(self._on_session_connected)
             elif status == "waiting_approval":
                 self.post_ui(lambda: self.status_badge.config(
@@ -1236,15 +1181,62 @@ class EmbeddedSessionView(tk.Frame):
                 msg = payload.get("message", "Could not connect to host.")
                 self.post_ui(lambda: self._on_connection_error(msg) if self._safe_exists() else None)
 
-        elif mtype in (MessageType.VIDEO_FULL, MessageType.VIDEO_DELTA):
-            self._enqueue_video(mtype, payload)
+        elif mtype == MessageType.SESSION_END:
+            self.in_session = False
+            self.post_ui(self._on_remote_disconnected)
 
-        elif mtype == MessageType.HEARTBEAT:
-            sent_at = payload.get("t")
-            if isinstance(sent_at, (int, float)):
-                rtt = max(0, int((time.time() - sent_at) * 1000))
-                self.rtt_ms = rtt
-                self.post_ui(self._update_rtt_label, rtt)
+        elif not self.in_session or payload.get('session_id') != self.session_id:
+            return
+
+        elif mtype == MessageType.VIDEO_FULL:
+            self.recv_frame_count += 1
+            self.last_packet_time = time.time()
+            w = payload.get("width", 1920)
+            h = payload.get("height", 1080)
+            b64_img = payload.get("image", "")
+            if b64_img:
+                raw_bytes = b64_img if isinstance(b64_img, bytes) else base64.b64decode(b64_img)
+                img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
+                with self.image_lock:
+                    self.remote_width = w
+                    self.remote_height = h
+                    self.remote_image = img
+                self._last_video_frame = payload['frame_id']
+                self._send_payload(MessageType.VIDEO_ACK, {'frame_id':payload['frame_id'],'rtt_ms':self.rtt_ms})
+                if not self._render_queued:
+                    self._render_queued = True
+                    self.post_ui(self._dispatch_video_render)
+
+        elif mtype == MessageType.VIDEO_DELTA:
+            self.recv_frame_count += 1
+            self.last_packet_time = time.time()
+            tiles = payload.get("tiles", [])
+            if not self._last_video_frame:
+                self._send_payload(MessageType.VIDEO_REFRESH, {})
+                return
+            if tiles:
+                # 1. Decode tiles outside lock
+                decoded_tiles = []
+                for t in tiles:
+                    raw_bytes = t["image"] if isinstance(t["image"],bytes) else base64.b64decode(t["image"])
+                    tile_img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
+                    decoded_tiles.append((tile_img, (t["x"], t["y"])))
+                
+                # 2. Thread-safe paste to remote buffer under lock (completely eliminates 0xC0000005 crash)
+                with self.image_lock:
+                    if self.remote_image:
+                        for tile_img, pos in decoded_tiles:
+                            self.remote_image.paste(tile_img, pos)
+                self._last_video_frame = payload['frame_id']
+                self._send_payload(MessageType.VIDEO_ACK, {'frame_id':payload['frame_id'],'rtt_ms':self.rtt_ms})
+                if not self._render_queued:
+                    self._render_queued = True
+                    self.post_ui(self._dispatch_video_render)
+
+        elif mtype.startswith('file_'):
+            dialog = getattr(self, 'files_dialog', None)
+            if dialog:
+                self.post_ui(dialog.receive, mtype, payload)
 
         elif mtype == MessageType.CLIPBOARD_TEXT:
             text = payload.get("text", "")
@@ -1254,87 +1246,23 @@ class EmbeddedSessionView(tk.Frame):
         elif mtype == MessageType.AUDIO_CHUNK:
             data = payload.get("data")
             if data:
-                self.audio_engine.play_chunk(data)
+                self.audio_engine.play_chunk(data, payload.get("sample_rate", 48000))
 
         elif mtype == MessageType.SESSION_END:
             self.post_ui(self._on_remote_disconnected)
 
-    # --- Decoder thread ---
-    def _decode_loop(self):
-        while not self._decode_stop.is_set():
-            try:
-                mtype, payload = self._decode_queue.get(timeout=0.25)
-            except queue.Empty:
-                continue
-            except Exception:
-                continue
-            try:
-                if mtype == MessageType.VIDEO_FULL:
-                    self._apply_full_frame(payload)
-                else:
-                    self._apply_delta_frame(payload)
-            except Exception as e:
-                print(f"[Viewer] Frame decode warning: {e}")
+    def _set_stream_profile(self, event=None):
+        profiles = {'Balanced':{'fps':30,'max_width':1600,'quality':65},
+                    'Performance':{'fps':60,'max_width':1280,'quality':55},
+                    'Sharp':{'fps':30,'max_width':2560,'quality':85}}
+        self._send_payload(MessageType.VIDEO_CONFIG, profiles[self.stream_profile.get()])
 
-    def _apply_full_frame(self, payload: Dict[str, Any]):
-        b64_img = payload.get("image", "")
-        if not b64_img:
-            return
-        img = Image.open(io.BytesIO(base64.b64decode(b64_img)))
-        img.load()
-        if img.mode != "RGB":
-            img = img.convert("RGB")
-
-        with self.image_lock:
-            self.remote_width = int(payload.get("width") or img.width)
-            self.remote_height = int(payload.get("height") or img.height)
-            self.remote_image = img
-
-        self.recv_frame_count += 1
-        self.last_packet_time = time.time()
-        self.post_ui(self._trigger_render)
-
-    def _apply_delta_frame(self, payload: Dict[str, Any]):
-        tiles = payload.get("tiles") or []
-        if not tiles:
-            return
-
-        decoded = []
-        for t in tiles:
-            tile = Image.open(io.BytesIO(base64.b64decode(t["image"])))
-            tile.load()
-            if tile.mode != "RGB":
-                tile = tile.convert("RGB")
-            decoded.append((tile, (int(t["x"]), int(t["y"]))))
-
-        with self.image_lock:
-            if self.remote_image is None:
-                reset_needed = True
-            else:
-                reset_needed = False
-                for tile, pos in decoded:
-                    self.remote_image.paste(tile, pos)
-
-        if reset_needed:
-            self._request_keyframe()
-            return
-
-        self.recv_frame_count += 1
-        self.last_packet_time = time.time()
-        self.post_ui(self._trigger_render)
-
-    def _update_rtt_label(self, rtt: int):
-        if not self._safe_exists() or not hasattr(self, "rtt_label"):
-            return
-        if rtt < 80:
-            color = "#10b981"
-        elif rtt < 200:
-            color = "#e0af68"
-        else:
-            color = "#ef4444"
-        self.rtt_label.config(text=f"{rtt} ms", fg=color)
+    def _dispatch_video_render(self):
+        self._render_queued = False
+        self._trigger_render()
 
     def _on_session_connected(self):
+        self._set_stream_profile()
         perms = getattr(self, "granted_permissions", {})
         if perms and not perms.get("input", True):
             self.status_badge.config(text=f"● Connected [{self.target_id}] (View Only)", bg="#1f382a", fg="#9ece6a")
@@ -1356,45 +1284,51 @@ class EmbeddedSessionView(tk.Frame):
         self.close()
 
     def close(self):
-        """Cleanly terminate the session, audio, network, and trigger close callback."""
-        if getattr(self, "_is_closed", False):
+        if self._is_closed:
             return
+        if self.loop and self.loop.is_running():
+            async def disconnect():
+                if self.ws and not self.ws.closed:
+                    await self.ws.send_str(create_packet(MessageType.SESSION_END))
+                    await self.ws.close()
+            asyncio.run_coroutine_threadsafe(disconnect(), self.loop)
+        """Cleanly terminate the session, audio, network, and trigger close callback."""
+        dialog = getattr(self, 'files_dialog', None)
+        if dialog and dialog.win.winfo_exists(): dialog.close()
+        if self._move_after_id:
+            try: self.after_cancel(self._move_after_id)
+            except tk.TclError: pass
+            self._move_after_id = None
+        self._pending_move = None
         self._is_closed = True
         self.running = False
         self.in_session = False
-
-        # 1. Stop the decoder and cancel every scheduled Tk callback so nothing
-        #    keeps touching a widget that is about to be destroyed.
-        self._decode_stop.set()
-        for attr in ("_ui_queue_timer", "_fps_after_id", "_render_after_id",
-                     "_idle_hd_after_id", "_move_after_id"):
-            after_id = getattr(self, attr, None)
-            if after_id:
-                try:
-                    self.after_cancel(after_id)
-                except Exception:
-                    pass
-            setattr(self, attr, None)
-        self._render_pending = False
-        self._render_dirty = False
-        self._pending_move = None
-
-        # 2. Stop audio capture/playback.
+        if hasattr(self, "_ui_queue_timer") and self._ui_queue_timer:
+            try:
+                self.after_cancel(self._ui_queue_timer)
+            except Exception:
+                pass
+            self._ui_queue_timer = None
+        if hasattr(self, "_fps_after_id") and self._fps_after_id:
+            try:
+                self.after_cancel(self._fps_after_id)
+            except Exception:
+                pass
+        if hasattr(self, "_render_after_id") and self._render_after_id:
+            try:
+                self.after_cancel(self._render_after_id)
+            except Exception:
+                pass
+        if hasattr(self, "_idle_hd_after_id") and self._idle_hd_after_id:
+            try:
+                self.after_cancel(self._idle_hd_after_id)
+            except Exception:
+                pass
+                pass
         try:
-            self.audio_active = False
             self.audio_engine.stop()
         except Exception:
             pass
-
-        # 3. Close websocket + HTTP session from the network loop thread. The
-        #    host only stops streaming once this actually reaches the relay.
-        loop = getattr(self, "loop", None)
-        if loop and not loop.is_closed() and loop.is_running():
-            try:
-                loop.call_soon_threadsafe(self._shutdown_network)
-            except Exception:
-                pass
-
         if self.on_close_cb:
             try:
                 self.on_close_cb()
@@ -1412,6 +1346,9 @@ class NativeSessionViewer:
         self.target_id = target_id.replace(" ", "").replace("-", "").strip()
         self.relay_url = relay_url
         self.password = password
+        self.session_id = None
+        self._last_video_frame = 0
+        self._render_queued = False
 
         self.win = tk.Toplevel(self.parent)
         self.win.title(f"OpenDesk - Remote Session [{self.target_id}]")

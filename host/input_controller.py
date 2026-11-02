@@ -49,6 +49,17 @@ class WindowsInputController:
         self.width = self.user32.GetSystemMetrics(0)
         self.height = self.user32.GetSystemMetrics(1)
         self.enabled = True
+        self.pressed_keys = set()
+        self.pressed_buttons = set()
+
+    def release_all(self):
+        for vk in list(self.pressed_keys):
+            self.user32.keybd_event(vk, 0, self.KEYEVENTF_KEYUP, 0)
+        for button in list(self.pressed_buttons):
+            flags = {0:self.MOUSEEVENTF_LEFTUP,1:self.MOUSEEVENTF_MIDDLEUP,2:self.MOUSEEVENTF_RIGHTUP}
+            self.user32.mouse_event(flags[button], 0, 0, 0, 0)
+        self.pressed_keys.clear()
+        self.pressed_buttons.clear()
 
     def update_screen_size(self, width: int, height: int):
         self.width = width
@@ -76,6 +87,7 @@ class WindowsInputController:
             flag = self.MOUSEEVENTF_RIGHTDOWN
             
         self.user32.mouse_event(flag, 0, 0, 0, 0)
+        self.pressed_buttons.add(button)
 
     def mouse_up(self, button: int = 0, norm_x: Optional[float] = None, norm_y: Optional[float] = None):
         """Button: 0=Left, 1=Middle, 2=Right."""
@@ -91,6 +103,7 @@ class WindowsInputController:
             flag = self.MOUSEEVENTF_RIGHTUP
             
         self.user32.mouse_event(flag, 0, 0, 0, 0)
+        self.pressed_buttons.discard(button)
 
     def mouse_scroll(self, delta_x: float, delta_y: float):
         if not self.enabled:
@@ -137,6 +150,7 @@ class WindowsInputController:
             if vk in (0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E, 0x24, 0x23, 0x21, 0x22):
                 flags |= self.KEYEVENTF_EXTENDEDKEY
             self.user32.keybd_event(vk, 0, flags, 0)
+            self.pressed_keys.add(vk)
 
     def key_up(self, key_code: str, char: str = ""):
         if not self.enabled:
@@ -147,6 +161,7 @@ class WindowsInputController:
             if vk in (0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E, 0x24, 0x23, 0x21, 0x22):
                 flags |= self.KEYEVENTF_EXTENDEDKEY
             self.user32.keybd_event(vk, 0, flags, 0)
+            self.pressed_keys.discard(vk)
 
     def execute_shortcut(self, name: str):
         """Execute special system shortcut combinations."""

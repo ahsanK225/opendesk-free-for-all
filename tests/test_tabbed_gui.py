@@ -16,6 +16,7 @@ class TestTabbedGUI(unittest.TestCase):
         os.environ["OPENDESK_SILENT_TEST"] = "1"
         self.root = tk.Tk()
         self.root.withdraw()
+        self.root.update_idletasks()
         self.temp_dir = tempfile.TemporaryDirectory()
         self.temp_config_file = os.path.join(self.temp_dir.name, "config.json")
         self.patcher = patch.object(config_mod, "CONFIG_FILE", self.temp_config_file)

@@ -11,6 +11,7 @@ from common.rendezvous import (
     resolve_host_rendezvous,
     parse_connect_target,
     build_ws_url,
+    _directory_record,
     RendezvousHeartbeat
 )
 
@@ -76,7 +77,7 @@ class TestRendezvous(unittest.TestCase):
 
         # Mock resolve
         mock_resp_res = MagicMock()
-        mock_resp_res.read.return_value = b"https://friendly-host.trycloudflare.com\n"
+        mock_resp_res.read.return_value = (_directory_record("732364935","https://friendly-host.trycloudflare.com")+"\n").encode()
         mock_resp_res.__enter__.return_value = mock_resp_res
         mock_urlopen.return_value = mock_resp_res
 

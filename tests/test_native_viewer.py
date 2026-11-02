@@ -12,6 +12,7 @@ class TestNativeViewer(unittest.TestCase):
     def setUp(self):
         self.root = tk.Tk()
         self.root.withdraw()
+        self.root.update_idletasks()
 
     def tearDown(self):
         try:

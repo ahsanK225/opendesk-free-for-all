@@ -29,3 +29,8 @@ ENV/
 # Sensitive certificates and private keys
 certs/*.pfx
 
+
+.build-deps/
+.release-tools/
+.test-state/
+*.part

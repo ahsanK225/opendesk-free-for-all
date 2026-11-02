@@ -232,7 +232,7 @@ class TestIncrementalUpdater(unittest.TestCase):
         plan = DifferentialPlan(
             current_version="1.0.0",
             target_version="1.0.1",
-            to_download=[{"path": "main.py", "size": 30, "sha256": "fake"}],
+            to_download=[{"path": "main.py", "size": os.path.getsize(staged_main), "sha256": compute_file_sha256(staged_main)}],
             to_skip=[],
         )
 

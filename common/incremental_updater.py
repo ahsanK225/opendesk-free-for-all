@@ -22,6 +22,7 @@ import urllib.error
 import urllib.parse
 import subprocess
 import time
+import ntpath
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any, Callable, Tuple
 
@@ -36,6 +37,17 @@ DEFAULT_PRESERVE_PATTERNS = [
     ".opendesk/*",
     ".remoteconnect/*",
 ]
+
+
+def managed_path(base, relative):
+    normalized = str(relative).replace('\\','/')
+    if not normalized or ntpath.isabs(normalized) or ':' in normalized or any(part in ('..','') for part in normalized.split('/')):
+        raise ValueError('Unsafe update path: '+str(relative))
+    base = os.path.realpath(base)
+    resolved = os.path.realpath(os.path.join(base, normalized))
+    if os.path.commonpath([base,resolved]) != base:
+        raise ValueError('Update path escapes its managed directory')
+    return resolved
 
 
 def compute_file_sha256(filepath: str, chunk_size: int = 65536) -> str:
@@ -149,7 +161,7 @@ class IncrementalUpdater:
             expected_sha256 = r_file.get("sha256", "").lower()
             total_install_bytes += file_size
 
-            local_path = os.path.join(self.install_dir, rel_path.replace("/", os.sep))
+            local_path = managed_path(self.install_dir, rel_path)
 
             # Skip if explicitly preserved
             if should_preserve_file(rel_path, preserve_patterns) and os.path.isfile(local_path):
@@ -170,24 +182,17 @@ class IncrementalUpdater:
             to_download.append(r_file)
             total_delta_bytes += file_size
 
-        # Find deprecated files in local install that are not in remote manifest
-        to_delete: List[str] = []
-        if os.path.isdir(self.install_dir):
-            for root, _, filenames in os.walk(self.install_dir):
-                for fname in filenames:
-                    abs_p = os.path.join(root, fname)
-                    rel_p = os.path.relpath(abs_p, self.install_dir).replace("\\", "/")
-
-                    # Ignore internal updater staging/backup directories
-                    if rel_p.startswith(".update_") or rel_p.startswith("__pycache__"):
-                        continue
-
-                    # Check preserve patterns
-                    if should_preserve_file(rel_p, preserve_patterns):
-                        continue
-
-                    if rel_p not in remote_paths_set:
-                        to_delete.append(rel_p)
+        # Only remove files recorded as owned by the previous successful install.
+        to_delete = []
+        try:
+            with open(os.path.join(self.install_dir, '.opendesk_owned.json'), encoding='utf-8') as stream:
+                owned = json.load(stream)
+        except (OSError,ValueError):
+            owned = []
+        for rel_p in owned:
+            managed_path(self.install_dir, rel_p)
+            if rel_p not in remote_paths_set and not should_preserve_file(rel_p,preserve_patterns):
+                to_delete.append(rel_p)
 
         saved_bytes = total_install_bytes - total_delta_bytes
         saved_pct = (saved_bytes / total_install_bytes * 100.0) if total_install_bytes > 0 else 0.0
@@ -223,6 +228,10 @@ class IncrementalUpdater:
         if not staging_dir:
             staging_dir = os.path.join(self.install_dir, ".update_staging")
 
+        managed_path(self.install_dir, os.path.relpath(staging_dir,self.install_dir))
+        for item in plan.to_download:
+            managed_path(staging_dir,item['path'])
+            managed_path(self.install_dir,item['path'])
         # Clean staging dir
         if os.path.exists(staging_dir):
             shutil.rmtree(staging_dir, ignore_errors=True)
@@ -247,7 +256,7 @@ class IncrementalUpdater:
                     base = plan.base_url.rstrip("/")
                     file_url = f"{base}/{urllib.parse.quote(rel_path)}"
 
-                staged_file_path = os.path.join(staging_dir, rel_path.replace("/", os.sep))
+                staged_file_path = managed_path(staging_dir, rel_path)
                 os.makedirs(os.path.dirname(staged_file_path), exist_ok=True)
 
                 # Download with chunked hashing
@@ -315,10 +324,17 @@ class IncrementalUpdater:
         if not backup_dir:
             backup_dir = os.path.join(self.install_dir, ".update_backup")
 
+        managed_path(self.install_dir, os.path.relpath(backup_dir,self.install_dir))
+        managed_path(self.install_dir, os.path.relpath(staging_dir,self.install_dir))
+        for item in plan.to_download:
+            managed_path(self.install_dir,item['path'])
+            managed_path(staging_dir,item['path'])
+        for rel_path in plan.to_delete: managed_path(self.install_dir,rel_path)
         if os.path.exists(backup_dir):
             shutil.rmtree(backup_dir, ignore_errors=True)
         os.makedirs(backup_dir, exist_ok=True)
 
+        newly_added = []
         copied_paths: List[Tuple[str, str]] = []  # (staged, target)
         preserve_patterns = list(self.preserve_patterns)
 
@@ -328,18 +344,18 @@ class IncrementalUpdater:
                 rel_p = file_info["path"].replace("\\", "/")
                 if should_preserve_file(rel_p, preserve_patterns):
                     continue
-                target_p = os.path.join(self.install_dir, rel_p.replace("/", os.sep))
+                target_p = managed_path(self.install_dir, rel_p)
                 if os.path.isfile(target_p):
-                    bk_p = os.path.join(backup_dir, rel_p.replace("/", os.sep))
+                    bk_p = managed_path(backup_dir, rel_p)
                     os.makedirs(os.path.dirname(bk_p), exist_ok=True)
                     shutil.copy2(target_p, bk_p)
 
             for rel_del in plan.to_delete:
                 if should_preserve_file(rel_del, preserve_patterns):
                     continue
-                target_p = os.path.join(self.install_dir, rel_del.replace("/", os.sep))
+                target_p = managed_path(self.install_dir, rel_del)
                 if os.path.isfile(target_p):
-                    bk_p = os.path.join(backup_dir, rel_del.replace("/", os.sep))
+                    bk_p = managed_path(backup_dir, rel_del)
                     os.makedirs(os.path.dirname(bk_p), exist_ok=True)
                     shutil.copy2(target_p, bk_p)
 
@@ -348,9 +364,12 @@ class IncrementalUpdater:
                 rel_p = file_info["path"].replace("\\", "/")
                 if should_preserve_file(rel_p, preserve_patterns):
                     continue
-                staged_p = os.path.join(staging_dir, rel_p.replace("/", os.sep))
-                target_p = os.path.join(self.install_dir, rel_p.replace("/", os.sep))
+                staged_p = managed_path(staging_dir, rel_p)
+                target_p = managed_path(self.install_dir, rel_p)
                 os.makedirs(os.path.dirname(target_p), exist_ok=True)
+                if compute_file_sha256(staged_p) != file_info['sha256'].lower():
+                    raise ValueError('Staged file hash mismatch: '+rel_p)
+                if not os.path.exists(target_p): newly_added.append(target_p)
                 shutil.copy2(staged_p, target_p)
                 copied_paths.append((staged_p, target_p))
 
@@ -358,7 +377,7 @@ class IncrementalUpdater:
             for rel_del in plan.to_delete:
                 if should_preserve_file(rel_del, preserve_patterns):
                     continue
-                target_p = os.path.join(self.install_dir, rel_del.replace("/", os.sep))
+                target_p = managed_path(self.install_dir, rel_del)
                 if os.path.isfile(target_p):
                     try:
                         os.remove(target_p)
@@ -380,6 +399,8 @@ class IncrementalUpdater:
             except Exception:
                 pass
 
+            with open(os.path.join(self.install_dir, '.opendesk_owned.json'),'w',encoding='utf-8') as stream:
+                json.dump([item['path'] for item in plan.to_download+plan.to_skip],stream)
             # Update in-memory version
             self.current_version = plan.target_version
 
@@ -393,6 +414,8 @@ class IncrementalUpdater:
             # 6. ROLLBACK TRIGGER: Restore all backed up files
             print(f"[IncrementalUpdater] Error during update application: {e}. Initiating atomic rollback...")
             try:
+                for added in newly_added:
+                    if os.path.isfile(added): os.unlink(added)
                 for root, _, filenames in os.walk(backup_dir):
                     for fname in filenames:
                         bk_file = os.path.join(root, fname)
