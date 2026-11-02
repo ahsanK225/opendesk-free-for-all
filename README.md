@@ -1,6 +1,6 @@
 # OpenDesk: Ultra-Low-Latency Remote Desktop Suite
 
-![Version](https://img.shields.io/badge/version-v1.2.2-red?style=for-the-badge&logo=github)
+![Version](https://img.shields.io/badge/version-v1.2.3-red?style=for-the-badge&logo=github)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-blue?style=for-the-badge&logo=windows)
 ![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
 ![Security](https://img.shields.io/badge/code%20signing-Authenticode%20SHA--256-orange?style=for-the-badge)
@@ -9,7 +9,28 @@ OpenDesk is a modern, high-performance open-source remote desktop solution inspi
 
 ---
 
-## 🚀 What's New in v1.2.2 (Latest Release)
+## 🚀 What's New in v1.2.3 (Latest Release)
+
+- **⚡ Ultra-Low-Latency Streaming Engine**:
+  - **Threaded Capture & Encode**: Screen capture, JPEG encoding and base64 now run on a dedicated worker thread, so remote mouse and keyboard input is never blocked by frame encoding.
+  - **Zero-Copy DeskRT Codec**: Vectorized `uint32` frame diff (<1 ms per frame), clustered dirty-tile bounding boxes and **0 bytes on the wire while the desktop is idle**.
+  - **Dropped-Frame Pipeline**: Only the freshest frames are queued (max 2); stale frames are dropped and a keyframe is requested instead of letting latency grow.
+- **🧠 Real Adaptive Bitrate**:
+  - Scale, JPEG quality and target FPS tune themselves from kernel send-buffer backlog, measured send time and **client-reported heartbeat RTT** (which includes queueing delay on tunnels).
+  - Healthy links recover gradually, so quality never oscillates or spams costly keyframes.
+- **🧵 Dedicated Viewer Decode Thread**:
+  - JPEG decoding no longer blocks the websocket reader; the toolbar shows live **FPS and colour-coded RTT**.
+  - Mouse motion is coalesced to ~60 updates/sec and clipboard sync uses the native `get_text()` bridge.
+- **🔌 Clean Session Teardown**:
+  - Closing a session tab now stops the decoder, cancels Tk timers, stops audio and closes the websocket, so the host stops streaming immediately.
+- **🖥️ Capture Engine Fixes**:
+  - Input desktop is attached once per capture thread (no per-frame handle leak), 64-bit GDI prototypes are set, scaled output uses `StretchBlt`, and the hardware cursor is scaled correctly.
+- **🌐 Connection & Relay Fixes**:
+  - LAN/private hosts automatically use `ws://`, explicit `ws://`/`wss://` addresses are accepted, and the relay uses a 20 s heartbeat plus stale-registration replacement.
+
+---
+
+## 🚀 v1.2.2 Highlights
 
 - **🎨 Modern Dark Glass Context Menu Suite (`ModernContextMenu`)**:
   - **Eliminated OS White Borders**: Replaced native Win32 `tk.Menu` with a custom borderless menu encased in a sleek slate border (`#2a324b`) over deep dark glass (`#131622`).

@@ -1,6 +1,38 @@
 # Changelog
 All notable project changes are documented here.
 
+## [2026-11-02] — Release v1.2.3: Ultra-Low-Latency Streaming, Zero-Copy Capture & Real Backpressure
+
+### Fixed
+- **Huge delay and low FPS on remote sessions**: The old pipeline encoded frames on the asyncio event loop, decoded JPEG inline on the websocket reader, never dropped stale frames and never adapted to slow links, so latency grew continuously. Every stage is now decoupled and bounded.
+- **Per-frame desktop handle leak**: `WindowsScreenCapturer` no longer opens a desktop handle for every frame; the input desktop is attached once per capture thread.
+- **64-bit GDI prototypes**: Missing `argtypes`/`restypes` truncated handles on x64 and made cursor drawing fail silently.
+- **Viewer never closed its websocket**: Closing a session tab left the host streaming forever. `close()`/`destroy()` now stop the decoder, cancel Tk timers, stop audio and close the socket/loop.
+- **LAN connections used `wss://`**: Private and loopback hosts now resolve to `ws://`, and explicit `ws://`/`wss://` targets are parsed correctly.
+- **Stale relay registrations**: A new registration under the same 9-digit ID now closes the old half-open socket instead of leaving a dead peer behind.
+- **`clipboard_get()` AttributeError** in the viewer clipboard bridge replaced with `WindowsClipboard.get_text()`.
+
+### Performance
+- **Threaded encode**: Capture, JPEG encoding and base64 run on a dedicated `ThreadPoolExecutor` worker, keeping the event loop free for instant input injection.
+- **Zero-copy DeskRT codec**: Vectorized `uint32` frame diff (`<1 ms`), padded tile grid reduction, clustered dirty-tile bounding boxes, and no keyframes while idle.
+- **Dropped-frame pipeline**: A 2-frame outgoing queue keeps only the freshest frames; dropped frames trigger a keyframe request so client tile state cannot desync.
+- **Dedicated decode thread**: Client queues hold at most 2 frames, so a burst of frames can never turn into growing end-to-end delay.
+- **Real adaptive bitrate**: Scale, JPEG quality and target FPS now react to kernel send-buffer backlog, measured send time and client-reported heartbeat RTT (which includes queueing delay).
+- **Coalesced mouse input**: High-frequency motion events are merged to at most ~60 updates/sec.
+- **Bounded audio queue**: Voice chunks older than ~300 ms are dropped instead of falling further behind.
+- **Relay keepalive**: 20 s websocket heartbeat closes dead tunnels instead of leaving them registered.
+
+### Changed
+- `MessageType.KEYFRAME_REQUEST` (`keyframe_req`) added so clients can request a fresh full frame after a dropped frame.
+- Viewer toolbar now shows live FPS and colour-coded RTT.
+
+### Tests and Verification
+- 67 of 67 unit and integration tests passing (`python -m pytest tests -q`).
+- Benchmarks on the test machine: capture-only **16.9 ms/frame (~59 FPS ceiling)**, delta encode **0.17 ms**, static frame **0.10 ms / 0 bytes**.
+- End-to-end relay + host + embedded viewer smoke test: **42 FPS rendered, 1 ms RTT**, first frame ~0.19 s, host session ends cleanly when the tab is closed.
+
+---
+
 ## [2026-10-31] — Release v1.2.2: Modern Dark Glass Context Menu & Premium Session Card UI Polish
 ### Added
 - **Modern Dark Glass Context Menu Suite (`ModernContextMenu`)** (`opendesk_app.py`, `tests/test_session_management.py`):

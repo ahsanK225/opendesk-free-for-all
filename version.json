@@ -1,18 +1,17 @@
 {
-  "version": "1.2.2",
-  "release_date": "2026-10-31",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.2/OpenDesk_v1.2.2_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.2/OpenDesk_Setup_v1.2.2_Installer.exe",
+  "version": "1.2.3",
+  "release_date": "2026-11-02",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.3/OpenDesk_v1.2.3_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.3/OpenDesk_Setup_v1.2.3_Installer.exe",
   "changelog": [
-    "Modern Dark Glass Context Menu: Custom borderless context menu eliminating native Win32 white borders with sleek slate border (#2a324b) and dark glass container",
-    "Interactive Menu Hover Highlights: Vibrant primary red highlight for Connect, soft crimson for Delete danger action, and smooth slate highlights for Edit and Rename",
-    "Global Click-Outside Dismissal: Auto-dismiss on click outside, window blur, or Escape key",
-    "Card Elevation & Visual Polish: Card hover elevation (#3b4664 highlight), live green status indicator dot (● Online), and high-tech ID monospace chip (#211823)",
-    "Refined Action Toolbar: Sleek pill buttons for '✏️ Edit' and '🗑️ Delete' with cyan and crimson hover glows",
-    "Input Focus Glow: Smooth red (#ef4444) border glow on focused input fields across all modal dialogs",
-    "Recent & Favorites Custom Session Management: Rename, edit details, and delete sessions directly from UI",
-    "Startup & Connect Crash Immunity: Thread-safe post_ui dispatch queue eliminating cross-thread Tcl mutations",
-    "Seamless In-App Title Bar (CSD): Integrated minimize, maximize, and close controls in top tab bar",
-    "Authenticode Signed Binaries: Digitally signed with SHA-256 and DigiCert RFC 3161 timestamps"
+    "Ultra-Low-Latency Streaming: capture, JPEG encoding and base64 now run on a dedicated worker thread so remote input is never blocked by frame encoding",
+    "Zero-Copy DeskRT Codec: vectorized uint32 frame diff, clustered dirty tiles and zero bytes on the wire while the desktop is idle",
+    "Dropped-Frame Pipeline: stale frames are discarded instead of queued, so network congestion can no longer build up growing delay",
+    "Real Adaptive Bitrate: capture scale, JPEG quality and FPS tune themselves from kernel send backlog, send time and client-reported RTT",
+    "Dedicated Viewer Decode Thread: JPEG decoding no longer blocks the websocket reader; FPS and live RTT are shown in the session toolbar",
+    "Clean Session Teardown: closing a tab now closes the websocket, stops audio and ends the host stream immediately",
+    "Capture Engine Fixes: cached input desktop attachment, 64-bit GDI prototypes, StretchBlt scaled capture and no per-frame handle leak",
+    "Connection Fixes: ws:// is used automatically for LAN/private hosts and explicit ws/wss URLs are accepted",
+    "Relay Hardening: websocket heartbeat keepalive and stale duplicate registration replacement"
   ]
 }
