@@ -57,9 +57,9 @@ OpenDesk is a modern, high-performance open-source remote desktop solution inspi
 
 ## 📦 Standalone Distribution & Installer
 
-### 1. Ready-To-Share Installer (v1.2.2)
-* **Direct Download (Installer)**: [👉 Download Setup Wizard (`OpenDesk_Setup_v1.2.2_Installer.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.2/OpenDesk_Setup_v1.2.2_Installer.exe)
-* **Direct Download (Portable)**: [👉 Download Portable Executable (`OpenDesk_v1.2.2_Portable.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.2/OpenDesk_v1.2.2_Portable.exe)
+### 1. Ready-To-Share Installer (v1.2.3)
+* **Direct Download (Installer)**: [👉 Download Setup Wizard (`OpenDesk_Setup_v1.2.3_Installer.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.3/OpenDesk_Setup_v1.2.3_Installer.exe)
+* **Direct Download (Portable)**: [👉 Download Portable Executable (`OpenDesk_v1.2.3_Portable.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.3/OpenDesk_v1.2.3_Portable.exe)
 * **GitHub Releases**: [View All Releases & Assets](https://github.com/ahsanK225/opendesk-free-for-all/releases)
 * **Local Build Path**: Generated locally in your project folder as `OpenDesk_Setup.exe` and `OpenDesk.exe`.
 
@@ -91,9 +91,9 @@ OpenDesk is a modern, high-performance open-source remote desktop solution inspi
 
 ## 📦 Standalone Distribution & Installer
 
-### 1. Ready-To-Share Installer (v1.2.2)
-* **Direct Download (Installer)**: [👉 Download Setup Wizard (`OpenDesk_Setup_v1.2.2_Installer.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.2/OpenDesk_Setup_v1.2.2_Installer.exe)
-* **Direct Download (Portable)**: [👉 Download Portable Executable (`OpenDesk_v1.2.2_Portable.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.2/OpenDesk_v1.2.2_Portable.exe)
+### 1. Ready-To-Share Installer (v1.2.3)
+* **Direct Download (Installer)**: [👉 Download Setup Wizard (`OpenDesk_Setup_v1.2.3_Installer.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.3/OpenDesk_Setup_v1.2.3_Installer.exe)
+* **Direct Download (Portable)**: [👉 Download Portable Executable (`OpenDesk_v1.2.3_Portable.exe`)](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v1.2.3/OpenDesk_v1.2.3_Portable.exe)
 * **GitHub Releases**: [View All Releases & Assets](https://github.com/ahsanK225/opendesk-free-for-all/releases)
 * **Local Build Path**: Generated locally in your project folder as `OpenDesk_Setup.exe` and `OpenDesk.exe`.
 
