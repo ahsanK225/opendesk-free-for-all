@@ -1,0 +1,5 @@
+{
+  "scope": "Local Tk upload microbenchmark at 1280x720; excludes capture/network",
+  "allocate_ms": 79.928,
+  "reuse_ms": 11.674
+}

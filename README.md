@@ -1,8 +1,22 @@
-# OpenDesk 2.0.0
+# OpenDesk 2.0.1
 
 Windows remote desktop with native and browser viewers, approval-based sessions, voice, clipboard and file transfer. Inspired by remote assistance tools such as AnyDesk. This project implements its own JPEG tile/delta protocol; it is not an implementation of AnyDesk's proprietary DeskRT codec and does not connect to AnyDesk devices.
 
 **Upgrade both devices to v2.** The authorization and media protocol deliberately reject v1 clients/hosts.
+
+## People and engineering portfolio
+
+OpenDesk is a collaborative open-source project originating in [Ahsan's repository](https://github.com/ahsanK225/opendesk-free-for-all). Original authorship and license notices are preserved.
+
+[Hamza Iqbal (@hamxa8769)](https://github.com/hamxa8769) contributes the v2 performance, session authorization, voice, launcher and installer engineering. His [linked portfolio fork](https://github.com/hamxa8769/opendesk-free-for-all), [engineering project](https://github.com/users/hamxa8769/projects/3), and [contribution record](docs/CONTRIBUTIONS.md) show shipped work, evidence and remaining validation. The next planned milestone is a Rust core with a Qt/QML desktop interface; this release still uses Python/Tk.
+
+## Installer and launcher hotfix (2.0.1)
+
+The installer no longer waits on Windows Restart Manager. A small maintenance helper signals a clean shutdown, then force-closes only verified OpenDesk process names in the current Windows session after a bounded grace period. Elevated instances produce a clear administrator/retry error instead of an indefinite closing-applications wait. Existing settings and device identity are preserved during an in-place upgrade; uninstalling the previous version is unnecessary.
+
+The desktop launcher is single-instance and activates the existing window. Native Windows caption/resize controls, responsive saved-session cards, bounded/coalesced UI callbacks and reusable image uploads improve UI responsiveness. Audio start/stop runs outside the GUI thread; shutdown has an independent watchdog.
+
+See [2.0.1 validation](docs/RELEASE_VALIDATION_2.0.1.md). The application remains Python/Tk for this hotfix; no Rust/C++ migration was performed.
 
 ## What changed
 

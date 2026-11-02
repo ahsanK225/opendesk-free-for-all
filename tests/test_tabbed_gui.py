@@ -13,6 +13,10 @@ import common.config as config_mod
 
 class TestTabbedGUI(unittest.TestCase):
     def setUp(self):
+        from unittest.mock import patch
+        network_patch=patch('client.viewer.EmbeddedSessionView._start_connection',lambda self:None)
+        network_patch.start()
+        self.addCleanup(network_patch.stop)
         os.environ["OPENDESK_SILENT_TEST"] = "1"
         self.root = tk.Tk()
         self.root.withdraw()
@@ -33,6 +37,8 @@ class TestTabbedGUI(unittest.TestCase):
                 except Exception:
                     pass
             self.root.destroy()
+            self.root = None
+            __import__("gc").collect()
         except Exception:
             pass
 
@@ -163,21 +169,23 @@ class TestTabbedGUI(unittest.TestCase):
         finally:
             OpenDeskGUI._start_services = original_start
 
-    def test_custom_integrated_window_controls(self):
-        """Verify integrated window controls (Minimize, Maximize, and Close) exist and function safely."""
-        original_start = OpenDeskGUI._start_services
-        OpenDeskGUI._start_services = lambda self: None
-        try:
-            app = OpenDeskGUI(self.root, port=18083)
-            self.assertTrue(hasattr(app, "min_btn"), "Minimize button must be present in top tab bar")
-            self.assertTrue(hasattr(app, "max_btn"), "Maximize button must be present in top tab bar")
-            self.assertTrue(hasattr(app, "close_btn"), "Close button must be present in top tab bar")
-            self.assertEqual(app.min_btn.cget("text"), "―")
-            self.assertIn(app.max_btn.cget("text"), ["🗖", "🗗"])
-            self.assertEqual(app.close_btn.cget("text"), "✕")
+    def test_native_window_controls_and_resize_contract(self):
+        from unittest.mock import patch
+        with patch.object(OpenDeskGUI,'_start_services',lambda self:None):
+            app=OpenDeskGUI(self.root,port=18083)
+            self.assertIn('OpenDesk',self.root.title())
+            self.assertTrue(all(self.root.resizable()))
+            self.assertTrue(self.root.protocol('WM_DELETE_WINDOW'))
+            if os.name=='nt':
+                import ctypes
+                from ctypes import wintypes
+                user=ctypes.windll.user32
+                user.GetParent.argtypes=[wintypes.HWND]; user.GetParent.restype=wintypes.HWND
+                get_style=user.GetWindowLongPtrW if ctypes.sizeof(ctypes.c_void_p)==8 else user.GetWindowLongW
+                get_style.argtypes=[wintypes.HWND,ctypes.c_int]; get_style.restype=ctypes.c_ssize_t
+                hwnd=user.GetParent(self.root.winfo_id()) or self.root.winfo_id()
+                self.assertTrue(get_style(hwnd,-16)&0x00C00000,'Windows caption must own minimize/maximize/close')
             app.destroy()
-        finally:
-            OpenDeskGUI._start_services = original_start
 
 if __name__ == "__main__":
     unittest.main()

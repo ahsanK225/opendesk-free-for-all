@@ -10,6 +10,10 @@ from host.input_controller import WindowsInputController
 
 class TestNativeViewer(unittest.TestCase):
     def setUp(self):
+        from unittest.mock import patch
+        network_patch=patch('client.viewer.EmbeddedSessionView._start_connection',lambda self:None)
+        network_patch.start()
+        self.addCleanup(network_patch.stop)
         self.root = tk.Tk()
         self.root.withdraw()
         self.root.update_idletasks()
@@ -22,6 +26,8 @@ class TestNativeViewer(unittest.TestCase):
                 except Exception:
                     pass
             self.root.destroy()
+            self.root = None
+            __import__("gc").collect()
         except Exception:
             pass
 

@@ -18,6 +18,8 @@ if (-not $SkipTests) {
 }
 python -m tools.fetch_cloudflared
 if ($LASTEXITCODE -ne 0) { throw 'Tunnel binary verification failed' }
+python -m PyInstaller --noconfirm --onefile --noconsole --name OpenDeskSetupHelper --distpath $outputRoot --workpath (Join-Path $outputRoot '.maintenance-work') --specpath (Join-Path $PSScriptRoot '.build-spec') --paths $PSScriptRoot run_maintenance.py
+if ($LASTEXITCODE -ne 0) { throw 'Installer shutdown helper build failed' }
 python -m PyInstaller opendesk.spec --noconfirm --distpath $outputRoot --workpath (Join-Path $outputRoot '.work')
 if ($LASTEXITCODE -ne 0) { throw 'Portable build failed' }
 $portable = Join-Path $outputRoot 'OpenDesk.exe'
@@ -29,7 +31,7 @@ if ($env:OPENDESK_SIGN_PFX) {
 $version = (Get-Content -LiteralPath 'version.json' -Raw | ConvertFrom-Json).version
 Copy-Item -LiteralPath $portable -Destination (Join-Path $outputRoot "OpenDesk_v${version}_Portable.exe") -Force
 if ($InnoCompiler) {
-    & $InnoCompiler "/DPortablePath=$portable" "/O$outputRoot" opendesk_installer.iss
+    & $InnoCompiler "/DPortablePath=$portable" "/DMaintenancePath=$(Join-Path $outputRoot 'OpenDeskSetupHelper.exe')" "/O$outputRoot" opendesk_installer.iss
     if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
     $installer = Join-Path $outputRoot "OpenDesk_Setup_v${version}.exe"
     if ($env:OPENDESK_SIGN_PFX) {

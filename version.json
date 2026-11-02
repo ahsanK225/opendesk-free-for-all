@@ -1,15 +1,13 @@
 {
-  "version": "2.0.0",
+  "version": "2.0.1",
   "release_date": "2026-11-03",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.0.0/OpenDesk_v2.0.0_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.0.0/OpenDesk_Setup_v2.0.0_Installer.exe",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.0.1/OpenDesk_v2.0.1_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.0.1/OpenDesk_Setup_v2.0.1_Installer.exe",
   "changelog": [
-    "Protocol v2: explicit approval, authenticated host registration and immediate session revocation",
-    "DXGI capture with GDI fallback; binary JPEG streaming, bounded acknowledgements and adaptive profiles",
-    "Explicit-rate 20ms voice and AudioWorklet browser capture",
-    "Native file transfers with scoped paths, size/order validation and optional SHA-256 verification",
-    "Device identity pinning, DPAPI credential storage, verified update downloads and reproducible build tooling"
+    "Bounded installer shutdown with graceful signaling and verified PID force-close fallback",
+    "Single-instance native launcher with activation and maintenance commands",
+    "Native Windows frame, responsive saved-session cards and bounded UI dispatch",
+    "Nonblocking audio teardown and shorter video snapshot locks"
   ],
-  "sha256": "6ef1abbf7e45a1610dee41f1ce994fd6fa6a8bf90a432756deba582238065996",
-  "installer_sha256": "faf1ba895dfb4c691b4a166ffc51a324d98f131e4078ec8bccc6fe96f39a9d40"
+  "sha256": "83486fddf1817d09d52ddb8c4034063f5499c633ef20d19801feac81d8ebe31a"
 }

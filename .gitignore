@@ -34,3 +34,5 @@ certs/*.pfx
 .release-tools/
 .test-state/
 *.part
+
+.build-spec/

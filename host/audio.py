@@ -194,6 +194,7 @@ class AudioEngine:
 
         # Continuous thread-safe sample ring buffer for playback
         self.play_lock = threading.Lock()
+        self._lifecycle_lock = threading.RLock()
         self.play_samples = np.empty((0,), dtype=np.int16)
         self.play_queue = queue.Queue(maxsize=20)
 
@@ -432,6 +433,10 @@ class AudioEngine:
             pass
 
     def start(self):
+        with self._lifecycle_lock:
+            return self._start_streams()
+
+    def _start_streams(self):
         """Start microphone capture and speaker playback streams."""
         try:
             import sounddevice as sd
@@ -498,6 +503,10 @@ class AudioEngine:
             print(f"[Audio] SoundDevice unavailable: {e}")
 
     def stop(self):
+        with self._lifecycle_lock:
+            return self._stop_streams()
+
+    def _stop_streams(self):
         """Stop audio streams and clear buffers."""
         self.running = False
         if self.input_stream:

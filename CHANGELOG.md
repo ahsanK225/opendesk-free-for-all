@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.1 — 2026-11-03
+
+- Replaced Restart Manager closing-applications waits with a small bounded shutdown helper and verified PID force-close fallback.
+- Added single-instance activation and early maintenance launch without GUI/media imports.
+- Restored native Windows caption/resize controls, responsive cached cards and bounded visual callback dispatch.
+- Reused Tk image storage, shortened image snapshot locks and moved audio lifecycle work off the GUI thread.
+- Added launcher/installer regression coverage and isolated hung-process upgrade validation.
+
+
 ## 2.0.0 — 2026-11-03
 
 Breaking protocol upgrade. Both host and viewer must run v2.

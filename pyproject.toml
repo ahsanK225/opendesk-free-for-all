@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opendesk-remote"
-version = "2.0.0"
+version = "2.0.1"
 description = "Windows remote desktop with explicit session authorization and adaptive JPEG streaming"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
@@ -18,7 +18,7 @@ opendesk-relay = "run_relay:main"
 
 [tool.setuptools]
 packages = ["common", "host", "client", "relay", "tools"]
-py-modules = ["opendesk_app", "run_host", "run_relay"]
+py-modules = ["opendesk_app", "run_host", "run_relay", "run_maintenance"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}

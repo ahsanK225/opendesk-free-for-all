@@ -16,10 +16,15 @@ Features:
 
 import sys
 import os
+# Installer maintenance runs before importing Tk, audio, networking or Pillow.
+if '--shutdown' in sys.argv:
+    from common.launcher import shutdown_main
+    raise SystemExit(shutdown_main())
 import socket
 import secrets
 import threading
 import queue
+from common.ui import UiDispatcher
 import asyncio
 import time
 import webbrowser
@@ -330,7 +335,7 @@ class OpenDeskGUI:
         self.active_nav_section = "home"
 
         # Thread-safe UI dispatch queue for background threads
-        self._ui_queue: queue.Queue = queue.Queue()
+        self._ui_queue = UiDispatcher()
         self._ui_queue_timer = None
         self._is_closing = False
 
@@ -352,7 +357,8 @@ class OpenDeskGUI:
     def post_ui(self, fn, *args, **kwargs):
         """Thread-safe dispatch from background worker threads to Tkinter main thread."""
         if not getattr(self, "_is_closing", False):
-            self._ui_queue.put((fn, args, kwargs))
+            key = fn if getattr(fn,'__name__','') in ('on_test_level','on_quick_level','_on_mic_level') else None
+            self._ui_queue.post(fn,*args,key=key,**kwargs)
 
     def destroy(self):
         """Stops UI timers and cleans up Tkinter resources cleanly."""
@@ -365,47 +371,29 @@ class OpenDeskGUI:
         self._ui_queue_timer = None
 
     def _process_ui_queue(self):
-        """Drains pending UI updates on the main Tkinter thread without cross-thread Tcl locks."""
-        if getattr(self, "_is_closing", False):
-            return
-        try:
-            while not self._ui_queue.empty():
-                fn, args, kwargs = self._ui_queue.get_nowait()
-                try:
-                    fn(*args, **kwargs)
-                except Exception as e:
-                    print(f"[OpenDesk UI Queue] Error executing {getattr(fn, '__name__', str(fn))}: {e}")
-        except Exception:
-            pass
-        finally:
-            try:
-                if self.root and self.root.winfo_exists() and not getattr(self, "_is_closing", False):
-                    self._ui_queue_timer = self.root.after(16, self._process_ui_queue)
-            except Exception:
-                pass
+        if self._is_closing: return
+        self._ui_queue.drain(budget_ms=4,max_items=64)
+        self._ui_queue_timer = self.root.after(4 if self._ui_queue.pending() else 16,self._process_ui_queue)
 
     def _setup_window(self):
-        self.root.title("OpenDesk - AnyDesk Free For All Edition")
-        self.root.geometry("1100x700")
-        self.root.minsize(880, 560)
-        self.root.configure(bg="#0c0e14")
-        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.root.title('OpenDesk — Remote Desktop')
+        self.root.geometry('1100x740')
+        self.root.minsize(900,620)
+        self.root.configure(bg='#0c0e14')
+        self.root.protocol('WM_DELETE_WINDOW',self._on_close)
         try:
             self.root.eval('tk::PlaceWindow . center')
-        except Exception:
-            pass
-
-        # Seamless Client-Side Decoration: integrate window controls inside app on Windows
-        if sys.platform == "win32":
-            try:
-                self.root.withdraw()
-                self.root.update_idletasks()
-                self._apply_custom_frameless_window()
-                self.root.deiconify()
-            except Exception:
-                self._apply_custom_frameless_window()
-        else:
-            self._apply_custom_frameless_window()
+            if sys.platform == 'win32':
+                import ctypes
+                from ctypes import wintypes
+                hwnd=self.root.winfo_id()
+                user32=ctypes.windll.user32
+                user32.GetParent.argtypes=[wintypes.HWND]
+                user32.GetParent.restype=wintypes.HWND
+                hwnd=user32.GetParent(hwnd) or hwnd
+                mode=ctypes.c_int(1)
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(ctypes.c_void_p(hwnd),20,ctypes.byref(mode),4)
+        except (tk.TclError,OSError,AttributeError): pass
 
     def _apply_custom_frameless_window(self):
         """
@@ -532,8 +520,8 @@ class OpenDeskGUI:
         self.tab_bar_frame.pack(fill="x", side="top")
 
         # Allow dragging the window smoothly from empty areas of the tab bar
-        self.tab_bar_frame.bind("<Button-1>", self._start_window_drag)
-        self.tab_bar_frame.bind("<Double-Button-1>", lambda e: self._toggle_maximize_window())
+        # Windows owns dragging, resizing, snapping and caption controls.
+
 
         # Brand / Logo on far left
         brand_frame = tk.Frame(self.tab_bar_frame, bg="#141822")
@@ -560,34 +548,6 @@ class OpenDeskGUI:
                                   bg="#141822", fg="#94a3b8", activebackground="#1e2230", activeforeground="#ef4444",
                                   bd=0, padx=8, pady=2, cursor="hand2", command=lambda: self.switch_tab("home"))
         self.plus_btn.pack(side="left", padx=2, pady=6)
-
-        # --- Integrated Window Controls on Far Right ("App Ke Ander Hi") ---
-        win_controls = tk.Frame(self.tab_bar_frame, bg="#141822")
-        win_controls.pack(side="right", fill="y")
-
-        # Minimize Button '―'
-        self.min_btn = tk.Label(win_controls, text="―", font=("Segoe UI", 9),
-                                bg="#141822", fg="#94a3b8", width=5, cursor="hand2")
-        self.min_btn.pack(side="left", fill="y")
-        self.min_btn.bind("<Button-1>", lambda e: self._minimize_window())
-        self.min_btn.bind("<Enter>", lambda e: self.min_btn.configure(bg="#222838", fg="#f1f5f9"))
-        self.min_btn.bind("<Leave>", lambda e: self.min_btn.configure(bg="#141822", fg="#94a3b8"))
-
-        # Maximize / Restore Button '🗖'
-        self.max_btn = tk.Label(win_controls, text="🗖", font=("Segoe UI", 9),
-                                bg="#141822", fg="#94a3b8", width=5, cursor="hand2")
-        self.max_btn.pack(side="left", fill="y")
-        self.max_btn.bind("<Button-1>", lambda e: self._toggle_maximize_window())
-        self.max_btn.bind("<Enter>", lambda e: self.max_btn.configure(bg="#222838", fg="#f1f5f9"))
-        self.max_btn.bind("<Leave>", lambda e: self.max_btn.configure(bg="#141822", fg="#94a3b8"))
-
-        # Close Button '✕' (Red on hover)
-        self.close_btn = tk.Label(win_controls, text="✕", font=("Segoe UI", 9),
-                                  bg="#141822", fg="#94a3b8", width=5, cursor="hand2")
-        self.close_btn.pack(side="left", fill="y")
-        self.close_btn.bind("<Button-1>", lambda e: self._on_close())
-        self.close_btn.bind("<Enter>", lambda e: self.close_btn.configure(bg="#ef4444", fg="#ffffff"))
-        self.close_btn.bind("<Leave>", lambda e: self.close_btn.configure(bg="#141822", fg="#94a3b8"))
 
         # Divider line
         div = tk.Frame(self.tab_bar_frame, bg="#202534", width=1)
@@ -1152,15 +1112,29 @@ class OpenDeskGUI:
 
         self._render_recent_grid()
 
-    def _render_recent_grid(self):
-        for child in self.recent_grid_container.winfo_children():
-            child.destroy()
+    def _schedule_recent_layout(self, event):
+        width=max(240,event.width)
+        columns=max(1,min(4,width//258))
+        if columns == getattr(self,'_recent_columns',None): return
+        self._recent_columns=columns
+        timer=getattr(self,'_recent_layout_timer',None)
+        if timer: self.root.after_cancel(timer)
+        self._recent_layout_timer=self.root.after(100,self._render_recent_grid)
 
+    def _render_recent_grid(self):
+        self._recent_layout_timer=None
         recents = get_recent_sessions()
         filter_mode = self.recent_filter_var.get() if hasattr(self, "recent_filter_var") else "all"
 
         if filter_mode == "favorites":
             recents = [r for r in recents if r.get("favorite")]
+
+        max_cols=getattr(self,'_recent_columns',3)
+        signature=(filter_mode,max_cols,tuple((r.get('id'),r.get('alias'),r.get('favorite'),r.get('last_seen')) for r in recents))
+        if signature == getattr(self,'_recent_grid_signature',None) and self.recent_grid_container.winfo_children(): return
+        self._recent_grid_signature=signature
+        self.recent_grid_container.bind('<Configure>',self._schedule_recent_layout)
+        for child in self.recent_grid_container.winfo_children(): child.destroy()
 
         if not recents:
             empty_text = "No favorite sessions yet. Click the star ⭐ on any card to add it to favorites." if filter_mode == "favorites" else "No sessions found. Enter an address above to connect."
@@ -1175,7 +1149,7 @@ class OpenDeskGUI:
 
         row = 0
         col = 0
-        max_cols = 4
+        max_cols = getattr(self,"_recent_columns",3)
 
         for item in recents:
             target_id = item.get("id", "")
@@ -1185,7 +1159,7 @@ class OpenDeskGUI:
 
             # Outer Card Frame with subtle hover elevation
             card = tk.Frame(grid_frame, bg="#161926", bd=1, relief="solid",
-                            highlightbackground="#242b3d", highlightthickness=1, width=240, height=148)
+                            highlightbackground="#242b3d", highlightthickness=1, width=240, height=160)
             card.grid(row=row, column=col, padx=8, pady=8, sticky="nsew")
             card.pack_propagate(False)
 
@@ -1828,7 +1802,7 @@ class OpenDeskGUI:
         tk.Label(settings_win,text='Device identity fingerprint — compare on first connection',bg='#141822',fg='#94a3b8').pack(fill='x',padx=20,pady=(8,0))
         identity_entry.pack(fill='x',padx=20,pady=4)
 
-        tk.Label(settings_win, text="⚙️ OpenDesk Settings & Discord HD Voice Suite", font=("Segoe UI", 12, "bold"),
+        tk.Label(settings_win, text="⚙️ OpenDesk Settings & Voice", font=("Segoe UI", 12, "bold"),
                  bg="#141822", fg="#f1f5f9").pack(anchor="w", padx=20, pady=(14, 4))
 
         # --- Section 1: Relay WebSocket Configuration ---
@@ -2195,6 +2169,10 @@ class OpenDeskGUI:
             return
         self._is_closing = True
         self.root.withdraw()
+        def watchdog():
+            time.sleep(4)
+            os._exit(0)
+        threading.Thread(target=watchdog,name='shutdown-watchdog',daemon=True).start()
         for tab in self.tabs:
             if tab.get('viewer'):
                 tab['viewer'].close()
@@ -2210,7 +2188,7 @@ class OpenDeskGUI:
             finally:
                 done.set()
         threading.Thread(target=cleanup, daemon=True).start()
-        deadline = time.monotonic()+5
+        deadline = time.monotonic()+3
         def finish():
             if done.is_set() or time.monotonic() >= deadline:
                 self.root.destroy()
@@ -2252,10 +2230,28 @@ def main():
             app.destroy()
             root.destroy()
         return
-    port = find_free_port(8080)
-    root = tk.Tk()
-    app = OpenDeskGUI(root, port)
-    root.mainloop()
+    from common.launcher import SingleInstance
+    instance=SingleInstance() if sys.platform=='win32' else None
+    if instance and not instance.primary:
+        instance.close()
+        return
+    try:
+        port = find_free_port(8080)
+        root = tk.Tk()
+        root.withdraw()
+        app = OpenDeskGUI(root, port)
+        def poll_launcher():
+            if app._is_closing: return
+            event=instance.poll() if instance else None
+            if event=='shutdown': app._on_close(); return
+            if event=='activate':
+                root.deiconify(); root.lift(); root.focus_force()
+            root.after(100,poll_launcher)
+        root.after(100,poll_launcher)
+        root.deiconify()
+        root.mainloop()
+    finally:
+        if instance: instance.close()
 
 
 if __name__ == "__main__":

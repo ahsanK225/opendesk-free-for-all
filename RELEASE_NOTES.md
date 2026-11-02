@@ -1,41 +1,15 @@
-# OpenDesk 2.0.0 — Performance and security upgrade
+# OpenDesk 2.0.1 — Reliable installation and smoother native UI
 
-Upgrade both computers to v2. The protocol rejects v1 clients and hosts.
+This maintenance release fixes the installer stopping at "closing applications".
 
-## Sharing and responsiveness
+- A small standalone helper requests graceful shutdown, then force-closes verified OpenDesk processes in the current Windows session after a bounded grace period. It handles older versions without the new shutdown protocol and onefile parent/child processes.
+- Windows Restart Manager's automatic close/restart wait is disabled. The helper returns an actionable error if an elevated process cannot be closed; setup does not delete user settings or device identity.
+- Single-instance launch activates the current window. App shutdown starts an independent watchdog before driver cleanup; audio open/close does not block the GUI.
+- Native Windows caption/resize/snap controls replace the custom titlebar controls. Recent cards reflow on resize and skip unchanged rebuilds.
+- Main-thread work is budgeted; stale VU/frame updates are coalesced. Image resizing/Tcl uploads run after releasing the shared frame lock; stable-size Tk images are reused.
 
-- DXGI Desktop Duplication replaces the default GDI capture path, retaining a GDI fallback for unsupported drivers/sessions.
-- Dedicated capture/encode worker keeps video processing off the network/audio event loop.
-- Binary JPEG packets remove base64 image expansion. A bounded RTT-aware acknowledgement window preserves delta dependencies and limits backlog.
-- Balanced, Performance and Sharp profiles; Performance targets 60 FPS at a lower resolution/quality. Displayed FPS reflects actual rendered frames and idle state.
-- Local capture measurement on the validation machine: GDI mean 33.26ms, adaptive DXGI mean 6.56ms. A synthetic keyframe used 25.0% fewer wire bytes. These are local measurements, not guaranteed internet frame rates.
+104 Python tests passed. The frozen launcher rejected a duplicate instance, exited gracefully in 2.01 seconds, and force-closed a deliberately unresponsive test process in 3.29 seconds. Installer upgrade and final artifact checks are recorded in docs/RELEASE_VALIDATION_2.0.1.md.
 
-## Voice
+A local 1280x720 Tk upload microbenchmark measured 79.928ms/frame for new image allocation versus 11.674ms for reuse. This is a local upload-stage measurement, not guaranteed end-to-end internet FPS.
 
-- Explicit sample-rate/channel/format metadata fixes the previous browser/native playback-speed mismatch.
-- Browser AudioWorklet produces 20ms blocks; native PCM uses 48kHz/20ms blocks.
-- Bounded audio queues and buffers, speech-gate hangover, native resampling, thread-safe VU updates and local-only microphone testing.
-- Browser echo cancellation uses the browser implementation. Native acoustic echo cancellation is not implemented; use headphones for speaker feedback.
-
-## Session and file safety
-
-- Host registration secret, request-bound approval, host busy checks, expiring requests and immediate disconnect revocation.
-- Salted password challenge/proof, attempt limits, centralized host authorization and relay role/permission filtering.
-- Ed25519 device identity, native fingerprint pinning, signed expiring discovery records and Windows DPAPI credential migration.
-- Native file manager and browser transfers scoped to the host home folder, ordered/length-checked chunks, atomic replacement and optional upload SHA-256 verification.
-- Tab/socket cleanup, input release on disconnect/focus loss, graceful tunnel termination/restart and removal of misleading Online/signed/standby-FPS claims.
-
-## Build and maintenance
-
-- Fixed source imports and annotation startup crashes; pinned tested dependencies and supplied Windows version resources.
-- Verified full-binary updates, external restart helper, contained incremental paths, ownership-aware deletion and improved rollback.
-- Build script, Windows CI template, regression coverage, benchmark tooling and distribution checksums.
-
-## Validation and deployment status
-
-97 Python regression tests and browser protocol/password/audio checks passed locally. Source GUI launch and Windows capture were checked. See docs/RELEASE_VALIDATION.md for packaged build checks.
-
-No trusted publisher certificate was supplied: artifacts are unsigned. Two-device WAN sessions, long-duration real microphone/speaker calls, target GPU coverage and independent security review remain rollout acceptance work. Current capabilities cover the primary monitor; there is no service/pre-login mode, guaranteed UAC secure-desktop control, WebRTC P2P transport or application-layer end-to-end encryption. The tunnel/relay operator remains part of the trust boundary.
-
-
-Upstream v1.2.3 was merged during final integration. Its buffer reuse/idle codec behavior, LAN parsing tests, mouse coalescing and real RTT probe are retained within the v2 protocol.
+Both computers should use protocol-v2 builds; 2.0.0 and 2.0.1 share that protocol. Artifacts are unsigned. Real WAN/headset acceptance and an independent security assessment remain outstanding. This hotfix retains Python/Tk; a native Rust/C++ engine or Qt migration is separate work.

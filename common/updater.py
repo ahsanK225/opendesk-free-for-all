@@ -21,7 +21,7 @@ from common.incremental_updater import (
     compute_file_sha256,
 )
 
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/ahsanK225/opendesk-free-for-all/main/version.json"
 
 

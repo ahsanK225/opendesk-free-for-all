@@ -21,6 +21,7 @@ import base64
 import asyncio
 import threading
 import queue
+from common.ui import UiDispatcher
 import secrets
 from common.identity import verify_identity, trusted_key, trust_device, fingerprint
 from common.security import password_proof
@@ -119,7 +120,7 @@ class EmbeddedSessionView(tk.Frame):
         self._fps_after_id = None
 
         # Thread-safe UI dispatch queue for background WebSocket / decode threads
-        self._ui_queue: queue.Queue = queue.Queue()
+        self._ui_queue = UiDispatcher()
         self._is_closed = False
 
         self._build_ui()
@@ -130,24 +131,14 @@ class EmbeddedSessionView(tk.Frame):
     def post_ui(self, fn, *args, **kwargs):
         """Thread-safe UI callback dispatch to Tkinter main thread."""
         if not getattr(self, "_is_closed", False):
-            self._ui_queue.put((fn, args, kwargs))
+            key=fn if getattr(fn,'__name__','') in ('_on_mic_level','on_quick_level','_dispatch_video_render') else None
+            self._ui_queue.post(fn,*args,key=key,**kwargs)
 
     def _process_ui_queue(self):
-        """Drains pending UI updates on the main Tkinter thread without cross-thread Tcl locks."""
-        if getattr(self, "_is_closed", False):
-            return
-        try:
-            while not self._ui_queue.empty():
-                fn, args, kwargs = self._ui_queue.get_nowait()
-                try:
-                    fn(*args, **kwargs)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        finally:
-            if not getattr(self, "_is_closed", False) and self._safe_exists():
-                self._ui_queue_timer = self.after(16, self._process_ui_queue)
+        if self._is_closed: return
+        self._ui_queue.drain(budget_ms=4,max_items=64)
+        if self._safe_exists():
+            self._ui_queue_timer=self.after(4 if self._ui_queue.pending() else 16,self._process_ui_queue)
 
     def open_files(self):
         if not self.in_session or not self.granted_permissions.get('file_transfer',False):
@@ -793,7 +784,7 @@ class EmbeddedSessionView(tk.Frame):
             # If audio active, restart stream with new devices
             if self.audio_active:
                 self.audio_engine.stop()
-                self.audio_engine.start()
+                self._start_audio_async()
 
             top.destroy()
 
@@ -817,7 +808,7 @@ class EmbeddedSessionView(tk.Frame):
         self.audio_active = not self.audio_active
         self.audio_engine.mic_enabled = self.audio_active
         if self.audio_active:
-            self.audio_engine.start()
+            self._start_audio_async()
             self.voice_btn.config(text="🎙️ Voice: ON", bg="#1f382a", fg="#10b981")
         else:
             self.voice_btn.config(text="🎙️ Voice: MUTED", bg="#3d2a1f", fg="#e0af68")
@@ -950,68 +941,70 @@ class EmbeddedSessionView(tk.Frame):
             return
 
         with self.image_lock:
-            if not self.remote_image:
-                return
-            cw = max(1, self.canvas.winfo_width())
-            ch = max(1, self.canvas.winfo_height())
-            rw = max(1, self.remote_width)
-            rh = max(1, self.remote_height)
+            if not self.remote_image: return
+            source=self.remote_image.copy()
+            rw,rh=source.size
+        cw = max(1, self.canvas.winfo_width())
+        ch = max(1, self.canvas.winfo_height())
 
-            if self.view_mode == "stretch":
-                dw = max(1, int(cw * self.zoom_level))
-                dh = max(1, int(ch * self.zoom_level))
-                self.offset_x = (cw - dw) // 2
-                self.offset_y = (ch - dh) // 2
-                self.canvas_scale = dw / float(rw)
-            elif self.view_mode == "original":
-                dw = max(1, int(rw * self.zoom_level))
-                dh = max(1, int(rh * self.zoom_level))
-                self.offset_x = (cw - dw) // 2
-                self.offset_y = (ch - dh) // 2
-                self.canvas_scale = self.zoom_level
-            else:  # "fit" (Default - Auto-Adapt Aspect Ratio)
-                base_scale = min(cw / float(rw), ch / float(rh))
-                self.canvas_scale = base_scale * self.zoom_level
-                dw = max(1, int(rw * self.canvas_scale))
-                dh = max(1, int(rh * self.canvas_scale))
-                self.offset_x = (cw - dw) // 2
-                self.offset_y = (ch - dh) // 2
+        if self.view_mode == "stretch":
+            dw = max(1, int(cw * self.zoom_level))
+            dh = max(1, int(ch * self.zoom_level))
+            self.offset_x = (cw - dw) // 2
+            self.offset_y = (ch - dh) // 2
+            self.canvas_scale = dw / float(rw)
+        elif self.view_mode == "original":
+            dw = max(1, int(rw * self.zoom_level))
+            dh = max(1, int(rh * self.zoom_level))
+            self.offset_x = (cw - dw) // 2
+            self.offset_y = (ch - dh) // 2
+            self.canvas_scale = self.zoom_level
+        else:  # "fit" (Default - Auto-Adapt Aspect Ratio)
+            base_scale = min(cw / float(rw), ch / float(rh))
+            self.canvas_scale = base_scale * self.zoom_level
+            dw = max(1, int(rw * self.canvas_scale))
+            dh = max(1, int(rh * self.canvas_scale))
+            self.offset_x = (cw - dw) // 2
+            self.offset_y = (ch - dh) // 2
 
-            self.display_width = dw
-            self.display_height = dh
-            self._clamp_pan()
+        self.display_width = dw
+        self.display_height = dh
+        self._clamp_pan()
 
-            final_x = self.offset_x + self.pan_x
-            final_y = self.offset_y + self.pan_y
+        final_x = self.offset_x + self.pan_x
+        final_y = self.offset_y + self.pan_y
 
-            # Adaptive Motion Resampling: 1ms ultra-fast resample during active motion,
-            # followed by crisp stationary HD pass when movement stops
-            if dw == rw and dh == rh:
-                resized = self.remote_image
+        # Adaptive Motion Resampling: 1ms ultra-fast resample during active motion,
+        # followed by crisp stationary HD pass when movement stops
+        if dw == rw and dh == rh:
+            resized = source
+        else:
+            now = time.time()
+            is_active_motion = (now - self.last_packet_time < 0.200)
+            if self.perf_mode == "fluid" and is_active_motion:
+                # Ultra-fast nearest resample (<1ms) unlocks silky smooth 60 FPS motion
+                resized = source.resize((dw, dh), Image.Resampling.NEAREST)
+                # Schedule automatic stationary HD pass
+                if self._idle_hd_after_id:
+                    try:
+                        self.after_cancel(self._idle_hd_after_id)
+                    except Exception:
+                        pass
+                self._idle_hd_after_id = self.after(180, self._render_stationary_hd)
             else:
-                now = time.time()
-                is_active_motion = (now - self.last_packet_time < 0.200)
-                if self.perf_mode == "fluid" and is_active_motion:
-                    # Ultra-fast nearest resample (<1ms) unlocks silky smooth 60 FPS motion
-                    resized = self.remote_image.resize((dw, dh), Image.Resampling.NEAREST)
-                    # Schedule automatic stationary HD pass
-                    if self._idle_hd_after_id:
-                        try:
-                            self.after_cancel(self._idle_hd_after_id)
-                        except Exception:
-                            pass
-                    self._idle_hd_after_id = self.after(180, self._render_stationary_hd)
-                else:
-                    resized = self.remote_image.resize((dw, dh), Image.Resampling.BILINEAR)
+                resized = source.resize((dw, dh), Image.Resampling.BILINEAR)
 
+        if self.tk_photo is not None and self.tk_photo.width()==dw and self.tk_photo.height()==dh:
+            self.tk_photo.paste(resized)
+        else:
             self.tk_photo = ImageTk.PhotoImage(resized)
 
-            # High-performance Tkinter canvas blitting: reuse canvas image ID without destroying items
-            if self.canvas_img_id is None:
-                self.canvas_img_id = self.canvas.create_image(final_x, final_y, anchor="nw", image=self.tk_photo)
-            else:
-                self.canvas.coords(self.canvas_img_id, final_x, final_y)
-                self.canvas.itemconfig(self.canvas_img_id, image=self.tk_photo)
+        # High-performance Tkinter canvas blitting: reuse canvas image ID without destroying items
+        if self.canvas_img_id is None:
+            self.canvas_img_id = self.canvas.create_image(final_x, final_y, anchor="nw", image=self.tk_photo)
+        else:
+            self.canvas.coords(self.canvas_img_id, final_x, final_y)
+            self.canvas.itemconfig(self.canvas_img_id, image=self.tk_photo)
 
         # Update frame counter
         self.frame_count += 1
@@ -1261,6 +1254,13 @@ class EmbeddedSessionView(tk.Frame):
         self._render_queued = False
         self._trigger_render()
 
+    def _start_audio_async(self):
+        def start():
+            if self._is_closed: return
+            self.audio_engine.start()
+            if self._is_closed: self.audio_engine.stop()
+        threading.Thread(target=start,name='audio-open',daemon=True).start()
+
     def _on_session_connected(self):
         self._set_stream_profile()
         perms = getattr(self, "granted_permissions", {})
@@ -1271,7 +1271,7 @@ class EmbeddedSessionView(tk.Frame):
         if perms.get("audio", True):
             self.audio_active = True
             self.audio_engine.mic_enabled = True
-            self.audio_engine.start()
+            self._start_audio_async()
             if hasattr(self, "voice_btn") and self.voice_btn.winfo_exists():
                 self.voice_btn.config(text="🎙️ Voice: ON", bg="#1f382a", fg="#10b981")
 
@@ -1325,10 +1325,10 @@ class EmbeddedSessionView(tk.Frame):
             except Exception:
                 pass
                 pass
-        try:
-            self.audio_engine.stop()
-        except Exception:
-            pass
+        engine=self.audio_engine
+        engine.on_mic_chunk_callback=None
+        engine.on_mic_level_callback=None
+        threading.Thread(target=engine.stop,name='audio-close',daemon=True).start()
         if self.on_close_cb:
             try:
                 self.on_close_cb()
