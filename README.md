@@ -1,4 +1,6 @@
-# OpenDesk 2.0.1
+# OpenDesk 2.0.2
+
+**Windows runtime hotfix:** v2.0.2 removes unrelated Windows 11 CRT/API DLLs accidentally collected by earlier build environments. The installer now deploys a persistent `_internal` runtime beside the executable rather than extracting Python into `%TEMP%` on every start. Independent update restarts reset PyInstaller state; installed distributions update through a digest-checked installer. See [runtime validation](docs/RELEASE_VALIDATION_2.0.2.md).
 
 Windows remote desktop with native and browser viewers, approval-based sessions, voice, clipboard and file transfer. Inspired by remote assistance tools such as AnyDesk. This project implements its own JPEG tile/delta protocol; it is not an implementation of AnyDesk's proprietary DeskRT codec and does not connect to AnyDesk devices.
 

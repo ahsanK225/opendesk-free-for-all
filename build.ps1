@@ -18,11 +18,13 @@ if (-not $SkipTests) {
 }
 python -m tools.fetch_cloudflared
 if ($LASTEXITCODE -ne 0) { throw 'Tunnel binary verification failed' }
-python -m PyInstaller --noconfirm --onefile --noconsole --name OpenDeskSetupHelper --distpath $outputRoot --workpath (Join-Path $outputRoot '.maintenance-work') --specpath (Join-Path $PSScriptRoot '.build-spec') --paths $PSScriptRoot run_maintenance.py
+python -m tools.build_frozen opendesk_maintenance.spec --noconfirm --clean --distpath $outputRoot --workpath (Join-Path $outputRoot '.maintenance-work')
 if ($LASTEXITCODE -ne 0) { throw 'Installer shutdown helper build failed' }
-python -m PyInstaller opendesk.spec --noconfirm --distpath $outputRoot --workpath (Join-Path $outputRoot '.work')
+python -m tools.build_frozen opendesk.spec --noconfirm --clean --distpath $outputRoot --workpath (Join-Path $outputRoot '.work')
 if ($LASTEXITCODE -ne 0) { throw 'Portable build failed' }
 $portable = Join-Path $outputRoot 'OpenDesk.exe'
+python -m tools.audit_frozen $portable (Join-Path $outputRoot 'OpenDeskSetupHelper.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Frozen dependency audit failed' }
 if ($env:OPENDESK_SIGN_PFX) {
     if (-not $env:OPENDESK_SIGN_PASSWORD) { throw 'Signing password is missing' }
     & signtool.exe sign /f $env:OPENDESK_SIGN_PFX /p $env:OPENDESK_SIGN_PASSWORD /fd SHA256 /tr https://timestamp.digicert.com /td SHA256 $portable
@@ -31,7 +33,14 @@ if ($env:OPENDESK_SIGN_PFX) {
 $version = (Get-Content -LiteralPath 'version.json' -Raw | ConvertFrom-Json).version
 Copy-Item -LiteralPath $portable -Destination (Join-Path $outputRoot "OpenDesk_v${version}_Portable.exe") -Force
 if ($InnoCompiler) {
-    & $InnoCompiler "/DPortablePath=$portable" "/DMaintenancePath=$(Join-Path $outputRoot 'OpenDeskSetupHelper.exe')" "/O$outputRoot" opendesk_installer.iss
+    $env:OPENDESK_BUILD_ONEDIR = '1'
+    try {
+        python -m tools.build_frozen opendesk.spec --noconfirm --distpath (Join-Path $outputRoot 'installed') --workpath (Join-Path $outputRoot '.installed-work')
+        if ($LASTEXITCODE -ne 0) { throw 'Installed runtime bundle failed' }
+    } finally { Remove-Item Env:OPENDESK_BUILD_ONEDIR -ErrorAction SilentlyContinue }
+    python -m tools.audit_frozen (Join-Path $outputRoot 'installed\OpenDesk')
+    if ($LASTEXITCODE -ne 0) { throw 'Installed dependency audit failed' }
+    & $InnoCompiler "/DAppBundleDir=$(Join-Path $outputRoot 'installed\OpenDesk')" "/DMaintenancePath=$(Join-Path $outputRoot 'OpenDeskSetupHelper.exe')" "/O$outputRoot" opendesk_installer.iss
     if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
     $installer = Join-Path $outputRoot "OpenDesk_Setup_v${version}.exe"
     if ($env:OPENDESK_SIGN_PFX) {
@@ -42,6 +51,7 @@ if ($InnoCompiler) {
 }
 $manifest = Get-Content -LiteralPath 'version.json' -Raw | ConvertFrom-Json
 $manifest | Add-Member -Force -NotePropertyName sha256 -NotePropertyValue ((Get-FileHash -LiteralPath $portable -Algorithm SHA256).Hash.ToLower())
+if ($InnoCompiler) { $manifest | Add-Member -Force -NotePropertyName installer_sha256 -NotePropertyValue ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLower()) }
 $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $outputRoot 'version.json') -Encoding utf8
 Get-ChildItem -LiteralPath $outputRoot -Filter '*.exe' | Get-FileHash -Algorithm SHA256 |
     ForEach-Object { "$($_.Hash.ToLower())  $([System.IO.Path]::GetFileName($_.Path))" } |

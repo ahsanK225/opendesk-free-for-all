@@ -668,8 +668,8 @@ class OpenDeskGUI:
             cancel_btn.configure(text="Cancel")
 
             def run_dl():
-                # Fallback full binary download
-                download_url = update_info.get("download_url", "")
+                from common.updater import select_update_artifact
+                download_url, expected_digest, is_installer = select_update_artifact(update_info)
                 if not download_url:
                     self.post_ui(lambda: messagebox.showerror("Error", "Download URL not found in update manifest.", parent=dialog) if dialog.winfo_exists() else None)
                     return
@@ -689,13 +689,13 @@ class OpenDeskGUI:
                         ])
 
                 err_holder = []
-                success = download_update_file(download_url, temp_exe, on_progress, cancel_flag=lambda: cancel_flag[0], error_holder=err_holder, expected_sha256=update_info.get("sha256"))
+                success = download_update_file(download_url, temp_exe, on_progress, cancel_flag=lambda: cancel_flag[0], error_holder=err_holder, expected_sha256=expected_digest)
 
                 if success and not cancel_flag[0]:
                     def restart_exe():
                         time.sleep(0.8)
                         try:
-                            apply_update_and_restart(temp_exe, expected_sha256=update_info.get('sha256',''))
+                            apply_update_and_restart(temp_exe, is_installer=is_installer, expected_sha256=expected_digest)
                             self.post_ui(self._on_close)
                         except Exception as exc:
                             self.post_ui(messagebox.showerror, 'Update could not be applied', str(exc))
@@ -1072,7 +1072,7 @@ class OpenDeskGUI:
             ("🎙️ PortAudio Voice", "Automatic Bloody Gaming Audio mic selection & 16kHz low-latency audio"),
             ("📋 64-Bit Clipboard", "Bidirectional Windows Clipboard auto-sync with Ctrl+V support"),
             ("🌐 Zero-Config Tunnel", "Cloudflare Worldwide Gateway enabling control across any network"),
-            ("🛡️ Digitally Signed", "SHA-256 Authenticode certificate with DigiCert RFC 3161 timestamp")
+            ("🛡️ Release Integrity", "SHA-256 checked updates • this build is unsigned")
         ]
 
         for feat_title, feat_desc in features:
@@ -2000,7 +2000,7 @@ class OpenDeskGUI:
 
         info_row = tk.Frame(upd_card, bg="#1a1e2b")
         info_row.pack(fill="x", padx=12, pady=(6, 2))
-        tk.Label(info_row, text=f"Installed Version: v{APP_VERSION} (Authenticode Signed)", font=("Segoe UI", 9, "bold"),
+        tk.Label(info_row, text=f"Installed Version: v{APP_VERSION} (Unsigned release)", font=("Segoe UI", 9, "bold"),
                  bg="#1a1e2b", fg="#f1f5f9").pack(side="left")
 
         check_btn = tk.Button(info_row, text="🔄 Check Updates Now", font=("Segoe UI", 8, "bold"),

@@ -2,7 +2,7 @@
 ; OpenDesk Professional Standalone Installer Script
 
 #define MyAppName "OpenDesk"
-#define MyAppVersion "2.0.1"
+#define MyAppVersion "2.0.2"
 #define MyAppPublisher "OpenDesk Project"
 #define MyAppURL "https://github.com/ahsanK225/opendesk-free-for-all"
 #define MyAppExeName "OpenDesk.exe"
@@ -39,7 +39,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 
 ; Output configuration
 OutputDir=installer_output
-OutputBaseFilename=OpenDesk_Setup_v2.0.1
+OutputBaseFilename=OpenDesk_Setup_v2.0.2
 SetupIconFile=opendesk.ico
 
 ; Compression & Modern Visual Style
@@ -65,7 +65,11 @@ Name: "startupicon"; Description: "Launch OpenDesk automatically when Windows st
 
 [Files]
 Source: "{#MaintenancePath}"; DestDir: "{tmp}"; Flags: dontcopy
+#ifdef AppBundleDir
+Source: "{#AppBundleDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+#else
 Source: "{#PortablePath}"; DestDir: "{app}"; Flags: ignoreversion
+#endif
 Source: "opendesk.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 

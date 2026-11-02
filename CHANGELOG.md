@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.2 — 2026-11-03
+
+- Excluded foreign OS CRT/API-set DLLs from Windows 10+ packages and restricted the build DLL search path.
+- Switched the installed application to a persistent runtime bundle; retained the standalone onefile portable download.
+- Cleared inherited frozen-process extraction state during independent update restarts.
+- Installed bundles select the installer and its own SHA-256 instead of overwriting their launcher with a portable executable.
+- Removed incorrect hard-coded Authenticode-signed claims from the UI.
+
 ## 2.0.1 — 2026-11-03
 
 - Replaced Restart Manager closing-applications waits with a small bounded shutdown helper and verified PID force-close fallback.
