@@ -10,6 +10,7 @@ from common.rendezvous import (
     publish_host_rendezvous,
     resolve_host_rendezvous,
     parse_connect_target,
+    build_ws_url,
     RendezvousHeartbeat
 )
 
@@ -34,6 +35,33 @@ class TestRendezvous(unittest.TestCase):
         tid, ws = parse_connect_target("732364935@super-cool-tunnel.trycloudflare.com")
         self.assertEqual(tid, "732364935")
         self.assertEqual(ws, "wss://super-cool-tunnel.trycloudflare.com/ws")
+
+    def test_parse_lan_and_explicit_ws_targets(self):
+        # Plain LAN IP -> unencrypted ws:// (a local relay has no TLS certificate)
+        tid, ws = parse_connect_target("192.168.1.50:8080")
+        self.assertEqual(tid, "remote_host")
+        self.assertEqual(ws, "ws://192.168.1.50:8080/ws")
+
+        tid, ws = parse_connect_target("192.168.1.50")
+        self.assertEqual(tid, "remote_host")
+        self.assertEqual(ws, "ws://192.168.1.50/ws")
+
+        # Explicit websocket URLs are preserved
+        tid, ws = parse_connect_target("ws://127.0.0.1:8080/ws")
+        self.assertEqual(tid, "remote_host")
+        self.assertEqual(ws, "ws://127.0.0.1:8080/ws")
+
+        tid, ws = parse_connect_target("732364935@192.168.1.50:8080")
+        self.assertEqual(tid, "732364935")
+        self.assertEqual(ws, "ws://192.168.1.50:8080/ws")
+
+    def test_build_ws_url(self):
+        self.assertEqual(build_ws_url("https://abc.trycloudflare.com"), "wss://abc.trycloudflare.com/ws")
+        self.assertEqual(build_ws_url("http://localhost:8080"), "ws://localhost:8080/ws")
+        self.assertEqual(build_ws_url("10.0.0.7:8080"), "ws://10.0.0.7:8080/ws")
+        self.assertEqual(build_ws_url("wss://abc.trycloudflare.com"), "wss://abc.trycloudflare.com/ws")
+        self.assertEqual(build_ws_url("wss://abc.trycloudflare.com/ws"), "wss://abc.trycloudflare.com/ws")
+        self.assertIsNone(build_ws_url("   "))
 
     @patch("urllib.request.urlopen")
     def test_publish_and_resolve_mock(self, mock_urlopen):

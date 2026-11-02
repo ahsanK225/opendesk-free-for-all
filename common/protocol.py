@@ -33,6 +33,7 @@ class MessageType:
     VIDEO_FULL = "video_full"
     VIDEO_DELTA = "video_delta"
     VIDEO_CONFIG = "video_config"
+    KEYFRAME_REQUEST = "keyframe_req"
     
     # Input Handling
     INPUT_MOUSE_MOVE = "mouse_move"

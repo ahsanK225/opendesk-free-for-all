@@ -13,6 +13,7 @@ import os
 import sys
 import re
 import base64
+import ipaddress
 import time
 import urllib.request
 import urllib.parse
@@ -141,29 +142,75 @@ def resolve_host_rendezvous(target_id: str, timeout: float = 6.0, retries: int =
     return None
 
 
+def _is_lan_host(host_part: str) -> bool:
+    """True for loopback / private / link-local hosts, which use plain ws://."""
+    host = host_part.strip()
+    if host.startswith("["):
+        host = host.split("]")[0].lstrip("[")
+    else:
+        host = host.split(":")[0]
+    if host.lower() in ("localhost", "127.0.0.1", "::1"):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+        return ip.is_loopback or ip.is_private or ip.is_link_local
+    except ValueError:
+        return False
+
+
+def build_ws_url(address: str) -> Optional[str]:
+    """Normalize a tunnel/host address into the relay WebSocket endpoint."""
+    raw = (address or "").strip()
+    if not raw:
+        return None
+    if raw.startswith("ws://") or raw.startswith("wss://"):
+        base = raw
+    else:
+        clean = raw.replace("https://", "").replace("http://", "").rstrip("/")
+        if not clean:
+            return None
+        host_part = clean.split("/")[0]
+        scheme = "ws" if _is_lan_host(host_part) else "wss"
+        base = f"{scheme}://{clean}"
+    return base if base.endswith("/ws") else base.rstrip("/") + "/ws"
+
+
 def parse_connect_target(raw_input: str) -> Tuple[str, Optional[str]]:
     """
     Parse a user-entered remote target into (target_id, ws_url_or_none).
     Supports:
     - 9-digit numerical addresses: '732 364 935', '732364935', '732-364-935'
-    - Direct Cloudflare tunnel URLs: 'https://xxx.trycloudflare.com', 'xxx.trycloudflare.com'
-    - Host/IP addresses: '192.168.1.50:8080'
+    - Direct tunnel URLs: 'https://xxx.trycloudflare.com', 'xxx.trycloudflare.com'
+    - Explicit websocket URLs: 'ws://192.168.1.50:8080/ws', 'wss://host/ws'
+    - Host/IP addresses: '192.168.1.50:8080', '192.168.1.50'
     - Target ID with host: '732364935@xxx.trycloudflare.com'
     """
     raw = raw_input.strip()
+    if not raw:
+        return "", None
+
     if "@" in raw:
         parts = raw.split("@", 1)
         target_id = _clean_id(parts[0])
-        host_part = parts[1].strip().replace("https://", "").replace("http://", "").rstrip("/")
-        ws_url = f"wss://{host_part}/ws"
-        return target_id, ws_url
+        ws_url = build_ws_url(parts[1])
+        return (target_id, ws_url) if ws_url else ("", None)
 
-    if "trycloudflare.com" in raw or "http://" in raw or "https://" in raw or (":" in raw and not raw.startswith("ws")):
-        clean_url = raw.replace("https://", "").replace("http://", "").rstrip("/")
-        host_part = clean_url.split("/")[0]
-        scheme = "ws" if "127.0.0.1" in host_part or "localhost" in host_part else "wss"
-        ws_url = f"{scheme}://{host_part}/ws"
-        return "remote_host", ws_url
+    lowered = raw.lower()
+    try:
+        ipaddress.ip_address(raw)
+        is_ip = True
+    except ValueError:
+        is_ip = False
+    looks_like_host = (
+        lowered.startswith(("ws://", "wss://", "http://", "https://"))
+        or "trycloudflare.com" in lowered
+        or ":" in raw
+        or is_ip
+        or ("." in raw and not raw.replace(".", "").isdigit())
+    )
+    if looks_like_host:
+        ws_url = build_ws_url(raw)
+        return ("remote_host", ws_url) if ws_url else ("", None)
 
     clean_id = _clean_id(raw)
     return clean_id, None

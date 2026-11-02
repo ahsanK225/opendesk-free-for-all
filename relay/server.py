@@ -45,7 +45,7 @@ class RelayServer:
                 return candidate
 
     async def handle_ws(self, request: web.Request) -> web.WebSocketResponse:
-        ws = web.WebSocketResponse(max_msg_size=16 * 1024 * 1024)
+        ws = web.WebSocketResponse(max_msg_size=16 * 1024 * 1024, heartbeat=20.0)
         await ws.prepare(request)
         peer_id: Optional[str] = None
 
@@ -73,6 +73,19 @@ class RelayServer:
                             
                         clean_id = assigned_id.replace(" ", "")
                         peer_id = clean_id
+
+                        # Drop any stale socket still registered under this ID (e.g. a
+                        # host restart that left the old tunnel connection half-open).
+                        previous_ws = self.peers.get(peer_id)
+                        if previous_ws is not None and previous_ws is not ws:
+                            stale_partner = self.sessions.pop(peer_id, None)
+                            if stale_partner and self.sessions.get(stale_partner) == peer_id:
+                                self.sessions.pop(stale_partner, None)
+                            try:
+                                await previous_ws.close(code=4000, message=b"Replaced by new registration")
+                            except Exception:
+                                pass
+
                         self.peers[peer_id] = ws
                         self.peer_meta[peer_id] = {
                             "display_id": assigned_id,
@@ -220,12 +233,15 @@ class RelayServer:
                     break
 
         finally:
-            if peer_id:
+            # Only tear down state that still belongs to this socket; a newer
+            # registration may already have replaced us under the same ID.
+            if peer_id and self.peers.get(peer_id) is ws:
                 partner = self.sessions.pop(peer_id, None)
-                if partner:
+                if partner and self.sessions.get(partner) == peer_id:
                     self.sessions.pop(partner, None)
-                    if partner in self.peers and not self.peers[partner].closed:
-                        await self.peers[partner].send_str(json.dumps({
+                    partner_ws = self.peers.get(partner)
+                    if partner_ws and not partner_ws.closed:
+                        await partner_ws.send_str(json.dumps({
                             "type": "session_end",
                             "payload": {"message": "Remote peer disconnected."}
                         }))
