@@ -1,6 +1,6 @@
 # Native migration — work in progress
 
-The shipped desktop remains [v2.0.1](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.0.1). This directory starts the Rust/Qt migration and is not an executable replacement yet. Python source stays available until native parity is verified.
+The shipped desktop is [v2.0.2](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.0.2), including the verified Windows runtime startup hotfix. This directory starts the Rust/Qt migration and is not an executable replacement yet. Python source stays available until native parity is verified.
 
 ## Stack and ownership
 
@@ -28,4 +28,4 @@ cargo clippy --manifest-path native/engine/Cargo.toml --all-targets -- -D warnin
 6. Check dark/red UI at several DPI/scales, keyboard navigation and accessibility, and perform two-device WAN/headset acceptance.
 7. Only then remove replaced Python runtime/build files, update the root build/docs, and publish the native release.
 
-The existing Python release and preserved Git history provide the reference behavior. A source snapshot of v2.0.1 is also kept outside this repository in the task's release directory. The initial Rust foundation passes 17 unit tests and Clippy with warnings denied on Windows x64 (Rust 1.95.0); those checks do not establish native application feature parity.
+The existing Python release and preserved Git history provide the reference behavior. Source snapshots of v2.0.1 and v2.0.2 are also kept outside this repository in the task's release directory. The initial Rust foundation passes 17 unit tests and Clippy with warnings denied on Windows x64 (Rust 1.95.0); those checks do not establish native application feature parity.
