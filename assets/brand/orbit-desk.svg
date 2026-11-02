@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <title>OpenDesk Orbit Desk</title>
+  <path d="M103 62a40 40 0 1 1-40-38" stroke="#ef4444" stroke-width="13" stroke-linecap="round"/>
+  <rect x="42" y="46" width="43" height="31" rx="6" stroke="#f4f5f8" stroke-width="8"/>
+  <path d="M64 77v10M53 88h22" stroke="#f4f5f8" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="96" cy="31" r="12" fill="#ef4444"/>
+</svg>

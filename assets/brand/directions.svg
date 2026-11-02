@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="630" viewBox="0 0 1440 630">
+  <title>Four original OpenDesk logo directions</title>
+  <rect width="1440" height="630" rx="24" fill="#0c0e14"/>
+  <g font-family="Segoe UI,Arial,sans-serif">
+    <text x="56" y="76" fill="#f4f5f8" font-size="32" font-weight="700">OpenDesk / Native era</text>
+    <text x="56" y="112" fill="#a6adbd" font-size="17">Four original vector directions · existing red / dark identity</text>
+    <g fill="#151923" stroke="#252b38">
+      <rect x="48" y="157" width="318" height="370" rx="18"/>
+      <rect x="390" y="157" width="318" height="370" rx="18"/>
+      <rect x="732" y="157" width="318" height="370" rx="18"/>
+      <rect x="1074" y="157" width="318" height="370" rx="18"/>
+    </g>
+    <svg x="143" y="205" width="128" height="128" viewBox="0 0 128 128" fill="none">
+      <path d="M78 24H43c-11 0-19 8-19 19v42c0 11 8 19 19 19h42c11 0 19-8 19-19V50" stroke="#ef4444" stroke-width="16" stroke-linecap="round"/>
+      <path d="M59 69l43-43M78 24h26v26" stroke="#f4f5f8" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <svg x="485" y="205" width="128" height="128" viewBox="0 0 128 128" fill="none">
+      <rect x="17" y="23" width="65" height="49" rx="11" stroke="#ef4444" stroke-width="11"/>
+      <rect x="46" y="54" width="65" height="49" rx="11" stroke="#f4f5f8" stroke-width="11"/>
+      <path d="M32 87h21M75 38h21" stroke="#ef4444" stroke-width="8" stroke-linecap="round"/>
+    </svg>
+    <svg x="827" y="205" width="128" height="128" viewBox="0 0 128 128" fill="none">
+      <path d="M27 23h31c31 0 49 16 49 41s-18 41-49 41H27V23Z" stroke="#ef4444" stroke-width="14" stroke-linejoin="round"/>
+      <path d="M45 64h35M67 50l14 14-14 14" stroke="#f4f5f8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <svg x="1169" y="205" width="128" height="128" viewBox="0 0 128 128" fill="none">
+      <path d="M103 62a40 40 0 1 1-40-38" stroke="#ef4444" stroke-width="13" stroke-linecap="round"/>
+      <rect x="42" y="46" width="43" height="31" rx="6" stroke="#f4f5f8" stroke-width="8"/>
+      <path d="M64 77v10M53 88h22" stroke="#f4f5f8" stroke-width="7" stroke-linecap="round"/>
+      <circle cx="96" cy="31" r="12" fill="#ef4444"/>
+    </svg>
+    <g fill="#f4f5f8" font-size="23" font-weight="600">
+      <text x="76" y="389">01 / Portal O</text><text x="418" y="389">02 / Linked Desks</text>
+      <text x="760" y="389">03 / Signal D</text><text x="1102" y="389">04 / Orbit Desk</text>
+    </g>
+    <g fill="#a6adbd" font-size="16">
+      <text x="76" y="425">An open doorway to any desktop.</text><text x="76" y="454">Clear at taskbar and tray sizes.</text>
+      <text x="418" y="425">Two desktops, one connection.</text><text x="418" y="454">The most literal remote-work mark.</text>
+      <text x="760" y="425">A compact D with direction.</text><text x="760" y="454">Strong launcher silhouette.</text>
+      <text x="1102" y="425">A connected workspace in orbit.</text><text x="1102" y="454">Friendly and recognisable.</text>
+    </g>
+    <rect x="76" y="477" width="139" height="27" rx="7" fill="#332027"/>
+    <text x="88" y="496" fill="#ff9c9c" font-size="13" font-weight="600">RECOMMENDED</text>
+    <text x="56" y="584" fill="#a6adbd" font-size="16">Recommendation: Portal O. Keep OpenDesk's red accent; pair the mark with a restrained Segoe UI wordmark.</text>
+  </g>
+</svg>

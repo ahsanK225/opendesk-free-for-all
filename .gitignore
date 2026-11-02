@@ -36,3 +36,5 @@ certs/*.pfx
 *.part
 
 .build-spec/
+native/engine/target/
+native/desktop/build/
