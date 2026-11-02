@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opendesk-remote"
-version = "2.0.1"
+version = "2.0.2"
 description = "Windows remote desktop with explicit session authorization and adaptive JPEG streaming"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"

@@ -21,7 +21,7 @@ from common.incremental_updater import (
     compute_file_sha256,
 )
 
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.0.2"
 UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/ahsanK225/opendesk-free-for-all/main/version.json"
 
 
@@ -30,6 +30,13 @@ def get_install_dir() -> str:
     if getattr(sys, "frozen", False):
         return os.path.dirname(os.path.abspath(sys.executable))
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def select_update_artifact(info):
+    installed = getattr(sys, 'frozen', False) and os.path.normcase(os.path.abspath(getattr(sys, '_MEIPASS', '.'))) == os.path.normcase(os.path.join(get_install_dir(), '_internal'))
+    if installed:
+        return info.get('installer_url', ''), info.get('installer_sha256', ''), True
+    return info.get('download_url', ''), info.get('sha256', ''), False
 
 
 def parse_version(v_str: str) -> Tuple[int, ...]:
@@ -89,6 +96,7 @@ def check_for_updates(current_version: str = APP_VERSION,
                     "download_url": data.get("download_url", ""),
                     "sha256": data.get("sha256", ""),
                     "installer_url": data.get("installer_url", ""),
+                    "installer_sha256": data.get("installer_sha256", ""),
                     "changelog": changelog_text,
                     "manifest_data": data,
                     "is_incremental": is_incremental,
@@ -179,6 +187,12 @@ def apply_update_and_restart(new_file_path: str, is_installer: bool = False, exp
     def quote(value):
         return "'" + str(value).replace("'", "''") + "'"
     pid = os.getpid()
+    wait_pids = [pid]
+    if hasattr(sys, '_MEIPASS'):
+        from common.launcher import process_path
+        parent = os.getppid()
+        if os.path.normcase(process_path(parent) or '') == os.path.normcase(target):
+            wait_pids.append(parent)
     if is_installer:
         install = f"Start-Process -FilePath {quote(source)} -ArgumentList '/SILENT' -WindowStyle Hidden"
     else:
@@ -192,13 +206,18 @@ try {{
     throw
 }}"""
     script = f"""$ErrorActionPreference = 'Stop'
-Wait-Process -Id {pid} -Timeout 30 -ErrorAction SilentlyContinue
-if (Get-Process -Id {pid} -ErrorAction SilentlyContinue) {{ throw 'OpenDesk did not exit within 30 seconds' }}
+$env:PYINSTALLER_RESET_ENVIRONMENT = '1'
+Get-ChildItem Env: | Where-Object {{ $_.Name -like '_PYI_*' -or $_.Name -like '_MEIPASS*' }} | Remove-Item
+Wait-Process -Id {','.join(map(str,wait_pids))} -Timeout 30 -ErrorAction SilentlyContinue
+if (Get-Process -Id {','.join(map(str,wait_pids))} -ErrorAction SilentlyContinue) {{ throw 'OpenDesk did not exit within 30 seconds' }}
 if ((Get-FileHash -LiteralPath {quote(source)} -Algorithm SHA256).Hash.ToLower() -ne {quote(expected_sha256.lower())}) {{ throw 'Update hash changed after staging' }}
 {install}
 """
     fd, helper = tempfile.mkstemp(prefix='opendesk_update_',suffix='.ps1')
+    script = f"try {{\n{script}\n}} catch {{\n[System.IO.File]::WriteAllText({quote(helper+'.log')}, $_.ToString())\nexit 1\n}}\n"
     with os.fdopen(fd,'w',encoding='utf-8-sig') as stream: stream.write(script)
-    subprocess.Popen(['powershell.exe','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',helper],
+    from common.process_environment import independent_environment
+    powershell = os.path.join(os.environ.get('SystemRoot', r'C:\Windows'), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    subprocess.Popen([powershell,'-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',helper],env=independent_environment(),
                      creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     return True
