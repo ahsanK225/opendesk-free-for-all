@@ -1,7 +1,11 @@
-# Update distribution in v2
+# Native update delivery
 
-The packaged desktop application uses complete, SHA-256-verified EXE updates from the official GitHub release path. Source checkouts update through Git. The manifest must include `version`, `download_url` and `sha256`; `build.ps1` generates an artifact manifest after compilation. Publish immutable versioned assets and commit the matching manifest. The main process closes before the external helper copies files. An unsigned manifest does not independently protect against compromise of the GitHub release account.
+The native application uses complete, SHA-256-verified releases. The old Python source/delta patch updater has been replaced.
 
-`common/incremental_updater.py` remains a tested standalone library. It validates canonical paths under its install/staging/backup roots, checks each file hash at download and apply, preserves configured files, deletes only previously owned paths, and rolls back additions/overwrites on failure. It is not enabled for running monolithic desktop builds.
+1. An explicit check reads the repository's stable `version.json` over HTTPS.
+2. The engine accepts a newer stable semantic version and only the exact official GitHub release URL/filename for that version.
+3. Download size is bounded and the expected digest is checked before staging a separate native helper.
+4. The helper waits for the main process and portable parent to exit, then checks the staged EXE again.
+5. Installed builds apply the installer to the existing install directory. Portable builds retain the previous launcher and use atomic replacement before restarting.
 
-Use `scripts/publish_release.py <artifact-directory>` to create a draft after pushing a version tag. Verify uploaded hashes and release notes, then publish the draft. Existing release asset replacement is disabled by the legacy helper. Release signing requires a supplied trusted certificate; the build never installs a self-signed trust root.
+Existing configuration and device identity are preserved. Development builds are not overwritten by the updater. Preview releases are separate from the stable update channel. A digest detects a corrupted or mismatched download; it is not a claim of a publicly trusted Authenticode signature.

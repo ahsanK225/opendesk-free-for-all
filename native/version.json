@@ -1,0 +1,16 @@
+{
+  "version": "3.0.0-alpha.1",
+  "channel": "preview",
+  "release_date": "2026-11-03",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0.0-alpha.1/OpenDesk_v3.0.0-alpha.1_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0.0-alpha.1/OpenDesk_Setup_v3.0.0-alpha.1_Installer.exe",
+  "sha256": "0e3223e1a4f45a39637a133ed824ace9c5a8f31366afa3d521fe70d64a762612",
+  "installer_sha256": "1a681c92f5be53697dcead48a36f8e355ee0e3ccf2b4dde7ec7a703bfc81d7b3",
+  "changelog": [
+    "Native Rust engine and Qt/QML desktop",
+    "SIMD JPEG workers and GPU presentation",
+    "Native WASAPI voice, permissions and selected-folder transfers",
+    "Independent installer/update helper and persistent portable runtime repair",
+    "Preview: physical WAN/headset acceptance remains open"
+  ]
+}

@@ -10,7 +10,7 @@ dist/
 installer_output/
 *.exe
 
-# Exclude large external binaries (use bin/download_cloudflared.bat)
+# Exclude large external binaries (use native/fetch-cloudflared.ps1)
 bin/*.exe
 
 # Virtual environments
@@ -36,3 +36,7 @@ certs/*.pfx
 *.part
 
 .build-spec/
+native/engine/target/
+native/launcher/target/
+native/desktop/build/
+native/engine/.test-state/

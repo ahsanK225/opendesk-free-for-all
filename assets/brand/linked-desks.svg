@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <title>OpenDesk Linked Desks</title>
+  <rect x="17" y="23" width="65" height="49" rx="11" stroke="#ef4444" stroke-width="11"/>
+  <rect x="46" y="54" width="65" height="49" rx="11" stroke="#f4f5f8" stroke-width="11"/>
+  <path d="M32 87h21M75 38h21" stroke="#ef4444" stroke-width="8" stroke-linecap="round"/>
+</svg>

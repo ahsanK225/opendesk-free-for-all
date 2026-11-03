@@ -1,35 +1,13 @@
-# OpenDesk 2 architecture
+# OpenDesk native architecture
 
-## Session state
+The Qt GUI owns window state and presentation. It sends bounded JSON commands to Rust and polls revisioned state; video does not cross the bridge as JSON/base64. Capture, encoding, ordered decode, audio and file IO run on workers.
 
-A local relay binds to loopback. Only a host presenting its per-process registration secret may register as a host. Client identifiers are server-assigned and cannot overwrite hosts. Protocol version 2 is mandatory.
+DXGI captures the primary monitor into a reusable D3D staging surface, with GDI fallback and an initial baseline for idle screens. BGRA pixels stay in Windows-native order. A bounded acknowledgement window preserves JPEG delta dependencies; congestion reduces dimensions/quality and never silently drops an arbitrary dependent delta. The receiver reconstructs in order. Immutable reference-counted frame buffers cross the C ABI with explicit releases and become Qt scene-graph textures.
 
-An interactive connection creates a random, 60-second request bound to one host/client pair. Only that host can accept/reject the exact request ID. A successful transition issues a random session ID and normalized permissions, then notifies both peers. The host starts only for its own approved request or a configured unattended authentication flow. Both host and relay enforce operation permissions. Session end/socket loss removes both mappings, clears transfers/media and releases input.
+The built-in relay listens on loopback. A verified owned cloudflared process provides a public HTTPS/WSS tunnel and publishes signed, short-lived device-directory records. Native clients verify a nonce-bound Ed25519 identity and a saved/published key before requesting access. The first unpinned connection asks for fingerprint comparison. Host approval binds to an expiring request; password authentication uses a one-use challenge and PBKDF2/HMAC proof. Session permissions gate input, voice, clipboard and files. Ending a session revokes access and releases held input.
 
-Unattended access uses PBKDF2-HMAC-SHA256 with a random salt and a one-use HMAC challenge. Password text is not sent to the relay. Local storage uses user-bound Windows DPAPI. The relay holds the derived password key and is trusted. Device identity uses Ed25519, signed expiring directory records, directory/endpoint key matching and native fingerprint pinning. Initial trust must be verified out of band. This is not an application-layer E2E encryption protocol.
+CPAL/WASAPI uses the hardware device rate, streaming resampling, 20 ms mono voice packets, bounded microphone/playback queues and explicit session mute. Default-device changes reopen streams. Echo cancellation is not implemented. File transfers stay inside a selected host root, reject traversal/reparse points and use ordered chunks, size limits, SHA-256 and atomic replacement. Partial files are removed on cancellation.
 
-## Video
+The Qt desktop has no Python runtime. The Rust maintenance helper can request a graceful shutdown and, after a bounded grace period, terminate only verified OpenDesk processes in the current Windows session. Installed updates run an installer after application exit. Portable updates wait for the app/launcher, verify the staged executable again, retain a rollback copy and atomically replace the launcher. Portable dependencies live in a persistent transactional cache and can be repaired.
 
-One dedicated executor owns capture and codec state. DXGI BGRA frames are copied into a reusable GDI DIB for hardware cursor composition; unsupported drivers/sessions fall back to BitBlt. Explicit x64 Win32 signatures avoid handle truncation. A version-scoped DXcam ownership shim prevents duplicate COM releases.
-
-The JPEG codec uses vectorized dirty-block reductions. Binary ODV2 envelopes carry a length-prefixed JSON header and JPEG byte ranges. No base64 image encoding is needed. Full frames establish state; subsequent deltas preserve capture order. A small acknowledgement window (three frames by default, up to ten based on measured RTT) bounds in-flight frames, so dependent updates are never discarded to reduce latency. The browser paints in order and acknowledges after presentation; the native viewer acknowledges after decode and coalesces UI rendering. Video refresh requests force a new full frame.
-
-Profiles set target FPS, maximum width and JPEG quality. Capture cost and queue delay beyond baseline RTT reduce width/quality/FPS, with gradual recovery; actual frame rate depends on hardware and RTT. Quality 80+ uses JPEG 4:4:4 for text. Idle video sends no unchanged frames instead of claiming a synthetic 60 FPS.
-
-## Voice and input
-
-Mono PCM uses explicit sample_rate/channels/format metadata. Native capture uses 20ms 48kHz blocks; browser capture uses AudioWorklet at its actual context rate. Resampling uses metadata, not packet length. Queues/buffers are bounded; VAD has a speech hangover. Browser AEC is native browser processing; native AEC is not implemented. Microphone test audio is local only. VU UI updates are dispatched to Tk's main thread.
-
-Input is allowed only during an authorized session. The host tracks pressed keys/buttons and releases them on focus reset/session end. Capture scaling preserves normalized input mapping to the original screen dimensions. Per-monitor DPI awareness is initialized before Tk.
-
-## Files, updates and lifecycle
-
-Transfers are contained to the host home directory. The file manager resolves paths, rejects traversal/unsafe filenames, validates chunk indices/lengths, supports optional final SHA-256 comparison and replaces completed files atomically. Session cleanup removes partial files. Native/browser clients stream chunks rather than sending a complete file in one message.
-
-The desktop updater requires an official HTTPS release URL plus SHA-256. It stages an external helper, requests main-process shutdown, then replaces/relaunches with bounded waiting. Source checkouts update through Git. The separately tested incremental library validates paths, limits deletion to previously owned files and removes new files during rollback; it is not used to patch a running monolithic EXE.
-
-Tab closure explicitly closes sockets and cancels tasks. App shutdown hides UI, performs bounded cleanup and then exits. The tunnel uses a pinned official binary, retries failed processes with bounded backoff, and kills before closing its reader pipe. Root certificates are not automatically trusted during builds.
-
-## Current boundaries
-
-Primary monitor only; no service/pre-login mode, UAC secure desktop guarantee, WebRTC/UDP transport, native AEC or independent signed update metadata. Tests/build checks are documented in docs/RELEASE_VALIDATION.md. Independent security review and two-machine WAN/voice acceptance remain required for production certification.
+HTTPS/WSS protects each tunnel leg; Cloudflare terminates the tunnel. This is not an end-to-end encrypted peer-to-peer transport. The app controls the primary monitor in the logged-in user session; it does not implement a pre-login service, UAC secure-desktop control, multi-monitor selection or AnyDesk's proprietary DeskRT codec.

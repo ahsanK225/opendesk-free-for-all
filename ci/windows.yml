@@ -1,4 +1,4 @@
-name: Windows validation and build
+name: Native Windows validation and packages
 on:
   push:
     branches: [main]
@@ -7,44 +7,46 @@ on:
 permissions:
   contents: read
 jobs:
-  validate:
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        python: ['3.11', '3.12']
+  native:
+    runs-on: windows-2025
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Pinned Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal --component clippy --component rustfmt
+          rustup default 1.95.0
+      - uses: jurplel/install-qt-action@v4
         with:
-          python-version: ${{ matrix.python }}
-          cache: pip
-      - name: Install dependencies
-        run: python -m pip install -r requirements-build.txt
-      - name: Python regression suite
-        run: python -m unittest discover -s tests -t .
-      - name: Browser protocol and voice checks
-        run: node tests/test_web.cjs
-      - name: Source GUI smoke test
+          version: '6.8.3'
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          cache: true
+      - name: Native codec SDK and tunnel
         shell: pwsh
         run: |
-          $env:OPENDESK_CONFIG_DIR = Join-Path $env:RUNNER_TEMP 'opendesk-smoke'
-          python opendesk_app.py --smoke-test --smoke-output smoke.json
-          if ($LASTEXITCODE -ne 0) { throw 'Source smoke test failed' }
-      - name: Build portable and installer
-        if: matrix.python == '3.11'
+          $sdk = Join-Path $env:RUNNER_TEMP 'jpeg-sdk.exe'
+          curl.exe --fail --location --silent --show-error --max-time 120 'https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.1/libjpeg-turbo-3.2.1-vc-x64.exe' -o $sdk
+          if ($LASTEXITCODE -ne 0 -or (Get-FileHash $sdk).Hash.ToLowerInvariant() -ne '1f05bc3ed1585e6b12a8b0c24c8c5f07b1f6d90d01b4b709b331bedc9d6e5838') {throw 'JPEG SDK checksum mismatch'}
+          $jpeg = Join-Path $env:RUNNER_TEMP 'jpeg-sdk'
+          & 'C:\Program Files\7-Zip\7z.exe' x $sdk "-o$jpeg" -y
+          if ($LASTEXITCODE -ne 0) {throw 'SDK extraction failed'}
+          "JPEG_ROOT=$jpeg" | Out-File $env:GITHUB_ENV -Append
+          .\native\fetch-cloudflared.ps1
+      - name: Engine static analysis
+        run: cargo clippy --release --locked --lib --manifest-path native/engine/Cargo.toml -- -D warnings
+      - name: Build and test native packages
         shell: pwsh
         run: |
-          $env:ISCC_PATH = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
-          if (-not (Test-Path -LiteralPath $env:ISCC_PATH)) { throw 'Inno Setup compiler is missing' }
-          .\build.ps1 -SkipTests
-          $process = Start-Process -FilePath dist\OpenDesk.exe -ArgumentList '--smoke-test --smoke-output frozen-smoke.json' -WindowStyle Hidden -Wait -PassThru
-          if ($process.ExitCode -ne 0 -or -not (Test-Path frozen-smoke.json)) { throw 'Frozen smoke test failed' }
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -property installationPath
+          $crt = Get-ChildItem (Join-Path $vs 'VC\Redist\MSVC') -Directory | Where-Object Name -Match '^14\.' | Sort-Object Name -Descending | Select-Object -First 1
+          $crt = Join-Path $crt.FullName 'x64\Microsoft.VC143.CRT'
+          .\build.ps1 -QtRoot $env:QT_ROOT_DIR -TurboJpegRoot $env:JPEG_ROOT -VcRuntimeDir $crt -InnoCompiler 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
       - uses: actions/upload-artifact@v4
-        if: matrix.python == '3.11'
         with:
-          name: OpenDesk-Windows-x64
+          name: OpenDesk-Native-Windows-x64
           path: |
-            dist/OpenDesk_v2.0.2_Portable.exe
-            dist/OpenDesk_Setup_v2.0.2_Installer.exe
-            dist/version.json
-            dist/SHA256SUMS.txt
+            dist/native/OpenDesk_v3.0.0-alpha.1_Portable.exe
+            dist/native/OpenDesk_Setup_v3.0.0-alpha.1_Installer.exe
