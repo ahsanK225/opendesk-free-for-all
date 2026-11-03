@@ -1,5 +1,9 @@
 # OpenDesk 3 native preview
 
+**Download v3.0.0-alpha.1:** [Windows installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0.0-alpha.1/OpenDesk_Setup_v3.0.0-alpha.1_Installer.exe) · [Portable EXE](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0.0-alpha.1/OpenDesk_v3.0.0-alpha.1_Portable.exe) · [Native release page](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.0.0-alpha.1)
+
+The native version is listed as a **Pre-release** on the Releases page. GitHub's stable **Latest** link continues to show v2.0.2. The [portfolio fork's native release](https://github.com/hamxa8769/opendesk-free-for-all/releases/tag/v3.0.0-alpha.1) mirrors the same verified binaries.
+
 OpenDesk now has a **Rust engine and Qt/QML desktop**, retaining the dark/red design with a new Portal O icon. The native Windows application, installer helper and portable launcher do not use Python or temporary PyInstaller extraction.
 
 The native build is a preview pending two-device WAN/headset acceptance. [v2.0.2 remains the previous stable release](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.0.2). Optimized Release builds and local test results are not a guarantee of internet FPS or voice quality on every device.
