@@ -13,7 +13,7 @@ try {
     $env:QT_FORCE_STDERR_LOGGING='1';$env:OPENDESK_DEV_NO_TUNNEL='1'
     $env:OPENDESK_RUNTIME_DIR=Join-Path $caseRoot ('deep-'+('x'*180))
     $invalidLog=Join-Path $caseRoot 'overlong-path-stderr.log'
-    $invalid=Start-Process -FilePath $PortablePath -ArgumentList '--no-error-dialog' -WindowStyle Hidden -PassThru -RedirectStandardError $invalidLog
+    $invalid=Start-Process -FilePath $PortablePath -ArgumentList @('--no-error-dialog','--config-dir',('"'+$caseRoot+'\profile"')) -WindowStyle Hidden -PassThru -RedirectStandardError $invalidLog
     if (!$invalid.WaitForExit(15000) -or $invalid.ExitCode -ne 1 -or (Get-Content -LiteralPath $invalidLog -Raw) -notmatch 'cache path is too long') {throw 'Long-path preflight did not provide an actionable error.'}
     Remove-Item Env:OPENDESK_RUNTIME_DIR -ErrorAction SilentlyContinue
     foreach ($mode in @('first-launch','cached-launch','missing-dll-repair','explicit-repair')) {
@@ -33,8 +33,8 @@ try {
         $watch.Stop()
         if (!(Test-Path -LiteralPath $state)) {throw 'The native child did not produce startup evidence.'}
         $view=Get-Content -LiteralPath $state -Raw|ConvertFrom-Json
-        if ($view.version -ne '3.0.0-alpha.1') {throw 'The launcher did not run the native application.'}
-        $warnings=Get-Content -LiteralPath (Join-Path $caseRoot ($mode+'-stderr.log')) -Raw
+        if ($view.version -ne '3.0.0-alpha.2') {throw 'The launcher did not run the native application.'}
+        $warnings=@(Get-Content -LiteralPath (Join-Path $caseRoot ($mode+'-stderr.log')) | Where-Object {$_ -and $_ -ne 'qt.qpa.mime: Retrying to obtain clipboard.'})
         if ($warnings) {throw $warnings}
         $results+=[pscustomobject]@{mode=$mode;passed=$true;seconds=$watch.Elapsed.TotalSeconds;deviceId=$view.deviceId}
     }

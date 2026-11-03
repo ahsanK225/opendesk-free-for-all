@@ -37,10 +37,12 @@ public:
     ~NativeInstance(){if(activate)CloseHandle(activate);if(shutdown)CloseHandle(shutdown);if(mutex)CloseHandle(mutex);}
 };
 int main(int argc,char** argv){
-    QApplication application(argc,argv);application.setApplicationName(QStringLiteral("OpenDesk"));application.setApplicationVersion(QStringLiteral("3.0.0-alpha.1"));application.setWindowIcon(QIcon(QStringLiteral(":/brand/portal-o.svg")));
+    QApplication application(argc,argv);application.setApplicationName(QStringLiteral("OpenDesk"));application.setApplicationVersion(QStringLiteral("3.0.0-alpha.2"));application.setWindowIcon(QIcon(QStringLiteral(":/brand/portal-o.svg")));
     QQuickStyle::setStyle(QStringLiteral("Basic"));QCommandLineParser parser;parser.addHelpOption();parser.addVersionOption();
     parser.addOption({QStringLiteral("config-dir"),QStringLiteral("Isolated configuration directory"),QStringLiteral("path")});
     parser.addOption({QStringLiteral("smoke-test"),QStringLiteral("Save startup evidence and exit")});
+    parser.addOption({QStringLiteral("smoke-delay-ms"),QStringLiteral("Bounded evidence delay for connection checks"),QStringLiteral("milliseconds"),QStringLiteral("2500")});
+    parser.addOption({QStringLiteral("smoke-minimized"),QStringLiteral("Start a smoke test minimized")});
     parser.addOption({QStringLiteral("smoke-page"),QStringLiteral("Select the native page for a smoke screenshot"),QStringLiteral("page")});
     parser.addOption({QStringLiteral("render-self-test"),QStringLiteral("Verify JPEG pixel formats and GPU texture presentation"),QStringLiteral("image")});
     parser.addOption({QStringLiteral("screenshot"),QStringLiteral("Native startup image destination"),QStringLiteral("path")});
@@ -59,6 +61,8 @@ int main(int argc,char** argv){
         EngineBridge bridge(parser.value(QStringLiteral("config-dir")));
         qmlRegisterType<FrameItem>("OpenDesk.Media",1,0,"RemoteFrame");
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty(QStringLiteral("backend"),&bridge);
+        const auto desktop=QGuiApplication::primaryScreen()->geometry();
+        engine.rootContext()->setContextProperty(QStringLiteral("primaryDesktop"),QVariantMap{{QStringLiteral("x"),desktop.x()},{QStringLiteral("y"),desktop.y()},{QStringLiteral("width"),desktop.width()},{QStringLiteral("height"),desktop.height()}});
         QObject::connect(&engine,&QQmlApplicationEngine::objectCreationFailed,&application,[]{QCoreApplication::exit(1);},Qt::QueuedConnection);
         engine.loadFromModule(QStringLiteral("OpenDesk.Native"),QStringLiteral("Main"));
         if(engine.rootObjects().isEmpty())return 1;
@@ -68,11 +72,38 @@ int main(int argc,char** argv){
         window->setPosition(available.center()-QPoint(window->width()/2,window->height()/2));
         if(parser.isSet(QStringLiteral("smoke-test"))&&parser.isSet(QStringLiteral("smoke-page"))){const auto page=parser.value(QStringLiteral("smoke-page"));if(!QStringList{QStringLiteral("home"),QStringLiteral("settings"),QStringLiteral("saved"),QStringLiteral("files")}.contains(page))return 2;window->setProperty("page",page);}
         od_set_window_handle(size_t(window->winId()));
+        // Keep an unanswered request above other apps, including when minimized.
+        // Windows may refuse foreground activation; flashing remains a fallback.
+        QString pendingRequest;
+        bool wasTopmost=false;
+        const auto presentIncoming=[&]{
+            const auto incoming=bridge.state().value(QStringLiteral("incoming")).toMap();
+            const auto request=incoming.value(QStringLiteral("requestId")).toString();
+            if(request==pendingRequest)return;
+            const auto handle=HWND(window->winId());
+            if(!request.isEmpty()){
+                if(pendingRequest.isEmpty())wasTopmost=(GetWindowLongPtrW(handle,GWL_EXSTYLE)&WS_EX_TOPMOST)!=0;
+                if(window->visibility()==QWindow::Minimized)window->showNormal();
+                window->show();
+                SetWindowPos(handle,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_SHOWWINDOW);
+                window->raise();window->requestActivate();SetForegroundWindow(handle);
+                FLASHWINFO flash{sizeof(FLASHWINFO),handle,FLASHW_TRAY|FLASHW_TIMERNOFG,3,0};FlashWindowEx(&flash);
+            }else{
+                SetWindowPos(handle,wasTopmost?HWND_TOPMOST:HWND_NOTOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+                FLASHWINFO flash{sizeof(FLASHWINFO),handle,FLASHW_STOP,0,0};FlashWindowEx(&flash);
+            }
+            pendingRequest=request;
+        };
+        QObject::connect(&bridge,&EngineBridge::stateChanged,window,presentIncoming);
         BOOL dark=TRUE;DwmSetWindowAttribute(HWND(window->winId()),20,&dark,sizeof(dark));
         QTimer launcher;QObject::connect(&launcher,&QTimer::timeout,&application,[&]{if(WaitForSingleObject(instance.shutdown,0)==WAIT_OBJECT_0){window->close();return;}if(WaitForSingleObject(instance.activate,0)==WAIT_OBJECT_0){window->showNormal();window->raise();window->requestActivate();}});launcher.start(100);
-        if(parser.isSet(QStringLiteral("smoke-test")))QTimer::singleShot(2500,&application,[&]{
+        if(parser.isSet(QStringLiteral("smoke-test"))&&parser.isSet(QStringLiteral("smoke-minimized")))window->showMinimized();
+        // The engine can receive a request while QML is still loading, before
+        // the signal connection above exists. Inspect that initial state too.
+        QTimer::singleShot(0,window,presentIncoming);
+        if(parser.isSet(QStringLiteral("smoke-test")))QTimer::singleShot(qBound(2500,parser.value(QStringLiteral("smoke-delay-ms")).toInt(),10000),&application,[&]{
             bool okay=true;const auto imagePath=parser.value(QStringLiteral("screenshot"));if(!imagePath.isEmpty())okay=window->grabWindow().save(imagePath);
-            const auto outputPath=parser.value(QStringLiteral("smoke-output"));if(!outputPath.isEmpty()){QFile file(outputPath);okay=file.open(QIODevice::WriteOnly)&&okay;if(file.isOpen())file.write(QJsonDocument::fromVariant(bridge.state()).toJson());}
+            const auto outputPath=parser.value(QStringLiteral("smoke-output"));if(!outputPath.isEmpty()){QFile file(outputPath);okay=file.open(QIODevice::WriteOnly)&&okay;if(file.isOpen()){auto evidence=bridge.state();evidence.insert(QStringLiteral("nativeWindow"),QVariantMap{{QStringLiteral("minimized"),window->visibility()==QWindow::Minimized},{QStringLiteral("topmost"),(GetWindowLongPtrW(HWND(window->winId()),GWL_EXSTYLE)&WS_EX_TOPMOST)!=0},{QStringLiteral("foreground"),GetForegroundWindow()==HWND(window->winId())}});file.write(QJsonDocument::fromVariant(evidence).toJson());}}
             application.exit(okay?0:2);
         });
         return application.exec();

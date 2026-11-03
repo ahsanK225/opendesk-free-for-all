@@ -23,6 +23,7 @@ use std::{
 use tokio::sync::{Semaphore, mpsc};
 use tower_http::services::ServeDir;
 
+#[derive(Debug)]
 pub enum Outbound {
     Packet(Value),
     Video(Vec<u8>),
@@ -51,7 +52,7 @@ struct Host {
 }
 pub struct Runtime {
     pub shared: Arc<Shared>,
-    peers: Mutex<HashMap<String, mpsc::Sender<Outbound>>>,
+    peers: Mutex<HashMap<String, crate::transport::Sender<Outbound>>>,
     host: Mutex<Host>,
     clients: Mutex<HashMap<String, mpsc::Sender<Value>>>,
     connections: Arc<Semaphore>,
@@ -84,6 +85,7 @@ impl Runtime {
         drop(host);
         self.shared.update(|v| {
             v["hostSession"] = Value::Null;
+            v["remoteCursor"] = Value::Null;
             v["incoming"] = Value::Null;
         });
     }
@@ -119,7 +121,7 @@ impl Runtime {
         self.shared.update(|v| {
             v["incoming"] = Value::Null;
             v["hostSession"] =
-                json!({"peer":peer,"permissions":permissions,"micEnabled":mic_enabled});
+                json!({"peer":peer,"sessionId":id,"permissions":permissions,"micEnabled":mic_enabled});
         });
         Ok(())
     }
@@ -263,6 +265,15 @@ impl Runtime {
         let typ = command["type"].as_str().unwrap_or("");
         let key = command["key"].as_str().unwrap_or("").to_owned();
         match typ {
+            #[cfg(test)]
+            "test_audio" => {
+                let host = self.host.lock().unwrap();
+                if let Some((peer, worker)) = &host.active {
+                    let mut payload = command["payload"].clone();
+                    payload["session_id"] = json!(worker.session);
+                    self.send(peer, "audio_chunk", payload);
+                }
+            }
             "check_updates" => crate::updater::start(self.shared.clone(), false),
             "install_update" => crate::updater::start(self.shared.clone(), true),
             "shutdown" => {
@@ -376,10 +387,11 @@ impl Runtime {
                     );
                 }
                 if let Some((_, worker)) = &self.host.lock().unwrap().active {
-                    let _ = worker.send("audio_settings", json!({}));
+                    let _ = worker.send("audio_settings", json!({"applyMic":name=="micEnabled"}));
                 }
                 for tx in self.clients.lock().unwrap().values() {
-                    let _ = tx.try_send(json!({"type":"audio_settings"}));
+                    let _ =
+                        tx.try_send(json!({"type":"audio_settings","applyMic":name=="micEnabled"}));
                 }
             }
             "favorite" => {
@@ -515,7 +527,7 @@ async fn peer(runtime: Arc<Runtime>, socket: WebSocket) {
             break id;
         }
     };
-    let (tx, mut rx) = mpsc::channel(64);
+    let (tx, mut rx) = crate::transport::channel();
     runtime.peers.lock().unwrap().insert(peer.clone(), tx);
     runtime.send(
         &peer,
@@ -524,6 +536,7 @@ async fn peer(runtime: Arc<Runtime>, socket: WebSocket) {
     );
     let mut counter = 0u32;
     let mut last = Instant::now();
+    let mut last_received = Instant::now();
     let registered = Instant::now();
     let mut health = tokio::time::interval(Duration::from_secs(1));
     let writer = tokio::spawn(async move {
@@ -535,7 +548,7 @@ async fn peer(runtime: Arc<Runtime>, socket: WebSocket) {
                 Outbound::Close => break,
             };
             if !matches!(
-                tokio::time::timeout(Duration::from_secs(5), sink.send(message)).await,
+                tokio::time::timeout(crate::transport::WRITE_TIMEOUT, sink.send(message)).await,
                 Ok(Ok(()))
             ) {
                 break;
@@ -547,6 +560,7 @@ async fn peer(runtime: Arc<Runtime>, socket: WebSocket) {
                     incoming=source.next()=>{
         match incoming{
         Some(Ok(Message::Text(text)))=>{
+        last_received=Instant::now();
         if last.elapsed()>=Duration::from_secs(1){
         last=Instant::now();
         counter=0;
@@ -562,17 +576,19 @@ async fn peer(runtime: Arc<Runtime>, socket: WebSocket) {
         }
         }
         ,Some(Ok(Message::Ping(bytes)))=>{
+        last_received=Instant::now();
         if let Some(tx)=runtime.peers.lock().unwrap().get(&peer){
         let _=tx.try_send(Outbound::Pong(bytes.to_vec()));
         }
         }
+        ,Some(Ok(Message::Pong(_)))=>{last_received=Instant::now();}
         ,Some(Ok(Message::Close(_)))|None|Some(Err(_))=>break,_=>{
         }
         }
         }
         ,
                     _=health.tick()=>{
-                        if runtime.shared.stop.load(Ordering::Acquire)||writer.is_finished()||last.elapsed()>Duration::from_secs(45){break}
+                        if runtime.shared.stop.load(Ordering::Acquire)||writer.is_finished()||last_received.elapsed()>Duration::from_secs(45){break}
                         let has_session={let host=runtime.host.lock().unwrap();host.active.as_ref().is_some_and(|(id,_)|id==&peer)||host.pending.as_ref().is_some_and(|p|p.peer==peer)};
                         if !has_session&&registered.elapsed()>Duration::from_secs(120){break}
                     },

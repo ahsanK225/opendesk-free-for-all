@@ -50,6 +50,9 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'RUNTIME_README.md') -Destinatio
 Copy-Item -Path (Join-Path $PSScriptRoot 'licenses/*') -Destination (Join-Path $bundle 'licenses') -Recurse -Force
 $forbidden = Get-ChildItem -LiteralPath $bundle -File -Recurse | Where-Object { $_.Name -match '^(ucrtbase|api-ms-|ext-ms-|python\d|Qt6.*d\.dll)' -or $_.Extension -in @('.py','.pyc','.pyd') }
 if ($forbidden) { throw ('Unexpected operating system, debug or Python runtime files: '+($forbidden.Name -join ', ')) }
+if (!$SkipTests) {
+    & "$PSScriptRoot/test-incoming.ps1" -ApplicationPath (Join-Path $bundle 'OpenDesk.exe') -EvidenceDir (Join-Path $output 'incoming-tests')
+}
 $env:CARGO_TARGET_DIR = Join-Path $build 'launcher'
 $previousFlags = $env:RUSTFLAGS
 try {
@@ -70,14 +73,14 @@ try {
     Compress-Archive -Path (Join-Path $bundle '*') -DestinationPath $payload -CompressionLevel Optimal
     $env:OPENDESK_PAYLOAD_ZIP = $payload
     Invoke-BuildTool cargo @('build','--locked','--release','--manifest-path','native/launcher/Cargo.toml','--target','x86_64-pc-windows-msvc','--features','portable','--bin','OpenDeskPortable')
-    Copy-Item -LiteralPath (Join-Path $launcher 'OpenDeskPortable.exe') -Destination (Join-Path $output 'OpenDesk_v3.0.0-alpha.1_Portable.exe') -Force
-    if (!$SkipTests) { & "$PSScriptRoot/test-portable.ps1" -PortablePath (Join-Path $output 'OpenDesk_v3.0.0-alpha.1_Portable.exe') -EvidenceDir (Join-Path $output 'portable-tests') }
+    Copy-Item -LiteralPath (Join-Path $launcher 'OpenDeskPortable.exe') -Destination (Join-Path $output 'OpenDesk_v3.0.0-alpha.2_Portable.exe') -Force
+    if (!$SkipTests) { & "$PSScriptRoot/test-portable.ps1" -PortablePath (Join-Path $output 'OpenDesk_v3.0.0-alpha.2_Portable.exe') -EvidenceDir (Join-Path $output 'portable-tests') }
     if ($InnoCompiler) { Invoke-BuildTool $InnoCompiler @("/DAppBundleDir=$bundle","/DMaintenancePath=$helper","/O$output",'native/installer.iss') }
 } finally { $env:RUSTFLAGS = $previousFlags; Remove-Item Env:OPENDESK_PAYLOAD_ZIP,Env:OPENDESK_RESOURCE_RES -ErrorAction SilentlyContinue }
 $manifest=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'version.json') -Raw|ConvertFrom-Json
-$portableArtifact=Join-Path $output 'OpenDesk_v3.0.0-alpha.1_Portable.exe'
+$portableArtifact=Join-Path $output 'OpenDesk_v3.0.0-alpha.2_Portable.exe'
 $manifest.sha256=(Get-FileHash -LiteralPath $portableArtifact -Algorithm SHA256).Hash.ToLowerInvariant()
-$installerArtifact=Join-Path $output 'OpenDesk_Setup_v3.0.0-alpha.1_Installer.exe'
+$installerArtifact=Join-Path $output 'OpenDesk_Setup_v3.0.0-alpha.2_Installer.exe'
 $artifacts=@($portableArtifact)
 if ($InnoCompiler -and (Test-Path -LiteralPath $installerArtifact)) {
     $manifest.installer_sha256=(Get-FileHash -LiteralPath $installerArtifact -Algorithm SHA256).Hash.ToLowerInvariant()

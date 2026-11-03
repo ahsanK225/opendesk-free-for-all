@@ -110,7 +110,7 @@ fn native_endpoints_approve_stream_transfer_and_revoke() {
         .as_str()
         .unwrap()
         .to_owned();
-    host.command(json!({"type":"approve","requestId":request,"allow":true,"permissions":{"input":false,"audio":false,"clipboard":false,"file_transfer":true}}));
+    host.command(json!({"type":"approve","requestId":request,"allow":true,"permissions":{"input":true,"audio":true,"clipboard":false,"file_transfer":true}}));
     wait("connected state", || {
         snapshot(&client)["connections"][0]["state"] == "connected"
     });
@@ -128,7 +128,7 @@ fn native_endpoints_approve_stream_transfer_and_revoke() {
     }
     assert_eq!(
         snapshot(&client)["connections"][0]["permissions"]["input"],
-        false
+        true
     );
     let source = case.root.join("payload.bin");
     let bytes: Vec<u8> = (0..(2 * crate::files::CHUNK + 17))
@@ -143,6 +143,36 @@ fn native_endpoints_approve_stream_transfer_and_revoke() {
     client.command(json!({"type":"download","key":key,"path":uploaded,"destination":downloaded}));
     wait("atomic download", || downloaded.is_file());
     assert_eq!(fs::read(&downloaded).unwrap(), bytes);
+    // Exercise both voice directions while forcing video updates for longer
+    // than the reported 10–20 second failure window. No OS input is injected;
+    // microphones are muted and speaker volume is disabled in this fixture.
+    let pcm: Vec<u8> = (0..960)
+        .flat_map(|i| (((i as f32 * 0.06).sin() * 1200.0) as i16).to_le_bytes())
+        .collect();
+    let audio =
+        json!({"data":B64.encode(pcm),"sample_rate":48000,"channels":1,"format":"pcm_s16le"});
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < deadline {
+        let mut payload = audio.clone();
+        payload["type"] = json!("audio_chunk");
+        client.command(json!({"type":"input","key":key,"payload":payload}));
+        host.command(json!({"type":"test_audio","payload":audio}));
+        client.command(json!({"type":"input","key":key,"payload":{"type":"video_refresh"}}));
+        assert_eq!(snapshot(&client)["connections"][0]["state"], "connected");
+        thread::sleep(Duration::from_millis(100));
+    }
+    wait("host voice reception", || {
+        snapshot(&host)["hostSession"]["audio"]["rxPackets"]
+            .as_u64()
+            .unwrap_or(0)
+            >= 200
+    });
+    wait("client voice reception", || {
+        snapshot(&client)["connections"][0]["audio"]["rxPackets"]
+            .as_u64()
+            .unwrap_or(0)
+            >= 200
+    });
     host.command(json!({"type":"end_sharing"}));
     wait("session revocation", || {
         snapshot(&client)["connections"][0]["state"] == "disconnected"

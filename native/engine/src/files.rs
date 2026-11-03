@@ -1,3 +1,4 @@
+use crate::transport::Sender;
 use crate::{
     app::Shared,
     network::{Outbound, packet},
@@ -19,7 +20,6 @@ use std::{
     },
     time::Duration,
 };
-use tokio::sync::mpsc::Sender;
 use windows::{
     Win32::Storage::FileSystem::{MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW},
     core::PCWSTR,

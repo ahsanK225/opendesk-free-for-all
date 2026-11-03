@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.0-alpha.2 — 2026-11-03
+
+- Process authorized input independently of capture/encoding and coalesce viewer mouse movement; flush motion before clicks/scrolling and show separate controller cursor visuals on both desktops.
+- Restore a minimized host for incoming approval, keep it topmost while unanswered, flash the taskbar when Windows restricts focus, and restore normal stacking after resolution. Reset permissions for every request.
+- Give control, voice, files and video independent bounded outgoing lanes, preserving file-message order. A busy capture/file queue no longer ends an otherwise healthy session.
+- Recover from decoder overload with a fresh keyframe without blocking voice/heartbeat reads; explicitly answer pings, count ping/pong traffic as liveness and allow a bounded 30-second network write deadline.
+- Preserve session microphone intent when unrelated settings change, retry unavailable microphones, remove the fixed quiet-speech gate and expose device readiness/errors and sent/received audio packet counts.
+- Add aligned version badges, a reconnect action requiring fresh authorization, and comprehensive installation, voice, architecture, update and troubleshooting documentation.
+- Add priority/ordering regressions and a 30-second bidirectional PCM/video session test. Physical two-device WAN/headset acceptance remains open; no fixed internet FPS/latency is promised.
+
 ## 3.0.0-alpha.1 native preview — 2026-11-03
 
 - Replaced Python runtime/build code with a Rust engine and Qt/QML desktop, retaining the dark/red identity and adopting the Portal O icon.

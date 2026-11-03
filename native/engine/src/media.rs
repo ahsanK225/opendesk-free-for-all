@@ -1,3 +1,4 @@
+use crate::transport::Sender;
 use crate::{
     app::{Frame, Shared},
     network::{Outbound, packet},
@@ -12,13 +13,12 @@ use serde_json::{Value, json};
 use std::{
     io::Cursor,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc,
     },
     time::{Duration, Instant},
 };
-use tokio::sync::mpsc::Sender;
 
 struct Encoded {
     data: Vec<u8>,
@@ -190,6 +190,10 @@ pub struct HostWorker {
     pub session: String,
     commands: mpsc::SyncSender<(String, Value)>,
     stop: Arc<AtomicBool>,
+    input: Mutex<crate::platform::Input>,
+    input_allowed: bool,
+    voice: Option<Arc<crate::audio::Voice>>,
+    shared: Arc<Shared>,
 }
 impl HostWorker {
     pub fn start(
@@ -202,9 +206,22 @@ impl HostWorker {
         let stop = Arc::new(AtomicBool::new(false));
         let signal = stop.clone();
         let id = session.clone();
+        let voice = if permissions.audio {
+            Some(Arc::new(crate::audio::Voice::start(
+                shared.clone(),
+                sender.clone(),
+                session.clone(),
+            )?))
+        } else {
+            None
+        };
+        let capture_voice = voice.clone();
+        let capture_shared = shared.clone();
+        let input_allowed = permissions.input;
         std::thread::Builder::new()
             .name("opendesk-capture".into())
             .spawn(move || {
+                let shared = capture_shared;
                 let exited = signal.clone();
                 if let Err(error) = host_loop(
                     shared.clone(),
@@ -213,6 +230,7 @@ impl HostWorker {
                     sender.clone(),
                     receiver,
                     signal,
+                    capture_voice,
                 ) {
                     shared.error(format!("Screen sharing: {error:#}"));
                     let _ = sender.try_send(Outbound::Packet(packet(
@@ -226,15 +244,58 @@ impl HostWorker {
             session,
             commands,
             stop,
+            input: Mutex::new(crate::platform::Input::default()),
+            input_allowed,
+            voice,
+            shared,
         })
     }
     pub fn send(&self, typ: &str, payload: Value) -> Result<()> {
-        self.commands
-            .try_send((typ.into(), payload))
-            .map_err(|_| anyhow::anyhow!("Media command queue is full or closed"))
+        if self.is_stopped() {
+            bail!("Media worker stopped")
+        }
+        if typ == "input_reset"
+            || (self.input_allowed && (typ.starts_with("mouse_") || typ.starts_with("key_")))
+        {
+            let mut input = self.input.lock().unwrap();
+            if typ == "input_reset" {
+                input.release_all();
+            } else {
+                input.handle(typ, &payload);
+            }
+            if typ.starts_with("mouse_") && payload["x"].is_number() && payload["y"].is_number() {
+                self.shared.update(|v| {
+                    v["remoteCursor"] =
+                        json!({"x":payload["x"],"y":payload["y"],"pressed":typ=="mouse_down"})
+                });
+            }
+            return Ok(());
+        }
+        if let Some(voice) = &self.voice {
+            match typ {
+                "audio_chunk" => {
+                    voice.push(&payload);
+                    return Ok(());
+                }
+                "audio_settings" => {
+                    voice.refresh_settings(payload["applyMic"] == true);
+                    return Ok(());
+                }
+                "local_mic_toggle" => {
+                    voice.toggle_mic();
+                    return Ok(());
+                }
+                _ => {}
+            }
+        }
+        match self.commands.try_send((typ.into(), payload)) {
+            Ok(()) | Err(mpsc::TrySendError::Full(_)) => Ok(()),
+            Err(mpsc::TrySendError::Disconnected(_)) => bail!("Media worker stopped"),
+        }
     }
     pub fn stop(&self) {
         self.stop.store(true, Ordering::Release);
+        self.input.lock().unwrap().release_all();
     }
     pub fn is_stopped(&self) -> bool {
         self.stop.load(Ordering::Acquire)
@@ -254,19 +315,11 @@ fn host_loop(
     sender: Sender<Outbound>,
     receiver: mpsc::Receiver<(String, Value)>,
     stop: Arc<AtomicBool>,
+    voice: Option<Arc<crate::audio::Voice>>,
 ) -> Result<()> {
     let mut capture = crate::capture::Capture::new()?;
     let mut input = crate::platform::Input::default();
     let mut clipboard = crate::platform::Clipboard::new();
-    let voice = if permissions.audio {
-        Some(crate::audio::Voice::start(
-            shared.clone(),
-            sender.clone(),
-            session.clone(),
-        )?)
-    } else {
-        None
-    };
     let (file_tx, file_rx) = mpsc::sync_channel::<(String, Value)>(8);
     if permissions.file_transfer {
         let file_stop = stop.clone();
@@ -369,7 +422,7 @@ break}
                 }
                 "audio_settings" => {
                     if let Some(voice) = &voice {
-                        voice.refresh_settings();
+                        voice.refresh_settings(p["applyMic"] == true);
                         shared.update(|v| {
                             if v["hostSession"].is_object() {
                                 v["hostSession"]["micEnabled"] = json!(voice.mic_enabled());
@@ -433,7 +486,7 @@ break}
                 quality = quality.saturating_add(1).min(requested_quality);
             }
         }
-        if Instant::now() >= next && window.can_send() && sender.capacity() >= 4 {
+        if Instant::now() >= next && window.can_send() && sender.capacity() > 0 {
             next = Instant::now() + Duration::from_secs_f64(1.0 / fps as f64);
             let captured = capture.grab()?;
             let changed = captured.is_some();
@@ -467,6 +520,7 @@ pub struct DecodeWorker {
     sender: mpsc::SyncSender<Vec<u8>>,
     stop: Arc<AtomicBool>,
     pub rtt: Arc<AtomicU64>,
+    reset: Arc<AtomicBool>,
 }
 impl DecodeWorker {
     pub fn start(
@@ -480,7 +534,11 @@ impl DecodeWorker {
         let signal = stop.clone();
         let rtt = Arc::new(AtomicU64::new(0));
         let rtt_worker = rtt.clone();
-        std::thread::Builder::new().name("opendesk-video-decode".into()).spawn(move||{let mut decoder=Decoder::default();while !signal.load(Ordering::Acquire){match receiver.recv_timeout(Duration::from_millis(50)){
+        let reset = Arc::new(AtomicBool::new(false));
+        let reset_worker = reset.clone();
+        std::thread::Builder::new().name("opendesk-video-decode".into()).spawn(move||{let mut decoder=Decoder::default();while !signal.load(Ordering::Acquire){
+            if reset_worker.swap(false,Ordering::AcqRel){while receiver.try_recv().is_ok(){} decoder=Decoder::default();let _=out.try_send(Outbound::Packet(packet("video_refresh",json!({}))));}
+            match receiver.recv_timeout(Duration::from_millis(50)){
             Ok(bytes)=>match decoder.decode(&bytes,&session){
 Ok(frame)=>{
 let frame_id=frame.generation;
@@ -499,19 +557,23 @@ let _=out.blocking_send(Outbound::Packet(packet("video_refresh",json!({
 ,
             Err(mpsc::RecvTimeoutError::Timeout)=>{},Err(_)=>break
         }}})?;
-        Ok(Self { sender, stop, rtt })
+        Ok(Self {
+            sender,
+            stop,
+            rtt,
+            reset,
+        })
     }
     pub async fn push(&self, bytes: Vec<u8>) -> Result<()> {
         let sender = self.sender.clone();
         match sender.try_send(bytes) {
             Ok(()) => Ok(()),
-            Err(mpsc::TrySendError::Full(bytes)) => {
-                tokio::task::spawn_blocking(move || {
-                    sender
-                        .send(bytes)
-                        .map_err(|_| anyhow::anyhow!("Video decoder stopped"))
-                })
-                .await?
+            Err(mpsc::TrySendError::Full(_)) => {
+                // A dropped delta invalidates the chain. Reset on the worker,
+                // drain dependent frames and request a full frame, without
+                // blocking the WebSocket reader (voice, pings and input).
+                self.reset.store(true, Ordering::Release);
+                Ok(())
             }
             Err(_) => bail!("Video decoder stopped"),
         }

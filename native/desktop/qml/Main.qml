@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 import OpenDesk.Media 1.0
 
 ApplicationWindow {
@@ -18,12 +19,15 @@ ApplicationWindow {
     property string activeKey:""
     property string serverActive:"home"
     property bool favoritesOnly:false
+    readonly property string approvalRequestId:(model.incoming||{}).requestId||""
+    onApprovalRequestIdChanged:{if(approvalRequestId.length)approval.open();else approval.close();}
     readonly property var sessions:model.connections||[]
     readonly property var current:session(activeKey)
     function session(key){for(let i=0;i<sessions.length;i++)if(sessions[i].key===key)return sessions[i];return {};}
     function send(type,data){let value=data||{};value.type=type;backend.command(value);}
     function connectTo(target){if(target.trim().length)send("connect",{target:target.trim(),password:password.text});}
     function navigate(value){page=value;}
+    function micText(s){let a=s.audio||{};return a.micRequested&&!a.micReady?"Mic retrying":s.micEnabled?"Mic on":"Mic off";}
     Connections {target:backend;function onStateChanged(){if(root.model.exitRequested){root.close();return;}let key=root.model.activeTab||"home";if(key!==root.serverActive){root.serverActive=key;root.activeKey=key==="home"?"":key;root.page="home";}}}
 
     RowLayout {
@@ -58,7 +62,7 @@ ApplicationWindow {
                 Rectangle {Layout.fillWidth:true;implicitHeight:root.width>=1080?84:48;color:Theme.panel;radius:11;border.color:Theme.border
                     ColumnLayout{anchors.fill:parent;anchors.margins:12;spacing:7
                         RowLayout{spacing:8;Rectangle{width:7;height:7;radius:4;color:root.model.statusTone==="ready"?Theme.success:root.model.statusTone==="error"?Theme.accent:Theme.warning}Text{visible:root.width>=1080;text:root.model.status||"Starting…";color:Theme.muted;font.pixelSize:11;elide:Text.ElideRight;Layout.fillWidth:true}}
-                        Text{visible:root.width>=1080;text:"v"+(root.model.version||"3.0.0");font.pixelSize:10;color:Theme.faint}
+                        VersionBadge{visible:root.width>=1080;version:root.model.version||"";Layout.alignment:Qt.AlignLeft|Qt.AlignVCenter}
                     }
                 }
             }
@@ -187,34 +191,37 @@ ApplicationWindow {
                             }
                         }
                         Panel{Layout.fillWidth:true;Layout.leftMargin:32;Layout.rightMargin:32;ColumnLayout{anchors.fill:parent;spacing:12;RowLayout{Layout.fillWidth:true;Text{text:"Software updates";font.pixelSize:17;font.weight:Font.DemiBold;color:Theme.text;Layout.fillWidth:true}ActionButton{text:"Check for updates";enabled:!(root.model.update&&["checking","downloading","installing"].indexOf(root.model.update.state)>=0);onClicked:root.send("check_updates")}ActionButton{text:"Install & restart";primary:true;visible:Boolean(root.model.update&&root.model.update.state==="available");onClicked:root.send("install_update")}}Text{text:(root.model.update||{}).message||"OpenDesk "+(root.model.version||"");color:Theme.muted;font.pixelSize:12;wrapMode:Text.WordWrap;Layout.fillWidth:true}}}
-                        Text{text:"OpenDesk "+(root.model.version||"")+" • Rust engine / Qt native desktop";font.pixelSize:11;color:Theme.faint;Layout.leftMargin:32;Layout.bottomMargin:24}
+                        RowLayout{Layout.leftMargin:32;Layout.bottomMargin:24;spacing:12;VersionBadge{version:root.model.version||""}Text{text:"Rust engine / Qt native desktop";font.pixelSize:11;color:Theme.faint;Layout.alignment:Qt.AlignVCenter}}
                     }
                 }
                 ColumnLayout {
                     spacing:0
                     Rectangle{Layout.fillWidth:true;implicitHeight:62;color:Theme.panel
                         RowLayout{anchors.fill:parent;anchors.margins:12;spacing:10
-                            ColumnLayout{spacing:2;Text{text:root.current.name||root.current.target||"Remote session";color:Theme.text;font.pixelSize:13;font.weight:Font.DemiBold}Text{text:root.current.message||root.current.state||"";color:Theme.muted;font.pixelSize:10}}
+                            ColumnLayout{spacing:2;Layout.maximumWidth:300;Text{text:root.current.name||root.current.target||"Remote session";color:Theme.text;font.pixelSize:13;font.weight:Font.DemiBold}Text{text:(root.current.audio||{}).error||root.current.message||root.current.state||"";color:(root.current.audio||{}).error?Theme.warning:Theme.muted;font.pixelSize:10;elide:Text.ElideRight;Layout.fillWidth:true}}
                             Item{Layout.fillWidth:true}
                             Text{text:root.current.state==="connected"?((root.current.fps||0)>0?Math.round(root.current.fps)+" FPS":"Idle")+"   ·   "+Math.round(root.current.rtt||0)+" ms":"";font.family:"Consolas";font.pixelSize:11;color:Theme.muted}
                             ComboBox{model:["Balanced","Performance","Sharp"];Layout.preferredWidth:130;onActivated:root.send("video_profile",{key:root.activeKey,profile:currentText.toLowerCase()});Accessible.name:"Session video quality"}
-                            ActionButton{text:root.current.micEnabled?"Mic on":"Mic off";glyph:"\ue720";Accessible.name:"Toggle session microphone";enabled:Boolean(root.current.permissions&&root.current.permissions.audio);onClicked:root.send("toggle_mic",{key:root.activeKey})}
+                            ActionButton{text:root.micText(root.current);glyph:"\ue720";Accessible.name:"Toggle session microphone";ToolTip.visible:hovered;ToolTip.text:(root.current.audio||{}).error||"Voice packets sent: "+((root.current.audio||{}).txPackets||0)+" / received: "+((root.current.audio||{}).rxPackets||0);enabled:Boolean(root.current.permissions&&root.current.permissions.audio);onClicked:root.send("toggle_mic",{key:root.activeKey})}
                             ActionButton{glyph:"\ue8b7";Accessible.name:"Remote files";enabled:Boolean(root.current.permissions&&root.current.permissions.file_transfer);onClicked:{root.page="files";root.send("list_files",{key:root.activeKey,path:"."});}}
                             ActionButton{text:"Disconnect";glyph:"\ue8bb";enabled:root.current.state!=="disconnected"&&root.current.state!=="error";onClicked:root.send("disconnect",{key:root.activeKey})}
                         }
                     }
                     Item{Layout.fillWidth:true;Layout.fillHeight:true
-                        RemoteFrame{anchors.fill:parent;engine:backend;sessionKey:root.activeKey;controlEnabled:root.current.state==="connected"&&Boolean(root.current.permissions&&root.current.permissions.input);visible:root.current.state==="connected"}
+                        RemoteFrame{id:remoteFrame;anchors.fill:parent;engine:backend;sessionKey:root.activeKey;controlEnabled:root.current.state==="connected"&&Boolean(root.current.permissions&&root.current.permissions.input);visible:root.current.state==="connected";clip:true
+                            RemoteCursor{x:remoteFrame.pointerPosition.x;y:remoteFrame.pointerPosition.y;label:"You";visible:remoteFrame.controlEnabled}
+                        }
                         ColumnLayout{anchors.centerIn:parent;spacing:18;visible:root.current.state!=="connected";width:Math.min(500,parent.width-80)
                             BusyIndicator{running:root.current.state!=="error"&&root.current.state!=="disconnected";visible:running;Layout.alignment:Qt.AlignHCenter}
                             Text{text:root.current.state==="error"?"Connection needs attention":root.current.state==="disconnected"?"Session ended":"Connecting to your desktop";color:Theme.text;font.pixelSize:23;font.weight:Font.DemiBold;Layout.alignment:Qt.AlignHCenter}
                             Text{text:root.current.message||"Checking the remote device and waiting for access.";color:Theme.muted;font.pixelSize:13;wrapMode:Text.WordWrap;horizontalAlignment:Text.AlignHCenter;Layout.fillWidth:true}
+                            ActionButton{text:"Reconnect";primary:true;Layout.alignment:Qt.AlignHCenter;visible:root.current.state==="error"||root.current.state==="disconnected";onClicked:root.connectTo(root.current.target||"")}
                         }
                     }
                 }
             }
             Rectangle{Layout.fillWidth:true;implicitHeight:root.model.hostSession?48:0;visible:Boolean(root.model.hostSession);color:"#2b1c24"
-                RowLayout{anchors.fill:parent;anchors.leftMargin:24;anchors.rightMargin:24;Text{text:"Your desktop is being shared with "+((root.model.hostSession||{}).peer||"");color:Theme.text;font.pixelSize:12;Layout.fillWidth:true}ActionButton{text:(root.model.hostSession||{}).micEnabled?"Mic on":"Mic off";glyph:"\ue720";quiet:true;enabled:Boolean(((root.model.hostSession||{}).permissions||{}).audio);onClicked:root.send("toggle_host_mic")}ActionButton{text:"End sharing";quiet:true;onClicked:root.send("end_sharing")}}
+                RowLayout{anchors.fill:parent;anchors.leftMargin:24;anchors.rightMargin:24;Text{text:"Your desktop is being shared with "+((root.model.hostSession||{}).peer||"");color:Theme.text;font.pixelSize:12;Layout.fillWidth:true}ActionButton{text:root.micText(root.model.hostSession||{});ToolTip.visible:hovered;ToolTip.text:((root.model.hostSession||{}).audio||{}).error||"Microphone and speaker follow Windows default audio devices";glyph:"\ue720";quiet:true;enabled:Boolean(((root.model.hostSession||{}).permissions||{}).audio);onClicked:root.send("toggle_host_mic")}ActionButton{text:"End sharing";quiet:true;onClicked:root.send("end_sharing")}}
             }
         }
     }
@@ -248,11 +255,23 @@ ApplicationWindow {
         onAccepted:{root.send("password",{key:root.activeKey,password:remoteSecret.text});remoteSecret.clear();}
         onRejected:root.send("disconnect",{key:root.activeKey})
     }
-    Dialog{id:approval;title:"Incoming connection";modal:true;anchors.centerIn:parent;width:460;visible:Boolean(root.model.incoming);standardButtons:Dialog.Ok|Dialog.Cancel
+    Dialog{id:approval;title:"Incoming connection";modal:true;anchors.centerIn:parent;width:460;standardButtons:Dialog.Ok|Dialog.Cancel
+        closePolicy:Popup.NoAutoClose
+        onOpened:{allowInput.checked=true;allowAudio.checked=false;allowClipboard.checked=false;allowFiles.checked=false;standardButton(Dialog.Ok).text="Allow connection";standardButton(Dialog.Cancel).text="Reject";forceActiveFocus();}
         background:Rectangle{color:Theme.panel;radius:14;border.color:Theme.border}
-        ColumnLayout{anchors.fill:parent;spacing:12;Text{text:((root.model.incoming||{}).peer||"A remote desktop")+" wants to connect. Choose what to share.";font.pixelSize:14;color:Theme.text;wrapMode:Text.WordWrap;Layout.fillWidth:true}CheckBox{id:allowInput;text:"Keyboard and mouse";checked:true}CheckBox{id:allowAudio;text:"Two-way voice"}CheckBox{id:allowClipboard;text:"Text clipboard"}CheckBox{id:allowFiles;text:"Files in your chosen shared folder"}}
+        contentItem:ColumnLayout{spacing:12;Text{text:((root.model.incoming||{}).peer||"A remote desktop")+" wants to connect. Choose what to share.";font.pixelSize:14;color:Theme.text;wrapMode:Text.WordWrap;Layout.fillWidth:true}CheckBox{id:allowInput;text:"Keyboard and mouse";checked:true}CheckBox{id:allowAudio;text:"Two-way voice"}CheckBox{id:allowClipboard;text:"Text clipboard"}CheckBox{id:allowFiles;text:"Files in your chosen shared folder"}}
         onAccepted:root.send("approve",{requestId:root.model.incoming.requestId,allow:true,permissions:{input:allowInput.checked,audio:allowAudio.checked,clipboard:allowClipboard.checked,file_transfer:allowFiles.checked}})
         onRejected:root.send("approve",{requestId:(root.model.incoming||{}).requestId||"",allow:false})
+    }
+    Window {
+        id:remotePointerWindow
+        transientParent:null
+        visible:Boolean(root.model.hostSession&&root.model.remoteCursor)
+        width:80;height:46;color:"transparent"
+        flags:Qt.Tool|Qt.FramelessWindowHint|Qt.WindowStaysOnTopHint|Qt.WindowTransparentForInput|Qt.WindowDoesNotAcceptFocus
+        x:primaryDesktop.x+Math.round(Math.max(0,Math.min(1,(root.model.remoteCursor||{}).x||0))*(primaryDesktop.width-1))
+        y:primaryDesktop.y+Math.round(Math.max(0,Math.min(1,(root.model.remoteCursor||{}).y||0))*(primaryDesktop.height-1))
+        RemoteCursor{label:"Remote"}
     }
     Rectangle{anchors.horizontalCenter:parent.horizontalCenter;anchors.bottom:parent.bottom;anchors.bottomMargin:22;width:Math.min(660,parent.width-80);height:noticeText.implicitHeight+28;radius:10;color:Theme.elevated;border.color:Theme.border;visible:Boolean(root.model.notice)
         Text{id:noticeText;anchors.fill:parent;anchors.margins:14;text:(root.model.notice||{}).message||"";color:(root.model.notice||{}).tone==="error"?"#ffaaa4":Theme.text;wrapMode:Text.WordWrap;font.pixelSize:12}

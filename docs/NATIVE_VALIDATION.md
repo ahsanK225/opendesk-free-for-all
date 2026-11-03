@@ -1,5 +1,7 @@
 # Native preview validation — 2026-11-03
 
+The subsequent **3.0.0-alpha.2** input, voice, connection and approval changes are recorded in [ALPHA2_VALIDATION.md](ALPHA2_VALIDATION.md). Results below describe the original alpha.1 baseline.
+
 OpenDesk 3.0.0-alpha.1 replaces the Python runtime/build implementation with a Rust engine, Qt/QML desktop and independent Rust delivery tools. This record describes local Windows checks; it is not a claim of physical two-device WAN/headset acceptance or production certification.
 
 ## Regressions addressed

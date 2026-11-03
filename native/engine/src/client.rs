@@ -21,7 +21,7 @@ pub fn profile(name: &str) -> Value {
         _ => json!({"fps":30,"max_width":1600,"quality":65}),
     }
 }
-async fn send(tx: &mpsc::Sender<Outbound>, typ: &str, payload: Value) -> Result<()> {
+async fn send(tx: &crate::transport::Sender<Outbound>, typ: &str, payload: Value) -> Result<()> {
     tx.send(Outbound::Packet(packet(typ, payload)))
         .await
         .context("Remote socket closed")
@@ -43,7 +43,7 @@ pub async fn run(
         .await
         .context("Connection timed out")??;
     let (mut sink, mut source) = socket.split();
-    let (tx, mut outgoing) = mpsc::channel(64);
+    let (tx, mut outgoing) = crate::transport::channel();
     let mut writer = tokio::spawn(async move {
         while let Some(value) = outgoing.recv().await {
             let message = match value {
@@ -56,7 +56,7 @@ pub async fn run(
                 }
             };
             if !matches!(
-                tokio::time::timeout(Duration::from_secs(5), sink.send(message)).await,
+                tokio::time::timeout(crate::transport::WRITE_TIMEOUT, sink.send(message)).await,
                 Ok(Ok(()))
             ) {
                 return;
@@ -130,6 +130,7 @@ send(&tx,"connect",json!({
                                     {let mut store=shared.store.lock().unwrap();store.remember(&target)?;}shared.sync_config();
                                     shared.connection(&key,|v|{
 v["state"]=json!("connected");
+v["sessionId"]=json!(session);
 v["message"]=json!("Connected");
 v["permissions"]=json!(permissions);
 v["needsPassword"]=json!(false);
@@ -156,10 +157,10 @@ shared.connection(&key,|v|v["rtt"]=json!(rtt));
                             "session_end"=>{shared.connection(&key,|v|v["message"]=json!(p["message"].as_str().unwrap_or("Session ended.")));break},
                             "audio_chunk" if permissions.audio&&p["session_id"]==session=>{if let Some(voice)=&voice{voice.push(p);}},
                             "clipboard_text" if permissions.clipboard&&p["session_id"]==session=>{if let Some(text)=p["text"].as_str().filter(|t|t.len()<=1024*1024){let _=clipboard.set(text);}},
-                            typ if typ.starts_with("file_")&&permissions.file_transfer&&p["session_id"]==session=>{files.packet(typ,p,&tx).await?;},_=>{}
+                            typ if typ.starts_with("file_")&&permissions.file_transfer&&p["session_id"]==session=>{if let Err(error)=files.packet(typ,p,&tx).await{shared.error(error);}},_=>{}
                         }
                     },
-                    Message::Ping(bytes)=>{let _=bytes;},Message::Close(_)=>break,_=>{}
+                    Message::Ping(bytes)=>{let _=tx.try_send(Outbound::Pong(bytes.to_vec()));},Message::Close(_)=>break,_=>{}
                 }
             },
             command=commands.recv()=>{
@@ -187,8 +188,8 @@ send(&tx,&typ,p).await?;
 
                     },
                     "toggle_mic" if permissions.audio=>{if let Some(voice)=&voice{voice.toggle_mic();shared.connection(&key,|v|v["micEnabled"]=json!(voice.mic_enabled()));}},
-                    "audio_settings"=>{if let Some(voice)=&voice{voice.refresh_settings();shared.connection(&key,|v|v["micEnabled"]=json!(voice.mic_enabled()));}},
-                    "list_files"|"upload"|"download" if permissions.file_transfer&&!session.is_empty()=>{files.command(&command,&tx).await?;},_=>{}
+                    "audio_settings"=>{if let Some(voice)=&voice{voice.refresh_settings(command["applyMic"]==true);shared.connection(&key,|v|v["micEnabled"]=json!(voice.mic_enabled()));}},
+                    "list_files"|"upload"|"download" if permissions.file_transfer&&!session.is_empty()=>{if let Err(error)=files.command(&command,&tx).await{shared.error(error);}},_=>{}
                 }
             },
             _=heartbeat.tick()=>{

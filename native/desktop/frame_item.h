@@ -9,6 +9,7 @@ class FrameItem:public QQuickItem {
     Q_PROPERTY(EngineBridge* engine READ engine WRITE setEngine NOTIFY engineChanged)
     Q_PROPERTY(QString sessionKey READ sessionKey WRITE setSessionKey NOTIFY sessionKeyChanged)
     Q_PROPERTY(bool controlEnabled READ controlEnabled WRITE setControlEnabled NOTIFY controlEnabledChanged)
+    Q_PROPERTY(QPointF pointerPosition READ pointerPosition NOTIFY pointerChanged)
 public:
     explicit FrameItem(QQuickItem* parent=nullptr);
     EngineBridge* engine()const{return m_engine;}
@@ -18,7 +19,8 @@ public:
     bool controlEnabled()const{return m_control;}
     void setControlEnabled(bool value);
     void setDiagnosticFrame(const QImage& image);
-signals:void engineChanged();void sessionKeyChanged();void controlEnabledChanged();
+    QPointF pointerPosition()const{return m_pointer;}
+signals:void engineChanged();void sessionKeyChanged();void controlEnabledChanged();void pointerChanged();
 protected:
     QSGNode* updatePaintNode(QSGNode* old,UpdatePaintNodeData*)override;
     void mouseMoveEvent(QMouseEvent*)override;
@@ -35,4 +37,7 @@ private:
     EngineBridge* m_engine=nullptr;QString m_key;bool m_control=false;
     QImage m_image;uint64_t m_generation=0,m_painted=0;QTimer m_timer;
     std::atomic<int> m_rendered{0};QElapsedTimer m_fps;
+    QPointF m_pointer{-100,-100};
+    QVariantMap m_pendingMove;
+    void flushPointer();
 };

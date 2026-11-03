@@ -1,31 +1,91 @@
-# OpenDesk 3 native preview
+# OpenDesk
 
-**Download v3.0.0-alpha.1:** [Windows installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0.0-alpha.1/OpenDesk_Setup_v3.0.0-alpha.1_Installer.exe) · [Portable EXE](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0.0-alpha.1/OpenDesk_v3.0.0-alpha.1_Portable.exe) · [Native release page](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.0.0-alpha.1)
+A Windows remote desktop application with a **Rust engine, Qt 6/QML interface and C++ rendering bridge**. Share the primary display, control an approved desktop, talk during a session and exchange files in a folder selected by the host.
 
-The native version is listed as a **Pre-release** on the Releases page. GitHub's stable **Latest** link continues to show v2.0.2. The [portfolio fork's native release](https://github.com/hamxa8769/opendesk-free-for-all/releases/tag/v3.0.0-alpha.1) mirrors the same verified binaries.
+**Native preview v3.0.0-alpha.2:** [Windows installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0.0-alpha.2/OpenDesk_Setup_v3.0.0-alpha.2_Installer.exe) · [Portable executable](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0.0-alpha.2/OpenDesk_v3.0.0-alpha.2_Portable.exe) · [Release notes/checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.0.0-alpha.2)
 
-OpenDesk now has a **Rust engine and Qt/QML desktop**, retaining the dark/red design with a new Portal O icon. The native Windows application, installer helper and portable launcher do not use Python or temporary PyInstaller extraction.
+The native application is a **pre-release** while physical two-device internet/headset acceptance remains open. GitHub's stable **Latest** link and stable update manifest still point to [v2.0.2](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.0.2). The [portfolio fork](https://github.com/hamxa8769/opendesk-free-for-all/releases/tag/v3.0.0-alpha.2) mirrors native artifacts. Local tests/benchmarks do not guarantee a particular internet FPS or latency.
 
-The native build is a preview pending two-device WAN/headset acceptance. [v2.0.2 remains the previous stable release](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.0.2). Optimized Release builds and local test results are not a guarantee of internet FPS or voice quality on every device.
+## Features
 
-## What changed
+- DXGI display capture with GDI fallback, initial idle-desktop frames and cursor composition. SIMD libjpeg-turbo JPEG tiles feed Qt's GPU scene graph.
+- Balanced, Performance and Sharp profiles, bounded frame acknowledgements and adaptive resolution/quality. FPS counts actual viewer frame presentations; a static screen can show **Idle**.
+- Remote mouse, buttons, scrolling and keyboard. Input bypasses capture/encoding work; the viewer coalesces mouse movement to avoid stale queues. A cyan **You** cursor provides immediate viewer feedback; **Remote** identifies the controller on the host.
+- Native WASAPI voice through CPAL: explicit sample rates, continuous resampling, 20 ms mono PCM packets, independent outgoing audio capacity and bounded playback buffering. Session mute/gain/volume, default-device retry and device readiness/errors are available.
+- Incoming approval restores a minimized window and remains above other apps until acceptance, rejection or expiry. Input, voice, clipboard and files have separate permissions.
+- Verified/pinned device fingerprints, DPAPI-protected local identity/passwords, one-use password challenges and immediate access revocation with held-input release.
+- Saved desktops, favorites, session tabs, native file dialogs and folder-scoped transfers with ordered chunks, SHA-256 verification and atomic replacement.
+- Native installer shutdown helper, verified-process force-close fallback, persistent portable cache, repair and verified updates. No Python or PyInstaller runtime.
 
-- Native DXGI capture with cursor composition, GDI fallback and an initial frame even when the desktop is idle.
-- BGRA buffers, direct SIMD libjpeg-turbo 3.2.1, ordered JPEG tile reconstruction, bounded video acknowledgements and adaptive quality. Qt renders frames through its GPU scene graph; the toolbar reports actual frame presentations.
-- Native WASAPI voice through CPAL, explicit sample rates, continuous resampling, 20 ms packets, bounded buffers, microphone mute/gain, speaker volume and default-device recovery.
-- Device fingerprint verification, DPAPI-protected identity/passwords, one-use password challenges, request-bound approval, independent input/voice/clipboard/file permissions and immediate revocation.
-- Saved desktops, favorites, multiple session tabs, native file/folder dialogs, a chosen shared folder, ordered hash-verified atomic transfers and an always-visible host sharing indicator.
-- A responsive Qt desktop checked at 100% and 150% scaling. The sidebar compacts and home cards stack on smaller screens.
-- A standalone Rust shutdown helper with a bounded cooperative grace period and verified-process force-close fallback. The installer upgrades running old versions and preserves configuration/device identity.
-- A portable launcher with a persistent transactional runtime cache and repair support. Updates verify the official release URL and SHA-256, wait for the app to exit, retain a portable rollback copy and restart independently.
+## System requirements
 
-This project uses its own protocol-v2 JPEG tile transport. It does not implement AnyDesk's proprietary DeskRT codec or connect to AnyDesk devices.
+| Component | Requirement |
+| --- | --- |
+| OS | Windows 10/11 x64, signed-in interactive desktop |
+| Graphics | Direct3D 11 rendering; DXGI capture with GDI fallback |
+| Network | Local TCP for LAN; outbound HTTPS/WSS and Cloudflare access for internet links/directory lookup |
+| Voice | Windows default microphone and speaker/headset; desktop microphone permission |
+| Storage | Writable per-user application/profile directories and space for the extracted runtime |
+| Compatibility | Protocol-v2 OpenDesk on both ends; AnyDesk devices are incompatible |
 
-## Build and verify
+Multi-monitor selection, pre-login hosting, UAC secure-desktop control and native acoustic echo cancellation are not implemented. Use headphones for two-way voice.
 
-Windows 10/11 x64, Rust 1.95.0 MSVC, Visual Studio 2022 Build Tools/Windows SDK, CMake, Qt 6.8.3 MSVC 2022 x64 and libjpeg-turbo 3.2.1 Visual C++ x64 are required. Node runs the browser checks. Inno Setup builds the installer.
+## Installation and setup
+
+1. Download the complete native installer or portable executable above. Verify its SHA-256 against the release's `SHA256SUMS.txt` when checking download integrity.
+2. Run the installer. The per-user default destination is `%LOCALAPPDATA%\Programs\OpenDesk`. Upgrading attempts cooperative shutdown, then a verified-process force-close fallback. Configuration and identity are preserved.
+3. Open **OpenDesk** from its shortcut. Portable users open the downloaded executable; first launch extracts a persistent runtime and later launches reuse it.
+4. Wait for the desktop address/local host to become ready. For internet use, wait for the share link.
+
+Settings, trust and identity live in `%USERPROFILE%\.opendesk`. Portable files are cached in `%LOCALAPPDATA%\OpenDesk\runtimes`. Keep installed/cache DLLs with their executable. `OPENDESK_RUNTIME_DIR` can select a shorter absolute writable cache directory for redirected Windows profiles.
+
+## Remote connection and screen sharing
+
+1. **Host:** share the nine-digit address or internet share link. The home screen also shows a local host URL for LAN diagnostics.
+2. **Viewer:** enter the address, host URL or share link and select **Connect**. On first connection, compare the fingerprint with the host's **Settings** before trusting it.
+3. **Host:** the incoming dialog appears above other applications. Choose permissions and accept. Keyboard/mouse starts selected; voice, clipboard and files require selection. Requests expire after 60 seconds.
+4. **Viewer:** change quality, toggle voice, browse allowed files or disconnect using the session toolbar. Performance targets up to 60 FPS at a smaller frame width; delivered FPS depends on screen changes, CPU, capture and network.
+5. **Host:** the sharing bar identifies the connected peer. **End sharing** revokes the session immediately.
+
+The cyan cursor visualizes the controller's pointer. Windows still has one system pointer; this does not create a second independent OS mouse. Movement maps to the displayed image including letterboxing. Clicks flush pending motion; scrolling positions the pointer before the wheel event.
+
+After a network interruption, select **Reconnect**. Trust is checked again and attended access requires fresh approval. Permissions are not silently restored. Investigate changed fingerprints before reconnecting.
+
+### Unattended access
+
+Set an access password of at least eight characters in Settings if unattended access is intended. A valid password grants input, voice, clipboard and selected shared-folder access without a prompt. Microphones still follow local mute/default settings. Remove the password to return to attended approval.
+
+### Browser viewer and files
+
+The built-in local server serves a protocol-v2 browser viewer at the host's share URL. Browser microphone capture needs HTTPS or localhost, browser permission and a user gesture to resume playback. Native voice follows Windows privacy settings instead.
+
+Choose the host's **Shared folder** before granting file access. Transfers operate inside that folder and verify order, size and hash before replacing a destination. Changing the folder ends sharing so a new session can explicitly authorize the new location.
+
+## Voice communication setup
+
+1. Select working default recording/playback devices under **Windows Settings → System → Sound**. Native OpenDesk follows the Windows defaults.
+2. Enable microphone access and **Let desktop apps access your microphone** in Windows privacy settings. Labels differ slightly between Windows 10 and 11.
+3. The host must grant **Two-way voice**. A disabled microphone button means voice permission was not granted; reconnect with that permission.
+4. Enable **Mic on** on each side that should transmit. Microphones start muted by default. Settings provides gain and speaker volume.
+5. Hover over the viewer microphone button for packet counts/device errors. **Mic retrying** means transmission was requested but the device has not opened. The app retries the default device; the session status exposes errors.
+
+Changing volume, gain or quality preserves the session mute choice. Audio has a separate outgoing lane from video/files. Continuous packets avoid a fixed noise gate cutting quiet speech. Use headphones to prevent feedback: native echo cancellation is unavailable. Packet delivery tests alone do not establish physical microphone/speaker intelligibility.
+
+## Connection stability and architecture
+
+OpenDesk uses its own **protocol-v2 WebSocket/WSS transport**, JPEG tiles and mono PCM voice. It does **not** use WebRTC, ICE, STUN/TURN or AnyDesk's proprietary DeskRT codec. There are no ICE states or WebRTC tracks to configure.
+
+A supervised hash-pinned Cloudflare tunnel and signed, expiring directory records provide internet reachability. Cloudflare terminates HTTPS/WSS; media is not end-to-end encrypted peer to peer.
+
+Independent bounded lanes prioritize control and voice over file/video backlog. Decoder overload requests a full frame without blocking the socket reader. Client heartbeats run every second; valid text/ping/pong traffic updates host liveness. A 45-second receive inactivity limit and 30-second write deadline still terminate unresponsive connections. Capture/file queue overload no longer deliberately ends the whole session. A single socket can still experience network head-of-line blocking during a write.
+
+## Build and development
+
+Use Windows x64, Rust **1.95.0 MSVC**, Visual Studio 2022 Build Tools/Windows SDK, CMake 3.24+, Qt **6.8.3 MSVC 2022 x64**, libjpeg-turbo **3.2.1 Visual C++ x64**, Node.js for browser checks and Inno Setup for the installer. No Python packages/interpreter are required.
 
 ```powershell
+git clone https://github.com/ahsanK225/opendesk-free-for-all.git
+cd opendesk-free-for-all
 .\native\fetch-cloudflared.ps1
 .\build.ps1 -QtRoot C:\SDKs\Qt\6.8.3\msvc2022_64 `
   -TurboJpegRoot C:\SDKs\libjpeg-turbo-3.2.1 `
@@ -33,20 +93,53 @@ Windows 10/11 x64, Rust 1.95.0 MSVC, Visual Studio 2022 Build Tools/Windows SDK,
   -InnoCompiler 'C:\Program Files (x86)\Inno Setup 7\ISCC.exe'
 ```
 
-See [native build/architecture instructions](native/README.md), [native validation](docs/NATIVE_VALIDATION.md), [dependency licenses](native/licenses/README.md) and the [four logo directions](assets/brand/README.md). The CI template lives in [ci/windows.yml](ci/windows.yml); it is not an active GitHub workflow.
+SDK paths are examples. The build verifies the pinned Cloudflare binary and produces a runtime, portable executable, installer, manifest and checksums in `dist/native`. Qt DLLs/plugins remain replaceable; notices and SPDX information ship in `licenses`.
 
-## Running and sharing
+```powershell
+cargo test --release --locked --lib --manifest-path native/engine/Cargo.toml -- --test-threads=1
+cargo clippy --release --locked --lib --manifest-path native/engine/Cargo.toml -- -D warnings
+cargo test --release --locked --manifest-path native/launcher/Cargo.toml --features fixtures
+node tests/test_web.cjs
+```
 
-Open the installed or portable executable. Enter a remote device's nine-digit ID or share URL. Verify its fingerprint on first connection, then request access. The host chooses permissions. A configured unattended password grants control, voice, clipboard and access to the selected shared folder without an approval prompt; new passwords require at least eight characters. Microphones start muted by default.
+See [native architecture/build details](native/README.md), [validation evidence](docs/NATIVE_VALIDATION.md), [dependency licenses](native/licenses/README.md) and [logo directions](assets/brand/README.md). [ci/windows.yml](ci/windows.yml) is a template, **not an enabled GitHub Actions workflow**.
 
-Settings and persistent identity live in `%USERPROFILE%\.opendesk`. Portable runtimes are cached in `%LOCALAPPDATA%\OpenDesk\runtimes`; `--repair` re-extracts the embedded runtime. `OPENDESK_RUNTIME_DIR` can select a shorter absolute cache directory for redirected Windows profiles. Existing Qt DLLs remain replaceable in the cache/installation.
+## Updates and recovery
 
-Keep both devices on protocol-v2 releases. Cloudflare provides HTTPS/WSS access and signed, expiring directory records. Cloudflare terminates the tunnel; this is not an end-to-end encrypted peer-to-peer transport. Headphones reduce voice feedback. Primary-monitor control in the logged-in user session is supported; pre-login services, the UAC secure desktop, multi-monitor selection and acoustic echo cancellation are not implemented.
+**Settings → Software updates → Check for updates** checks the configured channel manifest. Updates verify an official release URL and SHA-256, then the independent helper replaces/restarts the app. Portable updates retain a rollback copy. Root `version.json` describes stable updates; `native/version.json` describes previews. Stable users are not automatically enrolled in alpha builds.
 
-## Collaboration and portfolio
+Install a newer native preview through its release installer or replace the portable executable. Portable `--repair` rebuilds a damaged extracted runtime. Preserve `%USERPROFILE%\.opendesk` to retain identity and saved devices. Release executables are not claimed to carry a publicly trusted Authenticode signature.
 
-OpenDesk originates in [Ahsan's repository](https://github.com/ahsanK225/opendesk-free-for-all). Original authorship, MIT license and Git history are preserved. [Hamza Iqbal (@hamxa8769)](https://github.com/hamxa8769) contributes the v2 modernization and native migration, assisted by Codex.
+## Troubleshooting
 
-The [portfolio fork](https://github.com/hamxa8769/opendesk-free-for-all), [public engineering project](https://github.com/users/hamxa8769/projects/3), [native pull request](https://github.com/ahsanK225/opendesk-free-for-all/pull/1) and [contribution record](docs/CONTRIBUTIONS.md) provide implementation and validation evidence. Earlier Python implementations remain available in tags/releases v2.0.1 and v2.0.2; replaced runtime/build files were removed from this native source tree after native session, installer and startup checks.
+| Symptom | Checks and recovery |
+| --- | --- |
+| `Failed to load Python DLL` on 2.0.1 | Install a complete native 3.x package. Native builds contain no Python DLL; avoid mixing files from old installations. |
+| Installer waits while closing | Allow the bounded shutdown attempt to finish. Close an instance with different privileges or use matching installer privileges. The helper reports failure rather than waiting forever. |
+| Missing Qt/plugin/VC DLL | Reinstall the complete package or use portable `--repair`. Do not copy only the inner executable. A shorter `OPENDESK_RUNTIME_DIR` can help redirected profiles. |
+| Missing share link/ID lookup | Check internet, Cloudflare reachability and Internet access in Settings. Try the local host URL on LAN. Share URLs can change after a tunnel restart. |
+| Incoming request unseen | Keep the host running. A new request restores the minimized window and remains topmost. Windows foreground restrictions can flash the taskbar; secure-desktop prompts remain outside app control. |
+| Low FPS or delayed input | Update both sides, choose Performance and check CPU/network load. FPS measures presentation; static screens need fewer updates. |
+| Voice enabled but silent | Check voice permission, both microphone toggles, Windows privacy/default devices and speaker volume. Inspect packet counters/device errors. Browser users also need permission and resumed playback. |
+| Feedback/distortion | Use headphones and lower gain/volume. Native acoustic echo cancellation is unavailable. |
+| Intermittent disconnect | Update both sides, check tunnel/network changes and reconnect with fresh approval. Report both versions, the visible error and LAN versus internet connection. |
+| Changed fingerprint | Compare with the host. Do not dismiss this merely to connect. Deleting `.opendesk` creates a new identity. |
+| File access denied | Confirm permission and chosen shared folder. Paths outside it, traversal and UNC access are rejected. |
 
-`version.json` describes the stable update channel. A native preview can be downloaded separately without silently enrolling existing stable users into preview updates. Release executables are not claimed to have a publicly trusted Authenticode signature.
+## Version history and changelog
+
+| Version | Changes |
+| --- | --- |
+| **3.0.0-alpha.2** | Capture-independent input, virtual cursors, foreground approval, priority voice/control queues, decoder recovery, audio status/retry, connection fixes, aligned badges and expanded documentation. |
+| **3.0.0-alpha.1** | Rust/Qt preview, SIMD JPEG/GPU rendering, native audio, persistent portable runtime and installer/update helper; replaced Python runtime/build sources. |
+| **2.0.2** | Previous stable Windows startup runtime hotfix. |
+| **2.0.1** | Installer shutdown and desktop smoothness fixes. |
+| **2.0.0** | Performance/security modernization. |
+
+See [CHANGELOG.md](CHANGELOG.md) and [all releases](https://github.com/ahsanK225/opendesk-free-for-all/releases). Historical tags and source remain available; title formatting does not change version ordering.
+
+## Collaboration and license
+
+OpenDesk originates in [Ahsan's repository](https://github.com/ahsanK225/opendesk-free-for-all). Original authorship, MIT license and Git history are preserved. [Hamza Iqbal (@hamxa8769)](https://github.com/hamxa8769) contributes modernization/native migration, assisted by Codex.
+
+The [portfolio fork](https://github.com/hamxa8769/opendesk-free-for-all), [public engineering project](https://github.com/users/hamxa8769/projects/3), [migration PR](https://github.com/ahsanK225/opendesk-free-for-all/pull/1) and [contribution record](docs/CONTRIBUTIONS.md) document the work. This independent application does not implement or interoperate with AnyDesk's proprietary protocol.

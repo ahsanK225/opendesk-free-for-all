@@ -13,7 +13,7 @@ use std::{
     collections::VecDeque,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         mpsc,
     },
     time::Duration,
@@ -73,6 +73,7 @@ struct Controls {
     mic: AtomicBool,
     volume: AtomicU32,
     gain: AtomicU32,
+    received: AtomicU64,
     playback: Mutex<Playback>,
 }
 pub struct Voice {
@@ -82,7 +83,7 @@ pub struct Voice {
 impl Voice {
     pub fn start(
         shared: Arc<Shared>,
-        sender: tokio::sync::mpsc::Sender<Outbound>,
+        sender: crate::transport::Sender<Outbound>,
         session: String,
     ) -> Result<Self> {
         let controls = Arc::new(Controls {
@@ -92,6 +93,7 @@ impl Voice {
             mic: AtomicBool::new(false),
             volume: AtomicU32::new(0.8f32.to_bits()),
             gain: AtomicU32::new(1f32.to_bits()),
+            received: AtomicU64::new(0),
             playback: Mutex::new(Playback {
                 queue: VecDeque::with_capacity(6000),
                 resampler: Resampler::new(48000, 48000),
@@ -104,7 +106,7 @@ impl Voice {
             controls: controls.clone(),
             shared: shared.clone(),
         };
-        voice.refresh_settings();
+        voice.refresh_settings(true);
         std::thread::Builder::new()
             .name("opendesk-voice".into())
             .spawn(move || {
@@ -114,13 +116,15 @@ impl Voice {
             })?;
         Ok(voice)
     }
-    pub fn refresh_settings(&self) {
+    pub fn refresh_settings(&self, apply_mic: bool) {
         let store = self.shared.store.lock().unwrap();
         let settings = &store.config["native_settings"];
-        self.controls.mic.store(
-            settings["micEnabled"].as_bool().unwrap_or(false),
-            Ordering::Release,
-        );
+        if apply_mic {
+            self.controls.mic.store(
+                settings["micEnabled"].as_bool().unwrap_or(false),
+                Ordering::Release,
+            );
+        }
         self.controls.volume.store(
             (if settings["speakerEnabled"].as_bool().unwrap_or(true) {
                 settings["speakerVolume"]
@@ -185,6 +189,7 @@ impl Voice {
         playback.queue.drain(..drain);
         let skip = samples.len().saturating_sub(maximum);
         playback.queue.extend(samples.into_iter().skip(skip));
+        self.controls.received.fetch_add(1, Ordering::Relaxed);
     }
 }
 impl Drop for Voice {
@@ -272,13 +277,16 @@ where
 fn run_audio(
     shared: Arc<Shared>,
     controls: Arc<Controls>,
-    sender: tokio::sync::mpsc::Sender<Outbound>,
+    sender: crate::transport::Sender<Outbound>,
     session: String,
 ) -> Result<()> {
     let host = cpal::default_host();
     let (mut output_stream, mut input_stream) = (None, None);
     let (mic_tx, mic_rx) = mpsc::sync_channel(6);
-    let mut hangover = 0u8;
+    let mut last_status = std::time::Instant::now() - Duration::from_secs(2);
+    let mut microphone_error = String::new();
+    let mut speaker_error = String::new();
+    let mut sent_packets = 0u64;
     let mut retry = std::time::Instant::now() - Duration::from_secs(5);
     let mut output_retry = std::time::Instant::now() - Duration::from_secs(5);
     let mut devices_checked = std::time::Instant::now() - Duration::from_secs(5);
@@ -333,8 +341,12 @@ fn run_audio(
                 stream.play()?;
                 Ok(stream)
             })();
-            if let Ok(stream) = result {
-                output_stream = Some(stream);
+            match result {
+                Ok(stream) => {
+                    output_stream = Some(stream);
+                    speaker_error.clear();
+                }
+                Err(error) => speaker_error = format!("Speaker: {error:#}"),
             }
         }
         if controls.mic.load(Ordering::Acquire)
@@ -364,32 +376,46 @@ fn run_audio(
                 Ok(stream)
             })();
             match result {
-                Ok(stream) => input_stream = Some(stream),
+                Ok(stream) => {
+                    input_stream = Some(stream);
+                    microphone_error.clear();
+                }
                 Err(error) => {
-                    controls.mic.store(false, Ordering::Release);
-                    shared.error(error);
+                    microphone_error = format!(
+                        "Microphone: {error:#}. Check Windows Privacy > Microphone > desktop app access."
+                    );
                 }
             }
         }
         if !controls.mic.load(Ordering::Acquire) {
             drop(input_stream.take());
             while mic_rx.try_recv().is_ok() {}
-            hangover = 0;
         }
-        if let Ok(samples) = mic_rx.recv_timeout(Duration::from_millis(20)) {
-            let rms = (samples.iter().map(|v| v * v).sum::<f32>() / samples.len() as f32).sqrt();
-            if rms > 0.0025 {
-                hangover = 12
-            } else {
-                hangover = hangover.saturating_sub(1)
-            }
-            if hangover > 0 && controls.mic.load(Ordering::Acquire) && sender.capacity() >= 60 {
-                let bytes: Vec<u8> = samples
-                    .into_iter()
-                    .flat_map(|v| ((v * 32767.0) as i16).to_le_bytes())
-                    .collect();
-                let _=sender.try_send(Outbound::Packet(packet("audio_chunk",json!({"session_id":session,"data":B64.encode(bytes),"sample_rate":48000,"channels":1,"format":"pcm_s16le"}))));
-            }
+        if last_status.elapsed() >= Duration::from_millis(500) {
+            last_status = std::time::Instant::now();
+            let status = json!({"micRequested":controls.mic.load(Ordering::Acquire),"micReady":input_stream.is_some(),"speakerReady":output_stream.is_some(),"txPackets":sent_packets,"rxPackets":controls.received.load(Ordering::Relaxed),"error":if !microphone_error.is_empty()&&controls.mic.load(Ordering::Acquire){&microphone_error}else{&speaker_error}});
+            shared.update(|v| {
+                if v["hostSession"]["sessionId"] == session {
+                    v["hostSession"]["audio"] = status.clone();
+                }
+                if let Some(items) = v["connections"].as_array_mut() {
+                    for item in items {
+                        if item["sessionId"] == session {
+                            item["audio"] = status.clone();
+                        }
+                    }
+                }
+            });
+        }
+        if let Ok(samples) = mic_rx.recv_timeout(Duration::from_millis(20))
+            && controls.mic.load(Ordering::Acquire)
+            && sender.audio_capacity() > 0
+        {
+            let bytes: Vec<u8> = samples
+                .into_iter()
+                .flat_map(|v| ((v * 32767.0) as i16).to_le_bytes())
+                .collect();
+            if sender.try_send(Outbound::Packet(packet("audio_chunk",json!({"session_id":session,"data":B64.encode(bytes),"sample_rate":48000,"channels":1,"format":"pcm_s16le"})))).is_ok(){sent_packets+=1;}
         }
     }
     drop(input_stream);

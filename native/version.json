@@ -1,16 +1,17 @@
 {
-  "version": "3.0.0-alpha.1",
+  "version": "3.0.0-alpha.2",
   "channel": "preview",
   "release_date": "2026-11-03",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0.0-alpha.1/OpenDesk_v3.0.0-alpha.1_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0.0-alpha.1/OpenDesk_Setup_v3.0.0-alpha.1_Installer.exe",
-  "sha256": "0e3223e1a4f45a39637a133ed824ace9c5a8f31366afa3d521fe70d64a762612",
-  "installer_sha256": "1a681c92f5be53697dcead48a36f8e355ee0e3ccf2b4dde7ec7a703bfc81d7b3",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0.0-alpha.2/OpenDesk_v3.0.0-alpha.2_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0.0-alpha.2/OpenDesk_Setup_v3.0.0-alpha.2_Installer.exe",
+  "sha256": "43d64ac4b8c904d4afa55f99a97a3a5601b034a5861637485674f88f061c5166",
+  "installer_sha256": "8b71e67f9ca7fc79fab216392243d88446f82cc5e3371275aa09fb70c6ce9543",
   "changelog": [
-    "Native Rust engine and Qt/QML desktop",
-    "SIMD JPEG workers and GPU presentation",
-    "Native WASAPI voice, permissions and selected-folder transfers",
-    "Independent installer/update helper and persistent portable runtime repair",
+    "Foreground incoming approval with minimized-window restoration",
+    "Capture-independent remote input and controller cursor visuals",
+    "Priority voice/control queues and nonblocking video recovery",
+    "Audio-device readiness, retry and session microphone state fixes",
+    "Connection liveness fixes, aligned version badges and expanded documentation",
     "Preview: physical WAN/headset acceptance remains open"
   ]
 }

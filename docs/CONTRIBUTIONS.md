@@ -4,6 +4,8 @@ OpenDesk began in [ahsanK225/opendesk-free-for-all](https://github.com/ahsanK225
 
 ## Hamza Iqbal — @hamxa8769
 
+- **v3.0.0-alpha.2:** capture-independent remote input, controller cursor visuals, foreground attended approval, prioritized transport lanes, decode/liveness recovery, voice state/device diagnostics, expanded documentation and 30-second bidirectional PCM/video regression coverage. See [validation](ALPHA2_VALIDATION.md).
+
 Role: contributor responsible for the v2 modernization work, including performance, session security, media reliability, and Windows delivery. Implementation was assisted by Codex; engineering claims below refer to the committed implementation and recorded checks.
 
 - **v2.0.0:** DXGI capture integration and GDI fallback, binary JPEG tile transport, bounded video acknowledgements, adaptive quality, explicit voice sample-rate handling and bounded playback; request-bound approvals, host registration secrets, password challenges, device-key verification and session permission checks; constrained atomic file transfer and release integrity checks.
