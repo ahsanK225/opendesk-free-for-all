@@ -21,6 +21,15 @@ impl AckWindow {
     pub fn can_send(&self) -> bool {
         self.outstanding.len() < self.limit
     }
+    pub fn set_limit(&mut self, limit: usize) {
+        self.limit = limit.clamp(1, 10);
+    }
+    pub fn oldest_age(&self, now_ms: u64) -> u64 {
+        self.outstanding
+            .front()
+            .map(|(_, sent)| now_ms.saturating_sub(*sent))
+            .unwrap_or(0)
+    }
     pub fn sent(&mut self, frame: u64, now_ms: u64, keyframe: bool) -> bool {
         if frame <= self.last_sent || !self.can_send() || (self.needs_keyframe && !keyframe) {
             return false;

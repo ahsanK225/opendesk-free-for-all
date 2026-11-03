@@ -1,5 +1,7 @@
-# Third-party components
+# Third-party native components
 
-OpenDesk builds use Python (PSF license), Tk/Tcl (Tcl/Tk license), Pillow (HPND), NumPy (BSD-3-Clause), aiohttp (Apache-2.0), sounddevice (MIT) and PortAudio (MIT), cryptography (Apache-2.0 or BSD-3-Clause), CFFI/pycparser (MIT/BSD), DXcam (MIT), comtypes (MIT), and the PyInstaller bootloader (GPL with its distribution exception). The bundled Cloudflare cloudflared executable is Apache-2.0. Inno Setup is a build tool with its own license.
+OpenDesk's own source is MIT-licensed. Native builds use Rust dependencies recorded in `native/licenses/rust/dependencies.json`, dynamically linked Qt 6.8.3, libjpeg-turbo 3.2.1, cloudflared 2026.9.3 and Microsoft's Visual C++ Desktop redistributable runtime. Inno Setup is the installer build tool. The compatible browser viewer is JavaScript.
 
-The build includes dependency distribution metadata/license files where provided. Consult each upstream distribution for its complete notices. No AnyDesk binary, codec, protocol implementation or proprietary assets are bundled.
+Exact upstream license/copyright files and Qt SPDX software bills of materials are in `native/licenses` and are copied into native distributions. See `native/licenses/README.md` for corresponding-source links and Qt library replacement details. Python/Tk, PyInstaller, Pillow, NumPy and PortAudio are dependencies of the archived v2 implementation, not of the native application.
+
+No proprietary AnyDesk binary, DeskRT codec or assets are bundled. Release executables are not claimed to carry a publicly trusted Authenticode signature.

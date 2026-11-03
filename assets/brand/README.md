@@ -1,6 +1,6 @@
 # OpenDesk native logo directions
 
-Four original SVG concepts created for this migration, under the repository's MIT license. These are design proposals; no trademark clearance is implied. The shipped v2.0.1 icon remains the existing asset.
+Four original SVG concepts created for this migration, under the repository's MIT license. These are design proposals; no trademark clearance is implied. Portal O is used by the native preview desktop, launcher and installer; the other three remain available as alternatives.
 
 1. **Portal O — recommended:** an open O and outgoing connection arrow. Strong tray/taskbar silhouette and a direct link to the OpenDesk name.
 2. **Linked Desks:** overlapping desktop windows communicate the shared workspace most directly.

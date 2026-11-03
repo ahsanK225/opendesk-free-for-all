@@ -96,6 +96,14 @@ impl<'a> VideoPacket<'a> {
             if expected_offset > body.len() {
                 return Err(DecodeError::Tile);
             }
+            if full
+                && (tile.x.unwrap_or(0) != 0
+                    || tile.y.unwrap_or(0) != 0
+                    || tile.w.unwrap_or(p.width) != p.width
+                    || tile.h.unwrap_or(p.height) != p.height)
+            {
+                return Err(DecodeError::Tile);
+            }
             if !full {
                 let (Some(x), Some(y), Some(w), Some(h)) = (tile.x, tile.y, tile.w, tile.h) else {
                     return Err(DecodeError::Tile);
@@ -154,6 +162,16 @@ mod tests {
         assert!(matches!(
             VideoPacket::decode(&packet(|_| {}), "session-b"),
             Err(DecodeError::Session)
+        ));
+    }
+    #[test]
+    fn full_frame_cannot_smuggle_oversized_tile_dimensions() {
+        assert!(matches!(
+            VideoPacket::decode(
+                &packet(|v| v["payload"]["tiles"][0]["w"] = json!(65535)),
+                "session-a"
+            ),
+            Err(DecodeError::Tile)
         ));
     }
     #[test]

@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0.0-alpha.1 native preview — 2026-11-03
+
+- Replaced Python runtime/build code with a Rust engine and Qt/QML desktop, retaining the dark/red identity and adopting the Portal O icon.
+- Added DXGI/GDI capture, an idle-screen baseline, BGRA buffers, direct SIMD TurboJPEG workers and GPU texture presentation.
+- Ported device-key trust/DPAPI identity, session authorization, WASAPI voice, input/clipboard, selected-folder atomic transfers and tunnel/directory supervision.
+- Added standalone Rust installer/update helpers, transactional persistent-cache portable delivery, repair support and verified independent updates.
+- Added responsive high-DPI layouts, microphone state/gain, native file dialogs, saved desktops, sharing controls and update UI.
+- Preserved v2 releases/history and contributor attribution. Two-device WAN/headset acceptance remains open.
+
 ## 2.0.2 — 2026-11-03
 
 - Excluded foreign OS CRT/API-set DLLs from Windows 10+ packages and restricted the build DLL search path.

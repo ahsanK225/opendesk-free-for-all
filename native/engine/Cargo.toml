@@ -11,6 +11,25 @@ crate-type = ["rlib", "staticlib"]
 [dependencies]
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
+anyhow = "1.0"
+base64 = "0.22"
+getrandom = "0.3"
+sha2 = "0.10"
+hmac = "0.12"
+pbkdf2 = "0.12"
+ed25519-dalek = "2.2"
+hex = "0.4"
+tokio = { version = "1.53", features = ["rt-multi-thread", "net", "sync", "time", "macros", "process", "io-util", "fs"] }
+tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+axum = { version = "0.8", features = ["ws"] }
+tower-http = { version = "0.6", features = ["fs"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+jpeg-encoder = { version = "0.7", features = ["simd"] }
+fast_image_resize = "6.1"
+cpal = "0.17"
+windows = { version = "0.61.3", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Cryptography", "Win32_Graphics_Direct3D", "Win32_Graphics_Direct3D11", "Win32_Graphics_Dxgi", "Win32_Graphics_Dxgi_Common", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Threading", "Win32_System_Memory", "Win32_System_DataExchange", "Win32_System_LibraryLoader", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
 
 [profile.dev]
 debug = 0

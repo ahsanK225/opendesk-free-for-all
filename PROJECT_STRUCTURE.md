@@ -1,19 +1,14 @@
-# Source layout
+# OpenDesk structure
 
-- `opendesk_app.py`: Tk desktop application and GUI smoke-test entry point.
-- `host/agent.py`: authorization, media lifecycle, capture worker and file/input dispatch.
-- `host/capture.py`, `host/dxgi.py`: DXGI/GDI capture, cursor composition and COM ownership adapter.
-- `host/audio.py`: explicit-rate PCM capture/playback, VAD, gain and loopback.
-- `host/input_controller.py`, `host/clipboard.py`, `host/file_manager.py`: native interaction and scoped transfers.
-- `relay/server.py`: local registration, authentication challenges, approval state, forwarding and revocation.
-- `common/protocol.py`, `common/codec.py`: binary video envelope and JPEG tile encoding.
-- `common/security.py`, `common/credentials.py`, `common/identity.py`: password proofs, DPAPI and device trust.
-- `common/rendezvous.py`, `common/tunnel.py`: expiring signed discovery and supervised public tunnels.
-- `common/config.py`, `common/updater.py`, `common/incremental_updater.py`: configuration and update maintenance.
-- `client/viewer.py`, `client/files.py`: native session rendering and streamed file UI.
-- `web/`: browser viewer, ordered rendering and AudioWorklet voice.
-- `tests/`: Python authorization/media/file/update regressions and Node browser checks.
-- `tools/`: pinned tunnel fetch and local benchmarking.
-- `build.ps1`, `opendesk.spec`, `opendesk_installer.iss`: Windows build/installer tooling.
-- `ci/windows.yml`: Windows test/build CI template.
-- `docs/`, `RELEASE_NOTES.md`: measured validation and release boundaries.
+- `native/engine`: Rust authorization, signed device lookup/tunnel supervision, DXGI capture, JPEG delta transport/reconstruction, WASAPI audio, Win32 input/clipboard, atomic file transfer, settings and verified update downloads.
+- `native/desktop`: Qt/QML native desktop, small C++ command/state bridge, immutable frame views, GPU textures and TurboJPEG worker callbacks.
+- `native/launcher`: independent Rust installer/shutdown helper, post-exit updater and persistent-cache portable bootstrap.
+- `native/licenses`: pinned dependency inventory, license/copyright files and Qt SPDX documents.
+- `web`: compatible protocol-v2 browser viewer.
+- `tests/test_web.cjs`: browser protocol/auth/audio checks.
+- `native/test-*.ps1`: isolated process, executable replacement, installer and portable repair checks.
+- `assets/brand`: four SVG logo directions, comparison board and native ICO/PNG assets.
+- `docs`: contribution record and dated release-validation evidence.
+- `build.ps1`: native build entry point. `ci/windows.yml` is a publishable CI template, not an installed workflow.
+
+The previous Python implementation is retained in Git tags/releases v2.0.1 and v2.0.2 and source snapshots. It is no longer part of this native source tree.

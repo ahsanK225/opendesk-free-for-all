@@ -1,31 +1,54 @@
-# Native migration — work in progress
+# OpenDesk native desktop
 
-The shipped desktop is [v2.0.2](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.0.2), including the verified Windows runtime startup hotfix. This directory starts the Rust/Qt migration and is not an executable replacement yet. Python source stays available until native parity is verified.
+The native implementation uses a Rust engine, a Qt 6.8.3 / QML desktop, and libjpeg-turbo 3.2.1. It retains the dark/red OpenDesk design and the protocol-v2 browser viewer. This branch is a native preview; v2.0.2 remains the published stable baseline until the native package and hardware acceptance gates are complete.
 
-## Stack and ownership
+## Implemented
 
-- Rust owns authorization, networking, capture/encoding, audio, input, clipboard, files, identity and process lifecycle.
-- Qt 6 / QML owns presentation and native Windows integration. A small C++ bridge exposes typed commands/state; heavy work never runs on the GUI thread.
-- Video uses immutable reference-counted pixel buffers across the bridge and Qt scene graph textures. Control events use a bounded channel; replaceable visual events keep only the latest value. Delta frames must be reconstructed in order before the presentation stage can replace old frames.
-- Preserve protocol-v2 compatibility, explicit session permissions, request-bound approval, password challenge authentication and trusted-device key checks.
+- A built-in local relay, signed expiring device-directory records and a supervised, hash-pinned Cloudflare tunnel.
+- Request-bound approvals, one-use password challenges, device-key trust, revocation, independent session permissions and persistent DPAPI-protected identity.
+- Win32 DXGI capture with GDI fallback, an initial baseline even on idle desktops, cursor composition, BGRA buffers, ordered JPEG delta reconstruction, bounded acknowledgements and adaptive video profiles.
+- Direct SIMD TurboJPEG encoding/decoding on media workers and Qt scene-graph textures for presentation. FPS counts actual texture presentations; an unchanged screen displays Idle.
+- WASAPI voice through CPAL with explicit rates, continuous resampling, 20 ms mono packets, bounded queues, microphone mute and gain, speaker volume, default-device change detection and failed-device reopening.
+- Keyboard/mouse input with held-input release, Unicode text clipboard, and folder-scoped file transfers with ordered chunks, SHA-256 verification, atomic replacement and partial-file cleanup.
+- Native file/folder dialogs, saved devices/favorites, scrollable connection tabs, fingerprint verification, approval controls, software updates and an explicit host sharing indicator.
+- A separate Rust maintenance helper for bounded shutdown, scoped process checks, portable replacement and installed updates. Portable runtime extraction is persistent and transactional rather than per-launch temporary Python extraction.
 
-## Current implementation
+## Build on Windows x64
 
-The engine contains a strict zero-copy ODV2 envelope decoder, deny-by-default authorization state machine, and bounded acknowledgement/dependency accounting with tests. No native network, capture or audio backend is wired yet. No performance or feature-parity claim is made for this foundation.
+Use Rust 1.95.0 (MSVC), Visual Studio 2022 Build Tools with the Windows SDK, CMake 3.24+, Node for browser checks, Qt 6.8.3 MSVC 2022 x64, and the official libjpeg-turbo 3.2.1 Visual C++ x64 SDK. No Python interpreter or Python packages are required by the native application or its build.
 
 ```powershell
-cargo test --manifest-path native/engine/Cargo.toml
-cargo clippy --manifest-path native/engine/Cargo.toml --all-targets -- -D warnings
+.\native\build.ps1 `
+  -QtRoot C:\SDKs\Qt\6.8.3\msvc2022_64 `
+  -TurboJpegRoot C:\SDKs\libjpeg-turbo-3.2.1 `
+  -VcRuntimeDir 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Redist\MSVC\14.44.35112\x64\Microsoft.VC143.CRT' `
+  -InnoCompiler 'C:\Program Files (x86)\Inno Setup 7\ISCC.exe'
 ```
 
-## Replacement gates
+The tunnel binary in `bin/cloudflared.exe` is pinned to official cloudflared 2026.9.3, SHA-256 `f096265ec2fcbe9bb6e2d64268db167ced3fcbb83d894bdb9e2fcdb26f2ea7e2`. Download it from the [official release](https://github.com/cloudflare/cloudflared/releases/tag/2026.9.3). The build rejects a different binary. The official JPEG SDK installer digest is `1f05bc3ed1585e6b12a8b0c24c8c5f07b1f6d90d01b4b709b331bedc9d6e5838`; use the [3.2.1 release](https://github.com/libjpeg-turbo/libjpeg-turbo/releases/tag/3.2.1).
 
-1. Build Rust static library and Qt/QML desktop with MSVC 2022 and a pinned Qt 6 SDK; include dependency notices and dynamic Qt deployment.
-2. Port and exercise attended/unattended auth, key trust, cancellation, revocation, permission checks, reconnect and shutdown.
-3. Implement DXGI capture/GDI fallback, dirty JPEG tiles, ordered reconstruction, adaptive stream pacing and GPU presentation. Measure capture, encode, network and render separately.
-4. Wire bounded WASAPI voice with explicit format/rate conversion; preserve clipboard/input reset and home-scoped atomic file transfers.
-5. Preserve settings/device identity and installer behavior; run packaged upgrade tests with running old and native processes.
-6. Check dark/red UI at several DPI/scales, keyboard navigation and accessibility, and perform two-device WAN/headset acceptance.
-7. Only then remove replaced Python runtime/build files, update the root build/docs, and publish the native release.
+Qt is dynamically linked. The installed runtime and portable cache contain ordinary replaceable Qt DLLs/plugins. The application-specific portable cache is under `%LOCALAPPDATA%\OpenDesk\runtimes`; `--repair` re-extracts its embedded runtime. Set `OPENDESK_RUNTIME_DIR` to a shorter absolute writable directory if a redirected profile exceeds the Windows Qt plugin loader path limit. User settings stay in `%USERPROFILE%\.opendesk`. License texts, upstream copyright notices, dependency inventory and Qt SPDX documents are in `licenses` in the distributable and [the source tree](licenses/README.md).
 
-The existing Python release and preserved Git history provide the reference behavior. Source snapshots of v2.0.1 and v2.0.2 are also kept outside this repository in the task's release directory. The initial Rust foundation passes 17 unit tests and Clippy with warnings denied on Windows x64 (Rust 1.95.0); those checks do not establish native application feature parity.
+## Validation
+
+```powershell
+cargo test --release --locked --lib --manifest-path native/engine/Cargo.toml -- --test-threads=1
+cargo clippy --release --locked --lib --manifest-path native/engine/Cargo.toml -- -D warnings
+cargo test --release --locked --manifest-path native/launcher/Cargo.toml --features fixtures
+node tests/test_web.cjs
+```
+
+The native executable supports isolated startup evidence:
+
+```powershell
+OpenDesk.exe --smoke-test --config-dir C:\Temp\OpenDeskSmoke --smoke-page settings --screenshot C:\Temp\settings.png --smoke-output C:\Temp\state.json
+OpenDesk.exe --benchmark-output C:\Temp\native-benchmark.json
+```
+
+Benchmark JSON separates changed-screen capture, full/delta encode and decode. Codec timings exclude transport and GPU presentation and do not establish delivered internet FPS. [Process shutdown](test-launcher.ps1) and [executable replacement](test-update.ps1) scripts use isolated fixtures, so they do not need to close the user's real application.
+
+## Remaining release acceptance
+
+Local native session/file/revocation tests, packaged locked-app upgrade, GPU pixel-format/render verification and 100%/150% DPI checks have passed. First/cached portable startup, automatic missing-DLL repair, explicit repair and actionable long-path rejection have also passed. Two-device WAN/headset acceptance remains open in the validation record. This is a primary-monitor, user-session Windows app: pre-login/service operation, the UAC secure desktop, multi-monitor selection and acoustic echo cancellation are not implemented. Headphones are recommended for two-way voice. Cloudflare terminates the HTTPS/WSS tunnel; this is not an end-to-end encrypted peer-to-peer transport.
+
+The replaced Python runtime/build source has been removed from this native tree after native session and installed-package checks. Git tags v2.0.1 and v2.0.2, their release assets, and preserved source snapshots retain the previous implementation and rollback reference. No proprietary AnyDesk code, protocol or DeskRT codec is shipped.

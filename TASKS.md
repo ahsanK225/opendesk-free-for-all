@@ -1,14 +1,13 @@
-# Release acceptance work
+# Native release acceptance
 
-Completed in v2: source startup fixes, request-bound authorization, permission enforcement, disconnect revocation, DXGI capture, binary dependency-safe video, explicit voice rates, native file transfers, scoped paths, identity pinning/discovery signatures, DPAPI storage, updater verification, lifecycle cleanup, tests and Windows packaging.
+Completed locally: native Rust/Qt implementation, strict protocol/auth tests, two native endpoints with captured frames and file transfer/revocation, GPU colour/alpha rendering checks, 100%/150% UI review, bounded cooperative/force shutdown, independent portable executable replacement, locked legacy-to-native installation preserving settings/ID, and packaged startup with no SDK PATH or Python runtime. See docs/NATIVE_VALIDATION.md for the final artifact evidence.
 
-Before production certification:
+Before promoting the preview to a production release:
 
-- Run two physical devices on separate networks; verify approval/decline, host busy, disconnect/reconnect and both viewer types.
-- Measure end-to-end FPS/latency/bandwidth across the three profiles and multiple RTT/bandwidth scenarios.
-- Assess real headset/microphone intelligibility, device changes, PTT, silence transitions and long-session jitter.
-- Exercise target GPUs, display changes, locked desktops and Windows 10/11 DPI combinations.
-- Perform an independent security review of authentication, discovery, transport trust and update distribution.
-- Supply a trusted publisher signing certificate for signed release artifacts.
+- Run two physical Windows devices on separate networks and verify both native and browser viewers, approvals/declines, busy state, reconnect and revocation.
+- Measure delivered FPS, latency and bandwidth in Balanced, Performance and Sharp profiles across realistic RTT/bandwidth limits. Codec stage timings do not establish internet FPS.
+- Check intelligibility with actual microphones/headsets, device unplug/replug, silence transitions and a long voice session.
+- Extend GPU/driver, display-change, Windows 10/11 and DPI coverage.
+- Obtain an independent security review and decide on trusted publisher signing before claiming those properties.
 
-Future features: monitor selection, service/pre-login support, a negotiated compressed voice codec with native AEC, direct peer transport, application-layer E2E encryption and independently signed release metadata.
+Future features: monitor selection, service/pre-login operation, negotiated compressed voice/AEC, direct peer transport, application-layer E2E encryption and separately signed update metadata. These are not advertised as implemented.
