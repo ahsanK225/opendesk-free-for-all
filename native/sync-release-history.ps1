@@ -33,13 +33,19 @@ foreach($remote in @('origin','portfolio')){git push $remote --tags;if($LASTEXIT
 $payloadPath=Join-Path $backup 'request.json'
 $results=@()
 foreach($row in $mapping.historicalMapping){
-    $old=$original|Where-Object tag_name -eq $row.oldTag|Select-Object -First 1
+    $old=$original|Where-Object {$_.tag_name -eq $row.oldTag -or $_.tag_name -eq $row.newTag}|Select-Object -First 1
     $links=@()
     if($old){foreach($asset in $old.assets){$url="https://github.com/$canonical/releases/download/$($row.newTag)/$([Uri]::EscapeDataString($asset.name))";$links+='- ['+$asset.name+']('+$url+')'}}
     else{$links+='This historical version has a source tag only; no executable was originally published.'}
     $historyLink="[Complete ascending history](https://github.com/$canonical/blob/main/docs/VERSION_HISTORY.md)"
     $body=@("# OpenDesk $($row.newDisplayVersion)",'',"Sequential release number: **$($row.newDisplayVersion)**. Original build/source: **$($row.oldTag)**.",'',"Original source tag and commit are preserved: [$($row.oldTag)](https://github.com/$canonical/tree/$($row.oldTag)). Historical executables retain their original embedded build versions and unchanged bytes.",'','## Downloads','')+$links+@('','Historical manifests are archived artifacts. Use the current stable release and root version.json for updates.','',$historyLink)
-    if($old.body){$body+=@('','---','','## Original release notes','',$old.body)}
+    $originalNotes=[string]$old.body
+    if($old.tag_name -eq $row.newTag){
+        $marker='## Original release notes'
+        $offset=$originalNotes.IndexOf($marker)
+        $originalNotes=if($offset -ge 0){$originalNotes.Substring($offset+$marker.Length).Trim()}else{''}
+    }
+    if($originalNotes){$body+=@('','---','','## Original release notes','',$originalNotes)}
     $bodyText=$body -join "`n"
     foreach($target in @($canonical,$mirror)){
         $releases=@(Api -Arguments @("repos/$target/releases?per_page=100"))
@@ -50,7 +56,7 @@ foreach($row in $mapping.historicalMapping){
         else{$updated=Api -Arguments @("repos/$target/releases",'--method','POST','--input',$payloadPath)}
         if($updated.tag_name -ne $row.newTag -or $updated.draft -or $updated.prerelease){throw 'Release state verification failed'}
         if($target -eq $canonical -and $old){
-            foreach($asset in $old.assets){$after=$updated.assets|Where-Object id -eq $asset.id;if(!$after -or $after.size -ne $asset.size -or $after.digest -ne $asset.digest){throw "Historical asset changed: $($asset.name)"}}
+            foreach($asset in $old.assets){$after=$updated.assets|Where-Object name -eq $asset.name;if(!$after -or $after.size -ne $asset.size -or $after.digest -ne $asset.digest){throw "Historical asset content changed: $($asset.name)"}}
         }
         $results+=[pscustomobject]@{repository=$target;oldTag=$row.oldTag;newTag=$row.newTag;url=$updated.html_url;assets=$updated.assets.Count;canonicalDownloadsPreserved=$true}
         $results|ConvertTo-Json -Depth 5|Set-Content (Join-Path $backup 'results.json')

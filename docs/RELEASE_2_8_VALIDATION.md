@@ -21,7 +21,7 @@ Date: 2026-11-03. Public versions advance by 0.1, from 1.0 through 2.8; the next
 
 ## Archived release integrity
 
-The [ascending history](VERSION_HISTORY.md) and [source mapping](RELEASE_MAPPING.json) record every original tag and source commit. Existing historical assets retain their IDs, sizes and digests in the original repository when their release-associated tags are changed. The fork's historical pages link directly to those preserved binaries; its existing native archived assets remain attached. New stable installer/portable assets are uploaded to both repositories.
+The [ascending history](VERSION_HISTORY.md) and [source mapping](RELEASE_MAPPING.json) record every original tag and source commit. Historical asset names, sizes and digests are preserved. During migration, the original repository's two native archive records and the fork's second native archive were no longer available by their backup IDs. Their exact original files were recovered from SHA-256-verified local release copies and restored under 2.6/2.7. Restored uploads receive new GitHub asset IDs; binary contents remain identical. The fork's other historical pages link directly to the canonical binaries. New stable installer/portable assets are uploaded to both repositories.
 
 The two previously source-only tags receive source-history entries, without invented executable downloads. Original Git tags are retained alongside the new consecutive release tags.
 
