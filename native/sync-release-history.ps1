@@ -37,7 +37,8 @@ foreach($row in $mapping.historicalMapping){
     $links=@()
     if($old){foreach($asset in $old.assets){$url="https://github.com/$canonical/releases/download/$($row.newTag)/$([Uri]::EscapeDataString($asset.name))";$links+='- ['+$asset.name+']('+$url+')'}}
     else{$links+='This historical version has a source tag only; no executable was originally published.'}
-    $body=@("# OpenDesk $($row.newDisplayVersion)",'',"Sequential release number: **$($row.newDisplayVersion)**. Original build/source: **$($row.oldTag)**.",'',"Original source tag and commit are preserved: [$($row.oldTag)](https://github.com/$canonical/tree/$($row.oldTag)). Historical executables retain their original embedded build versions and unchanged bytes.",'','## Downloads','')+$links+@('','Historical manifests are archived artifacts. Use the current stable release and root version.json for updates.','','[Complete ascending history](https://github.com/'+$canonical+'/blob/main/docs/VERSION_HISTORY.md)')
+    $historyLink="[Complete ascending history](https://github.com/$canonical/blob/main/docs/VERSION_HISTORY.md)"
+    $body=@("# OpenDesk $($row.newDisplayVersion)",'',"Sequential release number: **$($row.newDisplayVersion)**. Original build/source: **$($row.oldTag)**.",'',"Original source tag and commit are preserved: [$($row.oldTag)](https://github.com/$canonical/tree/$($row.oldTag)). Historical executables retain their original embedded build versions and unchanged bytes.",'','## Downloads','')+$links+@('','Historical manifests are archived artifacts. Use the current stable release and root version.json for updates.','',$historyLink)
     if($old.body){$body+=@('','---','','## Original release notes','',$old.body)}
     $bodyText=$body -join "`n"
     foreach($target in @($canonical,$mirror)){
