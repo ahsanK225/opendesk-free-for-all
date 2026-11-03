@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.8 stable — 2026-11-03
+
+- Adopted the approved continuous public version sequence from 1.0 through 2.8, with no missing release numbers.
+- Aligned application, Windows file metadata, installer, portable launcher, live update manifests and GitHub Latest releases.
+- Preserved original source tags, archived executable bytes and full original-to-new history in docs/VERSION_HISTORY.md.
+- Synchronized current binaries and historical release pages across the original repository and portfolio fork.
+- Added two-component version parsing and stable upgrade comparison coverage. All latest native input, voice and foreground approval fixes are included.
+
+## Archived implementation notes
+
+The entries below retain the original build names for engineering provenance. Public release numbering is listed in [VERSION_HISTORY.md](docs/VERSION_HISTORY.md).
+
 ## 3.0.0-alpha.2 — 2026-11-03
 
 - Process authorized input independently of capture/encoding and coalesce viewer mouse movement; flush motion before clicks/scrolling and show separate controller cursor visuals on both desktops.

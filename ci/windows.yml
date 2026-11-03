@@ -11,6 +11,8 @@ jobs:
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Pinned Rust toolchain
         shell: pwsh
         run: |
@@ -48,5 +50,5 @@ jobs:
         with:
           name: OpenDesk-Native-Windows-x64
           path: |
-            dist/native/OpenDesk_v3.0.0-alpha.2_Portable.exe
-            dist/native/OpenDesk_Setup_v3.0.0-alpha.2_Installer.exe
+            dist/native/OpenDesk_v*_Portable.exe
+            dist/native/OpenDesk_Setup_v*_Installer.exe

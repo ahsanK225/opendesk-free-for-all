@@ -1,0 +1,186 @@
+{
+  "status": "APPROVED - sequential stable release migration",
+  "canonicalRepository": "ahsanK225/opendesk-free-for-all",
+  "mirrorRepository": "hamxa8769/opendesk-free-for-all",
+  "preserveOriginalTags": true,
+  "historicalMapping": [
+    {
+      "oldTag": "v1.1.0",
+      "newTag": "v1.0",
+      "newDisplayVersion": "1.0",
+      "sourceCommit": "c4df840ec35e59c94cf3f710d5028f6c1fd65072",
+      "hasPublishedRelease": false,
+      "assetCount": 0,
+      "action": "Create source-history release; no historical executable available"
+    },
+    {
+      "oldTag": "v1.1.2",
+      "newTag": "v1.1",
+      "newDisplayVersion": "1.1",
+      "sourceCommit": "38c29d41f5856c9766eeb9fd4469c6f5aba45c54",
+      "hasPublishedRelease": true,
+      "assetCount": 2,
+      "action": "Retag existing release; preserve original source tag and binary bytes"
+    },
+    {
+      "oldTag": "v1.1.3",
+      "newTag": "v1.2",
+      "newDisplayVersion": "1.2",
+      "sourceCommit": "7a01337aa3c8e96e4483d7d3c6fac98cc992b720",
+      "hasPublishedRelease": true,
+      "assetCount": 2,
+      "action": "Retag existing release; preserve original source tag and binary bytes"
+    },
+    {
+      "oldTag": "v1.1.4",
+      "newTag": "v1.3",
+      "newDisplayVersion": "1.3",
+      "sourceCommit": "d95cc80e456eab983c43650f78da13f339e0b250",
+      "hasPublishedRelease": true,
+      "assetCount": 2,
+      "action": "Retag existing release; preserve original source tag and binary bytes"
+    },
+    {
+      "oldTag": "v1.1.5",
+      "newTag": "v1.4",
+      "newDisplayVersion": "1.4",
+      "sourceCommit": "88742e3b262737b5e679518caa1e3a39349dbff8",
+      "hasPublishedRelease": true,
+      "assetCount": 2,
+      "action": "Retag existing release; preserve original source tag and binary bytes"
+    },
+    {
+      "oldTag": "v1.1.6",
+      "newTag": "v1.5",
+      "newDisplayVersion": "1.5",
+      "sourceCommit": "b2c36f80efb05246228d046feb9560399da05241",
+      "hasPublishedRelease": false,
+      "assetCount": 0,
+      "action": "Create source-history release; no historical executable available"
+    },
+    {
+      "oldTag": "v1.1.7",
+      "newTag": "v1.6",
+      "newDisplayVersion": "1.6",
+      "sourceCommit": "fc780abe2f89cf47989f02f75310303dadb9a7ef",
+      "hasPublishedRelease": true,
+      "assetCount": 2,
+      "action": "Retag existing release; preserve original source tag and binary bytes"
+    },
+    {
+      "oldTag": "v1.1.8",
+      "newTag": "v1.7",
+      "newDisplayVersion": "1.7",
+      "sourceCommit": "21f6f081ee72aec03f79b9c8579082ee2f8ee1c6",
+      "hasPublishedRelease": true,
+      "assetCount": 2,
+      "action": "Retag existing release; preserve original source tag and binary bytes"
+    },
+    {
+      "oldTag": "v1.1.9",
+      "newTag": "v1.8",
+      "newDisplayVersion": "1.8",
+      "sourceCommit": "dc5a2f4ebd92878b00a595e2e2fbf0d27c387c11",
+      "hasPublishedRelease": true,
+      "assetCount": 2,
+      "action": "Retag existing release; preserve original source tag and binary bytes"
+    },
+    {
+      "oldTag": "v1.2.0",
+      "newTag": "v1.9",
+      "newDisplayVersion": "1.9",
+      "sourceCommit": "38847639bbd6f6855dd953bb2ddf01cac9e28291",
+      "hasPublishedRelease": true,
+      "assetCount": 2,
+      "action": "Retag existing release; preserve original source tag and binary bytes"
+    },
+    {
+      "oldTag": "v1.2.1",
+      "newTag": "v2.0",
+      "newDisplayVersion": "2.0",
+      "sourceCommit": "239cd861b64f6ff6a0cd853d4dfa5d16971d3cfe",
+      "hasPublishedRelease": true,
+      "assetCount": 2,
+      "action": "Retag existing release; preserve original source tag and binary bytes"
+    },
+    {
+      "oldTag": "v1.2.2",
+      "newTag": "v2.1",
+      "newDisplayVersion": "2.1",
+      "sourceCommit": "a739945da5546fcfd06cc243c327c0e9944f4f37",
+      "hasPublishedRelease": true,
+      "assetCount": 2,
+      "action": "Retag existing release; preserve original source tag and binary bytes"
+    },
+    {
+      "oldTag": "v1.2.3",
+      "newTag": "v2.2",
+      "newDisplayVersion": "2.2",
+      "sourceCommit": "283fe9dc8d4ef6b16ddc2cfebc0ae58f84045c32",
+      "hasPublishedRelease": true,
+      "assetCount": 2,
+      "action": "Retag existing release; preserve original source tag and binary bytes"
+    },
+    {
+      "oldTag": "v2.0.0",
+      "newTag": "v2.3",
+      "newDisplayVersion": "2.3",
+      "sourceCommit": "0ad0fb456abdee3c9c6b2714353fd32a60628c38",
+      "hasPublishedRelease": true,
+      "assetCount": 4,
+      "action": "Retag existing release; preserve original source tag and binary bytes"
+    },
+    {
+      "oldTag": "v2.0.1",
+      "newTag": "v2.4",
+      "newDisplayVersion": "2.4",
+      "sourceCommit": "507b66f5059b7986c8dadddd9638d3a4992620e2",
+      "hasPublishedRelease": true,
+      "assetCount": 4,
+      "action": "Retag existing release; preserve original source tag and binary bytes"
+    },
+    {
+      "oldTag": "v2.0.2",
+      "newTag": "v2.5",
+      "newDisplayVersion": "2.5",
+      "sourceCommit": "1a8ad0ad41a672a983077d4c55a03f598e4ad75a",
+      "hasPublishedRelease": true,
+      "assetCount": 4,
+      "action": "Retag existing release; preserve original source tag and binary bytes"
+    },
+    {
+      "oldTag": "v3.0.0-alpha.1",
+      "newTag": "v2.6",
+      "newDisplayVersion": "2.6",
+      "sourceCommit": "445632369951357f227ac77f9367d3cbefb60230",
+      "hasPublishedRelease": true,
+      "assetCount": 4,
+      "action": "Retag existing release; preserve original source tag and binary bytes"
+    },
+    {
+      "oldTag": "v3.0.0-alpha.2",
+      "newTag": "v2.7",
+      "newDisplayVersion": "2.7",
+      "sourceCommit": "cb94ce21d5a56fbb178d8c83c18d075523127939",
+      "hasPublishedRelease": true,
+      "assetCount": 4,
+      "action": "Retag existing release; preserve original source tag and binary bytes"
+    }
+  ],
+  "nextStableRelease": {
+    "tag": "v2.8",
+    "displayVersion": "2.8",
+    "cargoVersion": "2.8.0",
+    "channel": "stable",
+    "latest": true
+  },
+  "notes": [
+    "Increment public release numbers by 0.1: 1.0 through 1.9, then 2.0 through 2.8.",
+    "Existing original tags remain unchanged; new two-component tags avoid collisions.",
+    "Historical binaries retain their original embedded build versions; new history numbers and original build identities are documented.",
+    "The two tag-only versions have source archives but no release executables to mirror.",
+    "Changing release-associated tags changes canonical release/download paths; maintain an old-to-new link index.",
+    "Installed 3.0.0-alpha clients need a one-time installer migration to 2.8 because their old version comparator rejects a numerically lower release. The legacy stable 2.0.2 comparator was checked and accepts 2.8 as newer.",
+    "GitHub displays releases newest-first; the complete repository history document will be ascending."
+  ]
+}

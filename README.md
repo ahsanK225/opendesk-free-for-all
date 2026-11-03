@@ -2,9 +2,9 @@
 
 A Windows remote desktop application with a **Rust engine, Qt 6/QML interface and C++ rendering bridge**. Share the primary display, control an approved desktop, talk during a session and exchange files in a folder selected by the host.
 
-**Native preview v3.0.0-alpha.2:** [Windows installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0.0-alpha.2/OpenDesk_Setup_v3.0.0-alpha.2_Installer.exe) · [Portable executable](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0.0-alpha.2/OpenDesk_v3.0.0-alpha.2_Portable.exe) · [Release notes/checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.0.0-alpha.2)
+**Stable Windows release v2.8:** [Windows installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.8/OpenDesk_Setup_v2.8_Installer.exe) · [Portable executable](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.8/OpenDesk_v2.8_Portable.exe) · [Release notes/checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.8)
 
-The native application is a **pre-release** while physical two-device internet/headset acceptance remains open. GitHub's stable **Latest** link and stable update manifest still point to [v2.0.2](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.0.2). The [portfolio fork](https://github.com/hamxa8769/opendesk-free-for-all/releases/tag/v3.0.0-alpha.2) mirrors native artifacts. Local tests/benchmarks do not guarantee a particular internet FPS or latency.
+OpenDesk 2.8 is the current stable release. Both repositories publish it as **Latest**, and the live update manifest points to the same build. The [portfolio fork](https://github.com/hamxa8769/opendesk-free-for-all/releases/tag/v2.8) mirrors the current installer and portable executable. [Complete ascending version history: 1.0 through 2.8](docs/VERSION_HISTORY.md).
 
 ## Features
 
@@ -102,13 +102,13 @@ cargo test --release --locked --manifest-path native/launcher/Cargo.toml --featu
 node tests/test_web.cjs
 ```
 
-See [native architecture/build details](native/README.md), [validation evidence](docs/NATIVE_VALIDATION.md), [dependency licenses](native/licenses/README.md) and [logo directions](assets/brand/README.md). [ci/windows.yml](ci/windows.yml) is a template, **not an enabled GitHub Actions workflow**.
+See [native architecture/build details](native/README.md), [current release validation](docs/RELEASE_2_8_VALIDATION.md), [dependency licenses](native/licenses/README.md) and [logo directions](assets/brand/README.md). [ci/windows.yml](ci/windows.yml) is a template, **not an enabled GitHub Actions workflow**.
 
 ## Updates and recovery
 
-**Settings → Software updates → Check for updates** checks the configured channel manifest. Updates verify an official release URL and SHA-256, then the independent helper replaces/restarts the app. Portable updates retain a rollback copy. Root `version.json` describes stable updates; `native/version.json` describes previews. Stable users are not automatically enrolled in alpha builds.
+**Settings → Software updates → Check for updates** checks the configured channel manifest. Updates verify an official release URL and SHA-256, then the independent helper replaces/restarts the app. Portable updates retain a rollback copy. Root `version.json` and `native/version.json` describe the same current stable release and verified download hashes.
 
-Install a newer native preview through its release installer or replace the portable executable. Portable `--repair` rebuilds a damaged extracted runtime. Preserve `%USERPROFILE%\.opendesk` to retain identity and saved devices. Release executables are not claimed to carry a publicly trusted Authenticode signature.
+Install the current stable release through its installer or replace the portable executable. Existing 3.0.0-alpha installations need this installer once to migrate to the consistent numbering. Portable `--repair` rebuilds a damaged extracted runtime. Preserve `%USERPROFILE%\.opendesk` to retain identity and saved devices. Release executables are not claimed to carry a publicly trusted Authenticode signature.
 
 ## Troubleshooting
 
@@ -128,15 +128,31 @@ Install a newer native preview through its release installer or replace the port
 
 ## Version history and changelog
 
-| Version | Changes |
-| --- | --- |
-| **3.0.0-alpha.2** | Capture-independent input, virtual cursors, foreground approval, priority voice/control queues, decoder recovery, audio status/retry, connection fixes, aligned badges and expanded documentation. |
-| **3.0.0-alpha.1** | Rust/Qt preview, SIMD JPEG/GPU rendering, native audio, persistent portable runtime and installer/update helper; replaced Python runtime/build sources. |
-| **2.0.2** | Previous stable Windows startup runtime hotfix. |
-| **2.0.1** | Installer shutdown and desktop smoothness fixes. |
-| **2.0.0** | Performance/security modernization. |
+Release numbers advance without gaps: **1.0, 1.1, …, 1.9, 2.0, …, 2.8**. The next release is **2.9**.
 
-See [CHANGELOG.md](CHANGELOG.md) and [all releases](https://github.com/ahsanK225/opendesk-free-for-all/releases). Historical tags and source remain available; title formatting does not change version ordering.
+| Version | Release notes and downloads |
+| --- | --- |
+| **1.0** | [Historical source archive](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v1.0) |
+| **1.1** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v1.1) |
+| **1.2** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v1.2) |
+| **1.3** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v1.3) |
+| **1.4** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v1.4) |
+| **1.5** | [Historical source archive](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v1.5) |
+| **1.6** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v1.6) |
+| **1.7** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v1.7) |
+| **1.8** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v1.8) |
+| **1.9** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v1.9) |
+| **2.0** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.0) |
+| **2.1** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.1) |
+| **2.2** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.2) |
+| **2.3** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.3) |
+| **2.4** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.4) |
+| **2.5** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.5) |
+| **2.6** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.6) |
+| **2.7** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.7) |
+| **2.8 — current stable** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.8) |
+
+Original source tags and historical binaries are preserved. See [complete history and original build mapping](docs/VERSION_HISTORY.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## Collaboration and license
 

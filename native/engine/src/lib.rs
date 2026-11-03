@@ -1,4 +1,4 @@
-//! Native migration foundation. Not a released replacement for the v2 desktop.
+//! Native OpenDesk engine: capture, authorized sessions, media and delivery.
 pub mod app;
 pub mod audio;
 pub mod capture;

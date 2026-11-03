@@ -14,7 +14,7 @@ const METADATA: &str =
 const RELEASE: &str = "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/";
 fn stable_version(value: &str) -> Option<(u32, u32, u32)> {
     let pieces: Vec<_> = value.split('.').collect();
-    if pieces.len() != 3
+    if !(2..=3).contains(&pieces.len())
         || pieces
             .iter()
             .any(|v| v.is_empty() || v.len() > 5 || !v.bytes().all(|c| c.is_ascii_digit()))
@@ -24,7 +24,7 @@ fn stable_version(value: &str) -> Option<(u32, u32, u32)> {
     Some((
         pieces[0].parse().ok()?,
         pieces[1].parse().ok()?,
-        pieces[2].parse().ok()?,
+        pieces.get(2).unwrap_or(&"0").parse().ok()?,
     ))
 }
 fn validate(value: &Value, portable: bool) -> Result<(String, String, String)> {
@@ -147,6 +147,18 @@ async fn perform(shared: Arc<Shared>, install: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn sequential_versions_compare_numerically() {
+        assert_eq!(stable_version("2.8"), Some((2, 8, 0)));
+        assert_eq!(stable_version("2.8.0"), stable_version("2.8"));
+        assert!(stable_version("2.9") < stable_version("3.0"));
+        assert!(stable_version("2.8") > stable_version("2.0.2"));
+        for invalid in ["2", "2.8-alpha", "2..8", "2.8.0.1"] {
+            assert!(stable_version(invalid).is_none());
+        }
+        let value = json!({"version":"2.9","download_url":format!("{RELEASE}v2.9/OpenDesk_v2.9_Portable.exe"),"sha256":"a".repeat(64)});
+        assert!(validate(&value, true).is_ok());
+    }
     #[test]
     fn rejects_foreign_asset_and_downgrade() {
         let mut value = json!({"version":"3.0.0","download_url":format!("{RELEASE}v3.0.0/OpenDesk_v3.0.0_Portable.exe"),"sha256":"a".repeat(64)});

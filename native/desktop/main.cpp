@@ -1,4 +1,5 @@
 #include "engine_bridge.h"
+#include "version.h"
 #include "frame_item.h"
 #include "jpeg_codec.h"
 extern "C" char* od_diagnostics(bool capture);
@@ -37,7 +38,7 @@ public:
     ~NativeInstance(){if(activate)CloseHandle(activate);if(shutdown)CloseHandle(shutdown);if(mutex)CloseHandle(mutex);}
 };
 int main(int argc,char** argv){
-    QApplication application(argc,argv);application.setApplicationName(QStringLiteral("OpenDesk"));application.setApplicationVersion(QStringLiteral("3.0.0-alpha.2"));application.setWindowIcon(QIcon(QStringLiteral(":/brand/portal-o.svg")));
+    QApplication application(argc,argv);application.setApplicationName(QStringLiteral("OpenDesk"));application.setApplicationVersion(QStringLiteral(OPENDESK_VERSION));application.setWindowIcon(QIcon(QStringLiteral(":/brand/portal-o.svg")));
     QQuickStyle::setStyle(QStringLiteral("Basic"));QCommandLineParser parser;parser.addHelpOption();parser.addVersionOption();
     parser.addOption({QStringLiteral("config-dir"),QStringLiteral("Isolated configuration directory"),QStringLiteral("path")});
     parser.addOption({QStringLiteral("smoke-test"),QStringLiteral("Save startup evidence and exit")});
@@ -79,11 +80,11 @@ int main(int argc,char** argv){
         const auto presentIncoming=[&]{
             const auto incoming=bridge.state().value(QStringLiteral("incoming")).toMap();
             const auto request=incoming.value(QStringLiteral("requestId")).toString();
-            if(request==pendingRequest)return;
             const auto handle=HWND(window->winId());
+            if(request==pendingRequest&&(request.isEmpty()||(!IsIconic(handle)&&window->visibility()!=QWindow::Minimized)))return;
             if(!request.isEmpty()){
                 if(pendingRequest.isEmpty())wasTopmost=(GetWindowLongPtrW(handle,GWL_EXSTYLE)&WS_EX_TOPMOST)!=0;
-                if(window->visibility()==QWindow::Minimized)window->showNormal();
+                if(IsIconic(handle)||window->visibility()==QWindow::Minimized){window->showNormal();ShowWindow(handle,SW_RESTORE);}
                 window->show();
                 SetWindowPos(handle,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_SHOWWINDOW);
                 window->raise();window->requestActivate();SetForegroundWindow(handle);
@@ -96,7 +97,7 @@ int main(int argc,char** argv){
         };
         QObject::connect(&bridge,&EngineBridge::stateChanged,window,presentIncoming);
         BOOL dark=TRUE;DwmSetWindowAttribute(HWND(window->winId()),20,&dark,sizeof(dark));
-        QTimer launcher;QObject::connect(&launcher,&QTimer::timeout,&application,[&]{if(WaitForSingleObject(instance.shutdown,0)==WAIT_OBJECT_0){window->close();return;}if(WaitForSingleObject(instance.activate,0)==WAIT_OBJECT_0){window->showNormal();window->raise();window->requestActivate();}});launcher.start(100);
+        QTimer launcher;QObject::connect(&launcher,&QTimer::timeout,&application,[&]{if(WaitForSingleObject(instance.shutdown,0)==WAIT_OBJECT_0){window->close();return;}if(WaitForSingleObject(instance.activate,0)==WAIT_OBJECT_0){window->showNormal();window->raise();window->requestActivate();}presentIncoming();});launcher.start(100);
         if(parser.isSet(QStringLiteral("smoke-test"))&&parser.isSet(QStringLiteral("smoke-minimized")))window->showMinimized();
         // The engine can receive a request while QML is still loading, before
         // the signal connection above exists. Inspect that initial state too.

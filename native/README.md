@@ -1,6 +1,6 @@
 # OpenDesk native desktop
 
-The native implementation uses a Rust engine, a Qt 6.8.3 / QML desktop, and libjpeg-turbo 3.2.1. It retains the dark/red OpenDesk design and the protocol-v2 browser viewer. This branch is a native preview; v2.0.2 remains the published stable baseline until the native package and hardware acceptance gates are complete.
+The native implementation uses a Rust engine, a Qt 6.8.3 / QML desktop, and libjpeg-turbo 3.2.1. It retains the dark/red OpenDesk design and the protocol-v2 browser viewer. The current stable release is 2.8. Public release numbers advance by 0.1; see ../docs/VERSION_HISTORY.md for the full ascending history.
 
 ## Implemented
 
@@ -47,7 +47,7 @@ OpenDesk.exe --benchmark-output C:\Temp\native-benchmark.json
 
 Benchmark JSON separates changed-screen capture, full/delta encode and decode. Codec timings exclude transport and GPU presentation and do not establish delivered internet FPS. [Process shutdown](test-launcher.ps1) and [executable replacement](test-update.ps1) scripts use isolated fixtures, so they do not need to close the user's real application.
 
-## Remaining release acceptance
+## Test coverage and platform limits
 
 Local native session/file/revocation tests, packaged locked-app upgrade, GPU pixel-format/render verification and 100%/150% DPI checks have passed. First/cached portable startup, automatic missing-DLL repair, explicit repair and actionable long-path rejection have also passed. Two-device WAN/headset acceptance remains open in the validation record. This is a primary-monitor, user-session Windows app: pre-login/service operation, the UAC secure desktop, multi-monitor selection and acoustic echo cancellation are not implemented. Headphones are recommended for two-way voice. Cloudflare terminates the HTTPS/WSS tunnel; this is not an end-to-end encrypted peer-to-peer transport.
 

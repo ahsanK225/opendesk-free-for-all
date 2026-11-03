@@ -4,6 +4,8 @@ OpenDesk began in [ahsanK225/opendesk-free-for-all](https://github.com/ahsanK225
 
 ## Hamza Iqbal — @hamxa8769
 
+- **2.8 stable:** continuous public release numbering, original-to-new history mapping, stable Windows version resources, shared build metadata, two-component update comparison, and synchronized releases/history across the original repository and portfolio fork. Historical source tags and binary contents are preserved.
+
 - **v3.0.0-alpha.2:** capture-independent remote input, controller cursor visuals, foreground attended approval, prioritized transport lanes, decode/liveness recovery, voice state/device diagnostics, expanded documentation and 30-second bidirectional PCM/video regression coverage. See [validation](ALPHA2_VALIDATION.md).
 
 Role: contributor responsible for the v2 modernization work, including performance, session security, media reliability, and Windows delivery. Implementation was assisted by Codex; engineering claims below refer to the committed implementation and recorded checks.

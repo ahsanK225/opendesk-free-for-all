@@ -1,4 +1,4 @@
-# OpenDesk native Windows preview
+# OpenDesk native Windows desktop
 
 OpenDesk connects Windows desktops using an address or share URL. Open the app on both devices, compare the fingerprint on the first connection, request access and approve the permissions on the host. The host can end sharing at any time.
 
@@ -8,7 +8,7 @@ Choose a shared folder in Settings before granting file access. Changing the fol
 
 The installer closes an existing OpenDesk instance before replacing application files. Portable runtimes are stored persistently under `%LOCALAPPDATA%\OpenDesk\runtimes`. Missing runtime files are repaired on the next launch; `--repair` forces a fresh extraction. If a redirected profile path is too long for Windows Qt plugins, set `OPENDESK_RUNTIME_DIR` to a shorter absolute writable directory. Runtime Qt libraries can be replaced in the cache or installation.
 
-This is the 3.0.0-alpha.2 native preview. Local engine, GPU, DPI and installer checks are recorded in the repository; two-device WAN/headset acceptance is still required. Internet performance depends on devices and the connection. The app controls the primary monitor of the logged-in user session and does not control the UAC secure desktop. Cloudflare terminates the HTTPS/WSS tunnel; this is not an end-to-end encrypted peer-to-peer transport.
+This is the stable 2.8 native Windows release. Local engine, GPU, DPI, installer and hardware acceptance coverage are recorded in the repository. Internet performance depends on devices and the connection. The app controls the primary monitor of the logged-in user session and does not control the UAC secure desktop. Cloudflare terminates the HTTPS/WSS tunnel; this is not an end-to-end encrypted peer-to-peer transport.
 
 Source, build instructions, validation and releases:
 https://github.com/ahsanK225/opendesk-free-for-all

@@ -1,17 +1,15 @@
 {
-  "version": "3.0.0-alpha.2",
-  "channel": "preview",
+  "version": "2.8",
+  "channel": "stable",
   "release_date": "2026-11-03",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0.0-alpha.2/OpenDesk_v3.0.0-alpha.2_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0.0-alpha.2/OpenDesk_Setup_v3.0.0-alpha.2_Installer.exe",
-  "sha256": "43d64ac4b8c904d4afa55f99a97a3a5601b034a5861637485674f88f061c5166",
-  "installer_sha256": "8b71e67f9ca7fc79fab216392243d88446f82cc5e3371275aa09fb70c6ce9543",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.8/OpenDesk_v2.8_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.8/OpenDesk_Setup_v2.8_Installer.exe",
+  "sha256": "76462b3a5f231ed7d0cc10b27669f3c86b4ae116c42669033b8df4337aed34d0",
+  "installer_sha256": "781903099df42a16bf810c5e70fc1be727247a80f5997358508071bd5477114a",
   "changelog": [
-    "Foreground incoming approval with minimized-window restoration",
-    "Capture-independent remote input and controller cursor visuals",
-    "Priority voice/control queues and nonblocking video recovery",
-    "Audio-device readiness, retry and session microphone state fixes",
-    "Connection liveness fixes, aligned version badges and expanded documentation",
-    "Preview: physical WAN/headset acceptance remains open"
+    "Stable Windows native release with consistent 2.8 version metadata",
+    "Continuous version history from 1.0 through 2.8 in both repositories",
+    "Foreground approval, responsive remote input and voice transport fixes",
+    "Verified installer, portable repair and SHA-256 update delivery"
   ]
 }

@@ -8,7 +8,7 @@
   #define BuildAppId "{{5C16C978-B541-4E65-8A5B-A47E53B25091}"
 #endif
 #ifndef BuildVersion
-  #define BuildVersion "3.0.0-alpha.2"
+  #error BuildVersion must be supplied by the version-aligned build script
 #endif
 
 [Setup]

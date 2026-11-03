@@ -1,14 +1,15 @@
 {
-  "version": "2.0.2",
+  "version": "2.8",
+  "channel": "stable",
   "release_date": "2026-11-03",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.0.2/OpenDesk_v2.0.2_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.0.2/OpenDesk_Setup_v2.0.2_Installer.exe",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.8/OpenDesk_v2.8_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.8/OpenDesk_Setup_v2.8_Installer.exe",
+  "sha256": "76462b3a5f231ed7d0cc10b27669f3c86b4ae116c42669033b8df4337aed34d0",
+  "installer_sha256": "781903099df42a16bf810c5e70fc1be727247a80f5997358508071bd5477114a",
   "changelog": [
-    "Fix Windows 10 runtime loading by excluding foreign Windows API/CRT DLLs",
-    "Installed application runs from a persistent runtime folder instead of temporary extraction",
-    "Reset frozen-process state before independent update restart",
-    "Use installer updates for installed runtime bundles"
-  ],
-  "sha256": "d38b3fa0b79daa8d310e488fa005226285fd4a9e6faf45fc77431c1ba37534c1",
-  "installer_sha256": "83a1e4755e966d4b2930c71bf82fdbb321b0368481e6ffa5f66d8156d219d110"
+    "Stable Windows native release with consistent 2.8 version metadata",
+    "Continuous version history from 1.0 through 2.8 in both repositories",
+    "Foreground approval, responsive remote input and voice transport fixes",
+    "Verified installer, portable repair and SHA-256 update delivery"
+  ]
 }

@@ -165,7 +165,7 @@ fn run() -> Result<i32> {
     if !base.is_absolute() {
         bail!("OPENDESK_RUNTIME_DIR must be an absolute directory path")
     }
-    let cache = base.join(format!("3.0.0-{}", &hash[..12]));
+    let cache = base.join(format!("{}-{}", env!("CARGO_PKG_VERSION"), &hash[..12]));
     validate_loader_paths(&cache)?;
     let name = opendesk_launcher::instance_name(".extract")?;
     let mutex = Handle(unsafe { CreateMutexW(None, false, PCWSTR(wide(&name).as_ptr()))? });

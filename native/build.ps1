@@ -11,6 +11,13 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 Set-Location -LiteralPath $repo
+$releaseManifest=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'version.json') -Raw|ConvertFrom-Json
+$releaseVersion=$releaseManifest.version
+if ($releaseVersion -notmatch '^\d+\.[0-9]$' -or $releaseManifest.channel -ne 'stable') {throw 'Use the stable sequential version (2.8, 2.9, 3.0, ...).'}
+foreach($crate in @('engine','launcher')) {
+    $cargo=Get-Content -LiteralPath (Join-Path $PSScriptRoot "$crate/Cargo.toml") -Raw
+    if ($cargo -notmatch ('(?m)^version = "'+[regex]::Escape($releaseVersion)+'\.0"\r?$')) {throw "Cargo version must match release $releaseVersion.0"}
+}
 $build = [IO.Path]::GetFullPath($BuildRoot)
 $output = [IO.Path]::GetFullPath($OutputDir)
 $qt = (Resolve-Path -LiteralPath $QtRoot).Path
@@ -26,6 +33,7 @@ $env:CARGO_TARGET_DIR = Join-Path $build 'engine'
 if (!$SkipTests) {
     Invoke-BuildTool cargo @('test','--locked','--release','--lib','--manifest-path','native/engine/Cargo.toml','--','--test-threads=1')
     Invoke-BuildTool node @('tests/test_web.cjs')
+    Invoke-BuildTool node @('tests/test_release_versions.cjs')
 }
 Invoke-BuildTool cargo @('build','--locked','--release','--lib','--manifest-path','native/engine/Cargo.toml')
 $desktop = Join-Path $build 'desktop'
@@ -73,14 +81,14 @@ try {
     Compress-Archive -Path (Join-Path $bundle '*') -DestinationPath $payload -CompressionLevel Optimal
     $env:OPENDESK_PAYLOAD_ZIP = $payload
     Invoke-BuildTool cargo @('build','--locked','--release','--manifest-path','native/launcher/Cargo.toml','--target','x86_64-pc-windows-msvc','--features','portable','--bin','OpenDeskPortable')
-    Copy-Item -LiteralPath (Join-Path $launcher 'OpenDeskPortable.exe') -Destination (Join-Path $output 'OpenDesk_v3.0.0-alpha.2_Portable.exe') -Force
-    if (!$SkipTests) { & "$PSScriptRoot/test-portable.ps1" -PortablePath (Join-Path $output 'OpenDesk_v3.0.0-alpha.2_Portable.exe') -EvidenceDir (Join-Path $output 'portable-tests') }
-    if ($InnoCompiler) { Invoke-BuildTool $InnoCompiler @("/DAppBundleDir=$bundle","/DMaintenancePath=$helper","/O$output",'native/installer.iss') }
+    Copy-Item -LiteralPath (Join-Path $launcher 'OpenDeskPortable.exe') -Destination (Join-Path $output ("OpenDesk_v"+$releaseVersion+"_Portable.exe")) -Force
+    if (!$SkipTests) { & "$PSScriptRoot/test-portable.ps1" -PortablePath (Join-Path $output ("OpenDesk_v"+$releaseVersion+"_Portable.exe")) -EvidenceDir (Join-Path $output 'portable-tests') }
+    if ($InnoCompiler) { Invoke-BuildTool $InnoCompiler @("/DBuildVersion=$releaseVersion","/DAppBundleDir=$bundle","/DMaintenancePath=$helper","/O$output",'native/installer.iss') }
 } finally { $env:RUSTFLAGS = $previousFlags; Remove-Item Env:OPENDESK_PAYLOAD_ZIP,Env:OPENDESK_RESOURCE_RES -ErrorAction SilentlyContinue }
 $manifest=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'version.json') -Raw|ConvertFrom-Json
-$portableArtifact=Join-Path $output 'OpenDesk_v3.0.0-alpha.2_Portable.exe'
+$portableArtifact=Join-Path $output ("OpenDesk_v"+$releaseVersion+"_Portable.exe")
 $manifest.sha256=(Get-FileHash -LiteralPath $portableArtifact -Algorithm SHA256).Hash.ToLowerInvariant()
-$installerArtifact=Join-Path $output 'OpenDesk_Setup_v3.0.0-alpha.2_Installer.exe'
+$installerArtifact=Join-Path $output ("OpenDesk_Setup_v"+$releaseVersion+"_Installer.exe")
 $artifacts=@($portableArtifact)
 if ($InnoCompiler -and (Test-Path -LiteralPath $installerArtifact)) {
     $manifest.installer_sha256=(Get-FileHash -LiteralPath $installerArtifact -Algorithm SHA256).Hash.ToLowerInvariant()

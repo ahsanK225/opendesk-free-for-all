@@ -1,4 +1,6 @@
-# Native preview validation — 2026-11-03
+# Native migration validation — archived engineering record
+
+The current stable release is **2.8**. See [current validation](RELEASE_2_8_VALIDATION.md) and [continuous version history](VERSION_HISTORY.md). Original build identifiers below are retained as historical evidence.
 
 The subsequent **3.0.0-alpha.2** input, voice, connection and approval changes are recorded in [ALPHA2_VALIDATION.md](ALPHA2_VALIDATION.md). Results below describe the original alpha.1 baseline.
 

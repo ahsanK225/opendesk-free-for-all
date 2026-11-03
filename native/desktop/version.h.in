@@ -1,0 +1,2 @@
+#pragma once
+#define OPENDESK_VERSION "@OPENDESK_VERSION@"

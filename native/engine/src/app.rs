@@ -77,7 +77,7 @@ impl App {
                 json!(std::env::var("USERPROFILE").unwrap_or_default());
             store.save()?;
         }
-        let view = json!({"version":"3.0.0-alpha.2","deviceId":format_id(&store.id()),"deviceName":std::env::var("COMPUTERNAME").unwrap_or_else(|_|"This desktop".into()),"fingerprint":store.fingerprint(),
+        let view = json!({"version":env!("CARGO_PKG_VERSION").strip_suffix(".0").unwrap_or(env!("CARGO_PKG_VERSION")),"deviceId":format_id(&store.id()),"deviceName":std::env::var("COMPUTERNAME").unwrap_or_else(|_|"This desktop".into()),"fingerprint":store.fingerprint(),
             "status":"Starting local host…","statusTone":"pending","localUrl":"","shareUrl":"","activeTab":"home","connections":[],"incoming":null,"hostSession":null,"trustRequest":null,
             "recents":store.config["recent_sessions"],"settings":store.config["native_settings"],"hasPassword":!store.config["unattended_password"].as_str().unwrap_or("").is_empty(),"notice":null,"audioDevices":{"inputs":[],"outputs":[]}});
         let shared = Arc::new(Shared {

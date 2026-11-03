@@ -6,6 +6,7 @@ $oldLocal=$env:LOCALAPPDATA
 $oldPath=$env:PATH
 $oldRuntime=$env:OPENDESK_RUNTIME_DIR
 $results=@()
+$expectedVersion=(Get-Content (Join-Path $PSScriptRoot "version.json") -Raw|ConvertFrom-Json).version
 try {
     $env:LOCALAPPDATA=Join-Path $caseRoot 'appdata'
     $env:PATH="$env:SystemRoot\System32;$env:SystemRoot"
@@ -18,7 +19,7 @@ try {
     Remove-Item Env:OPENDESK_RUNTIME_DIR -ErrorAction SilentlyContinue
     foreach ($mode in @('first-launch','cached-launch','missing-dll-repair','explicit-repair')) {
         if ($mode -eq 'missing-dll-repair') {
-            $cache=@(Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA 'OpenDesk/runtimes') -Directory | Where-Object Name -Like '3.0.0-*')
+            $cache=@(Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA 'OpenDesk/runtimes') -Directory)
             if ($cache.Count -ne 1) {throw 'Expected exactly one isolated portable cache.'}
             $dll=Join-Path $cache[0].FullName 'Qt6Svg.dll'
             if (!(Test-Path -LiteralPath $dll)) {throw 'The repair fixture DLL is missing.'}
@@ -33,7 +34,7 @@ try {
         $watch.Stop()
         if (!(Test-Path -LiteralPath $state)) {throw 'The native child did not produce startup evidence.'}
         $view=Get-Content -LiteralPath $state -Raw|ConvertFrom-Json
-        if ($view.version -ne '3.0.0-alpha.2') {throw 'The launcher did not run the native application.'}
+        if ($view.version -ne $expectedVersion) {throw 'The launcher did not run the native application.'}
         $warnings=@(Get-Content -LiteralPath (Join-Path $caseRoot ($mode+'-stderr.log')) | Where-Object {$_ -and $_ -ne 'qt.qpa.mime: Retrying to obtain clipboard.'})
         if ($warnings) {throw $warnings}
         $results+=[pscustomobject]@{mode=$mode;passed=$true;seconds=$watch.Elapsed.TotalSeconds;deviceId=$view.deviceId}
