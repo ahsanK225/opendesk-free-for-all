@@ -82,6 +82,24 @@ async fn metadata(client: &reqwest::Client) -> Result<Value> {
     }
     Ok(serde_json::from_slice(&bytes)?)
 }
+/// Removes what earlier updates left behind and returns the error of the latest failed one.
+async fn clean_updates() -> Option<String> {
+    let directory = PathBuf::from(std::env::var_os("LOCALAPPDATA")?).join("OpenDesk/updates");
+    let mut entries = tokio::fs::read_dir(&directory).await.ok()?;
+    let mut latest: Option<(std::time::SystemTime, String)> = None;
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let report = entry.path().join("update-error.txt");
+        if let Ok(modified) = tokio::fs::metadata(&report).await.and_then(|m| m.modified())
+            && modified.elapsed().is_ok_and(|age| age < Duration::from_secs(600))
+            && latest.as_ref().is_none_or(|(time, _)| modified > *time)
+            && let Ok(text) = tokio::fs::read_to_string(&report).await
+        {
+            latest = Some((modified, text));
+        }
+        let _ = tokio::fs::remove_dir_all(entry.path()).await;
+    }
+    latest.map(|(_, text)| text)
+}
 /// Installing closes the app, so it must not happen while someone is connected in either direction.
 fn session_active(shared: &Shared) -> bool {
     let view = shared.view.lock().unwrap();
@@ -96,8 +114,12 @@ pub fn check_on_start(shared: Arc<Shared>) {
         return;
     }
     tokio::spawn(async move {
+        let failed = clean_updates().await;
+        let mut stopped = failed.is_some();
+        if let Some(message) = failed {
+            shared.update(|v| v["update"] = json!({"state":"failed","message":message}));
+        }
         tokio::time::sleep(Duration::from_secs(8)).await;
-        let mut stopped = false;
         while !shared.stop.load(Ordering::Acquire) {
             if !stopped && !shared.update_busy.swap(true, Ordering::AcqRel) {
                 if perform(shared.clone(), false, false).await.is_ok() && !session_active(&shared) {
@@ -186,7 +208,7 @@ async fn perform(shared: Arc<Shared>, install: bool, automatic: bool) -> Result<
         }
         let updater=stage.join("OpenDeskSetupHelper.exe");tokio::fs::copy(helper,&updater).await?;
         let mut process=std::process::Command::new(updater);
-        process.args(["--apply","--parent-pid",&std::process::id().to_string(),"--source"]).arg(&download).args(["--sha256",&expected]);
+        process.args(["--apply","--no-error-dialog","--parent-pid",&std::process::id().to_string(),"--source"]).arg(&download).args(["--sha256",&expected]);
         if let Some(target)=portable { process.arg("--portable-target").arg(target);if let Ok(pid)=std::env::var("OPENDESK_PORTABLE_PID"){process.args(["--launcher-pid",&pid]);} }
         else {process.arg("--installer-dir").arg(directory);}
         use std::os::windows::process::CommandExt;

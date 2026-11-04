@@ -63,6 +63,11 @@ fn verify(path: &std::path::Path, expected: &str) -> Result<()> {
     }
     Ok(())
 }
+/// `canonicalize` returns `\\?\C:\...`, and the installer refuses that form of directory.
+fn plain_path(path: &std::path::Path) -> String {
+    let text = path.display().to_string();
+    text.strip_prefix(r"\\?\").unwrap_or(&text).to_owned()
+}
 pub fn run(args: &[String]) -> Result<i32> {
     let source = fs::canonicalize(required(args, "--source")?)?;
     let expected = required(args, "--sha256")?;
@@ -116,33 +121,45 @@ pub fn run(args: &[String]) -> Result<i32> {
         if !directory.join("OpenDesk.exe").is_file() || !directory.join("unins000.exe").is_file() {
             bail!("The target is not an installed OpenDesk directory")
         }
-        let mut installer = std::process::Command::new(&source)
-            .args(["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART"])
-            .arg(format!("/DIR={}", directory.display()))
-            .spawn()?;
-        let started = Instant::now();
-        loop {
-            if let Some(status) = installer.try_wait()? {
-                if !matches!(status.code(), Some(0 | 3010)) {
-                    bail!(
-                        "The installer returned {:?}. Your device settings were preserved.",
-                        status.code()
-                    )
+        let result = (|| -> Result<()> {
+            let mut installer = std::process::Command::new(&source)
+                .args(["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART"])
+                .arg(format!("/DIR={}", plain_path(&directory)))
+                .spawn()?;
+            let started = Instant::now();
+            loop {
+                if let Some(status) = installer.try_wait()? {
+                    if !matches!(status.code(), Some(0 | 3010)) {
+                        bail!(
+                            "The installer returned {:?}. Your device settings were preserved.",
+                            status.code()
+                        )
+                    }
+                    return Ok(());
                 }
-                break;
+                if started.elapsed() > Duration::from_secs(300) {
+                    bail!("The installer is still running. Check its window before launching OpenDesk.")
+                }
+                std::thread::sleep(Duration::from_millis(250));
             }
-            if started.elapsed() > Duration::from_secs(300) {
-                bail!("The installer is still running. Check its window before launching OpenDesk.")
-            }
-            std::thread::sleep(Duration::from_millis(250));
-        }
-        std::process::Command::new(directory.join("OpenDesk.exe")).spawn()?;
+        })();
+        // Whatever happened, the person gets their app back. It reports a failure when it starts.
+        let launched = std::process::Command::new(directory.join("OpenDesk.exe")).spawn();
+        result?;
+        launched?;
     }
     Ok(0)
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_installer_gets_a_plain_directory() {
+        use super::plain_path;
+        use std::path::Path;
+        assert_eq!(plain_path(Path::new(r"\\?\C:\Users\A B\OpenDesk")), r"C:\Users\A B\OpenDesk");
+        assert_eq!(plain_path(Path::new(r"C:\Apps\OpenDesk")), r"C:\Apps\OpenDesk");
+    }
     use super::*;
     #[test]
     fn rejects_short_digest_before_opening_a_file() {

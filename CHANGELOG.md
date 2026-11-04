@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.2 stable — 2026-11-05
+
+Fix for a failure seen between two real PCs: a friend could not reach a laptop by ID during a session the other way round.
+
+- A record from a PC whose clock was more than 3 minutes ahead was thrown away, so the viewer only saw old records and said the desktop was last online hours ago. Records are signed and the address still has to prove its key, so clocks up to a day apart are now accepted.
+- Updating from inside the app failed on every installed copy: the helper passed the install folder in the `\\?\C:\...` form, and the installer refused it. The folder is now passed in its plain form. The helper runs from the version being replaced, so 3.0 and 3.1 cannot update themselves, and 3.2 has to be installed by hand once.
+- After a failed update OpenDesk opens again and shows what went wrong, in place of a separate error box. Leftover update files are removed.
+- Directory reads wait up to 15 seconds, because the second directory can take over 10 seconds to answer.
+- PCs behind one internet address still share the first directory's limit of 250 messages a day, so it can fill up. That is why the second directory matters here, and a better design is planned.
+
+Built without the packaged test run. Directory unit tests passed. A real connection with this fix was not run.
+
 ## 3.1 stable — 2026-11-05
 
 Tested through the real tunnel on one PC. Two physical PCs on separate networks and a real microphone were not tested. Results are in [VALIDATION_3_1.md](docs/VALIDATION_3_1.md).

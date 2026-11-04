@@ -1,16 +1,13 @@
 {
-  "version": "3.1",
+  "version": "3.2",
   "channel": "stable",
   "release_date": "2026-11-05",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.1/OpenDesk_v3.1_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.1/OpenDesk_Setup_v3.1_Installer.exe",
-  "sha256": "0dd07704062870e84ce218c34a8a4fbc6ab02960f6d0fc45580f5e4cdffea6db",
-  "installer_sha256": "0f7b598d030f0ce477a8c8bb7469e69f351b92f30be1ff7647c82b305cc3dc47",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.2/OpenDesk_v3.2_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.2/OpenDesk_Setup_v3.2_Installer.exe",
+  "sha256": "41261574bdf3a16348dcfb66cbc20478bb6070d307c2c8cc4521e9f6f16ccdf5",
+  "installer_sha256": "44ab4b4ebc67fc2d468726b0f50e625df319f109377f1e08feb83667f18034d2",
   "changelog": [
-    "Updates now download and install by themselves when no session is open",
-    "Connecting by ID is more reliable, with a working second directory",
-    "Video sends only what your connection can carry, which reduces delay",
-    "Voice uses a third of the data",
-    "Clear messages when the other PC is offline or the ID was not found"
+    "A desktop whose clock is wrong can now be found by ID",
+    "Updating from inside the app now works from this version on"
   ]
 }

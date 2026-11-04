@@ -22,6 +22,9 @@ const BINARY_SHA: &str = "f096265ec2fcbe9bb6e2d64268db167ced3fcbb83d894bdb9e2fcd
 pub const FRESH_FOR: u64 = 120;
 /// Newer viewers keep using a record this long, so the host can publish rarely.
 const VALID_FOR: u64 = 12 * 3600;
+/// PC clocks can be wrong by minutes or hours. A record is signed and the address still has to
+/// prove its key, so a clock difference alone must not hide a desktop.
+const CLOCK_ROOM: u64 = 24 * 3600;
 const COMPACT_PREFIX: &str = "OD1";
 const COMPACT_FIXED: usize = 134;
 pub fn record_body(id: &str, url: &str, expires: u64) -> String {
@@ -141,8 +144,7 @@ fn read_record(record: &str, id: &str, pinned: Option<&str>) -> Result<Found> {
     let now = store::now();
     let url = Url::parse(record["url"].as_str().unwrap_or(""))?;
     if record["id"] != id
-        || expires > now + 180
-        || until > now + VALID_FOR + 180
+        || until > now + VALID_FOR + CLOCK_ROOM
         || url.scheme() != "https"
         || !url
             .host_str()
@@ -195,7 +197,8 @@ async fn pick(client: &Client, found: &[Found]) -> Option<Found> {
     list.into_iter().next().filter(|f| f.expires > now)
 }
 async fn fetch_text(client:&Client,url:&str,maximum:usize)->Result<String>{
-    let mut response=client.get(url).header("Cache-Control","no-cache").send().await?.error_for_status()?;
+    // One directory can take over 10 seconds to answer.
+    let mut response=client.get(url).timeout(Duration::from_secs(15)).header("Cache-Control","no-cache").send().await?.error_for_status()?;
     if response.content_length().is_some_and(|n|n>maximum as u64){bail!("Directory response exceeds its size limit")}
     let mut data=Vec::new();
     while let Some(chunk)=response.chunk().await?{if data.len().saturating_add(chunk.len())>maximum{bail!("Directory response exceeds its size limit")};data.extend_from_slice(&chunk);}
@@ -404,6 +407,15 @@ mod tests {
         assert_eq!(candidates(&[found], now).len(), 1);
         let old = signed(URL, now - VALID_FOR - 60);
         assert!(candidates(&[read_record(&old, ID, None).unwrap()], now).is_empty());
+    }
+    #[test]
+    fn a_host_whose_clock_is_ahead_is_still_found() {
+        let now = store::now();
+        for ahead in [360, 3 * 3600, 23 * 3600] {
+            let found = read_record(&signed(URL, now + ahead), ID, None).unwrap();
+            assert_eq!(candidates(&[found], now).len(), 1, "{ahead}");
+        }
+        assert!(read_record(&signed(URL, now + 3 * CLOCK_ROOM), ID, None).is_err());
     }
     #[test]
     fn records_from_hosts_up_to_3_0_keep_working() {
