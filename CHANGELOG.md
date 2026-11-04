@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased — branch `feature/lite-and-compat-fixes`, 2026-11-04
+## 2.9 stable — 2026-11-04
 
-Committed to that branch; not pushed or released.
+Physical two-device use and real older apps were not tested for this release.
 
 - Added project engineering setup: `CLAUDE.md`, nine subagents in `.claude/agents`, `PROJECT_CONTEXT.md`, and expanded `PROJECT_STRUCTURE.md`, `SYSTEM_DESIGN.md` and `TASKS.md`. No application code changed in this step.
 - Uncommitted application work from before this setup, unreviewed for release: light theme, protocol 1 compatibility, LAN address and all-interface listening, DNS recovery, bounded directory responses, settings normalization.

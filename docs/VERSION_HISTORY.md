@@ -1,6 +1,6 @@
 # OpenDesk version history
 
-Releases advance by 0.1: **1.0 → 1.1 → … → 1.9 → 2.0 → … → 2.8**. The next release is 2.9. This table is intentionally oldest-first; GitHub displays its built-in release list newest-first.
+Releases advance by 0.1: **1.0 → 1.1 → … → 1.9 → 2.0 → … → 2.9**. The next release is 3.0. This table is intentionally oldest-first; GitHub displays its built-in release list newest-first.
 
 The original source tags and commit history remain available. Historical executable bytes retain their original build identities; the table records their new release number and original tag. Source-only rows have no historical executable to download.
 
@@ -24,7 +24,14 @@ The original source tags and commit history remain available. Historical executa
 | **2.5** | [`v2.0.2`](https://github.com/ahsanK225/opendesk-free-for-all/tree/v2.0.2) | [Archived release and original downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.5) |
 | **2.6** | [`v3.0.0-alpha.1`](https://github.com/ahsanK225/opendesk-free-for-all/tree/v3.0.0-alpha.1) | [Archived release and original downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.6) |
 | **2.7** | [`v3.0.0-alpha.2`](https://github.com/ahsanK225/opendesk-free-for-all/tree/v3.0.0-alpha.2) | [Archived release and original downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.7) |
-| **2.8 — current stable** | Rust engine, Qt/QML desktop | [Installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.8) |
+| **2.8** | Rust engine, Qt/QML desktop | [Installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.8) |
+| **2.9 — current stable** | Rust engine, Qt/QML desktop | [Installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.9) |
+
+## 2.9 stable release
+
+- A saved device answering with an older protocol is refused, and passwords are not sent to a desktop that cannot prove its identity.
+- DNS over HTTPS recovery, light theme, session audio controls and the first OpenDesk Lite downloads.
+- Results and untested cases are in [LITE_AND_COMPATIBILITY_VALIDATION.md](LITE_AND_COMPATIBILITY_VALIDATION.md).
 
 ## 2.8 stable release
 

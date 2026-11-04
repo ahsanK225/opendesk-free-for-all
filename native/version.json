@@ -1,15 +1,15 @@
 {
-  "version": "2.8",
+  "version": "2.9",
   "channel": "stable",
-  "release_date": "2026-11-03",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.8/OpenDesk_v2.8_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.8/OpenDesk_Setup_v2.8_Installer.exe",
-  "sha256": "76462b3a5f231ed7d0cc10b27669f3c86b4ae116c42669033b8df4337aed34d0",
-  "installer_sha256": "781903099df42a16bf810c5e70fc1be727247a80f5997358508071bd5477114a",
+  "release_date": "2026-11-04",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.9/OpenDesk_v2.9_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.9/OpenDesk_Setup_v2.9_Installer.exe",
+  "sha256": "f6c0d87467684168aa59171fb1a19da36812f65427c2b810e7dbf4d377771e6b",
+  "installer_sha256": "8cbfa195f7e73b1b739f3f5a57d246b4d52d33a41af326ccb94f9e04a98075d1",
   "changelog": [
-    "Stable Windows native release with consistent 2.8 version metadata",
-    "Continuous version history from 1.0 through 2.8 in both repositories",
-    "Foreground approval, responsive remote input and voice transport fixes",
-    "Verified installer, portable repair and SHA-256 update delivery"
+    "A saved device answering with an older protocol is refused, and passwords are not sent to a desktop that cannot prove its identity",
+    "DNS over HTTPS recovery for temporary name resolution failures, including Windows error 11002",
+    "Light theme, session speaker button, mic state icon, and session quality, file size and Reconnect fixes",
+    "New OpenDesk Lite download without voice, file transfer or automatic updates"
   ]
 }

@@ -1,6 +1,6 @@
 # Lite edition and compatibility validation — 2026-11-04
 
-Results from branch `feature/lite-and-compat-fixes`, not pushed or released. Built and run on one Windows 10 PC (8 GB RAM, under memory and disk pressure) from a copy of the tree on another drive.
+Results for release 2.9. Built and run on one Windows 10 PC (8 GB RAM, under memory and disk pressure) from a copy of the tree on another drive.
 
 ## Builds
 
@@ -18,8 +18,8 @@ Also passed: launcher tests, `tests/test_web.cjs`, `tests/test_release_versions.
 
 | Measure | Full | Lite | Difference |
 | --- | --- | --- | --- |
-| Installer | 37,362,157 bytes | 33,495,768 bytes | 10.3% smaller |
-| Portable | 51,828,736 bytes | 44,810,240 bytes | 13.5% smaller |
+| Installer | 37,362,796 bytes | 33,499,598 bytes | 10.3% smaller |
+| Portable | 51,829,248 bytes | 44,810,752 bytes | 13.5% smaller |
 | Runtime folder | 138.1 MB, 1,735 files | 121.2 MB, 598 files | 12.2% smaller |
 | Idle working set | 81-82 MB | 82 MB | None |
 | Idle private memory | 66-67 MB | 67 MB | None |
@@ -50,6 +50,20 @@ Windows error 11002 is `WSATRY_AGAIN`, a temporary resolver failure. `net.rs` re
 ## Interface
 
 Smoke screenshots from built apps were captured without errors for home, settings, audio settings and saved devices in Dark and Light for both editions, plus files for Full. A sample covering both themes and both editions was inspected and looked correct. Lite hides voice, file transfer and update controls. Theme was set through configuration; changing the selector by hand in a running app, and the new session speaker and mic buttons in a live session, were NOT exercised.
+
+## Keyboard and incoming approval
+
+One Lite run of the incoming check failed because the approval dialog was accepted during the test; the probe cannot approve, and what pressed it was not established. To check for accidental approval, keys were posted to the app window while a request was pending:
+
+| Keys sent | Result |
+| --- | --- |
+| None | Request still pending |
+| Enter | Request still pending |
+| Space | Request still pending |
+| Typing with Space and Enter | Request still pending |
+| Tab to the buttons, then Space | Approved, so the keys were reaching the dialog |
+
+The next Lite build passed the same check.
 
 ## Test harness changes
 

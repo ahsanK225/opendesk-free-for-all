@@ -165,12 +165,21 @@
       "hasPublishedRelease": true,
       "assetCount": 4,
       "action": "Retag existing release; preserve original source tag and binary bytes"
+    },
+    {
+      "oldTag": null,
+      "newTag": "v2.8",
+      "newDisplayVersion": "2.8",
+      "sourceCommit": "b11991b804ffd4be1a252291d65b4095fb66877b",
+      "hasPublishedRelease": true,
+      "assetCount": 4,
+      "action": "Published stable release under this tag"
     }
   ],
   "nextStableRelease": {
-    "tag": "v2.8",
-    "displayVersion": "2.8",
-    "cargoVersion": "2.8.0",
+    "tag": "v2.9",
+    "displayVersion": "2.9",
+    "cargoVersion": "2.9.0",
     "channel": "stable",
     "latest": true
   },

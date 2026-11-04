@@ -162,7 +162,7 @@ mod tests {
         for invalid in ["2", "2.8-alpha", "2..8", "2.8.0.1"] {
             assert!(stable_version(invalid).is_none());
         }
-        let value = json!({"version":"2.9","download_url":format!("{RELEASE}v2.9/OpenDesk_v2.9_Portable.exe"),"sha256":"a".repeat(64)});
+        let value = json!({"version":"3.0","download_url":format!("{RELEASE}v3.0/OpenDesk_v3.0_Portable.exe"),"sha256":"a".repeat(64)});
         assert!(validate(&value, true).is_ok());
     }
     #[test]

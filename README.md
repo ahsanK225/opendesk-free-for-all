@@ -2,9 +2,11 @@
 
 A Windows remote desktop application with a **Rust engine, Qt 6/QML interface and C++ rendering bridge**. Share the primary display, control an approved desktop, talk during a session and exchange files in a folder selected by the host.
 
-**Stable Windows release v2.8:** [Windows installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.8/OpenDesk_Setup_v2.8_Installer.exe) · [Portable executable](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.8/OpenDesk_v2.8_Portable.exe) · [Release notes/checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.8)
+**Stable Windows release v2.9:** [Windows installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.9/OpenDesk_Setup_v2.9_Installer.exe) · [Portable executable](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.9/OpenDesk_v2.9_Portable.exe) · [Release notes/checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.9) · [OpenDesk Lite installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.9/OpenDeskLite_Setup_v2.9_Installer.exe)
 
-OpenDesk 2.8 is the current stable release. Both repositories publish it as **Latest**, and the live update manifest points to the same build. The [portfolio fork](https://github.com/hamxa8769/opendesk-free-for-all/releases/tag/v2.8) mirrors the current installer and portable executable. [Complete ascending version history: 1.0 through 2.8](docs/VERSION_HISTORY.md).
+OpenDesk 2.9 is the current stable release. Both repositories publish it as **Latest**, and the live update manifest points to the same build. The [portfolio fork](https://github.com/hamxa8769/opendesk-free-for-all/releases/tag/v2.9) mirrors the current installer and portable executable. [Complete ascending version history: 1.0 through 2.9](docs/VERSION_HISTORY.md).
+
+The host also listens on the local network, and that traffic is not encrypted, whatever the Internet access setting says. Use it only on networks you trust. OpenDesk does not send a password to an older desktop that cannot prove its identity, so an older desktop with a password must be updated, or its password turned off, before you can connect to it.
 
 ## Features
 
@@ -128,7 +130,7 @@ Install the current stable release through its installer or replace the portable
 
 ## Version history and changelog
 
-Release numbers advance without gaps: **1.0, 1.1, …, 1.9, 2.0, …, 2.8**. The next release is **2.9**.
+Release numbers advance without gaps: **1.0, 1.1, …, 1.9, 2.0, …, 2.9**. The next release is **3.0**.
 
 | Version | Release notes and downloads |
 | --- | --- |
@@ -150,7 +152,8 @@ Release numbers advance without gaps: **1.0, 1.1, …, 1.9, 2.0, …, 2.8**. The
 | **2.5** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.5) |
 | **2.6** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.6) |
 | **2.7** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.7) |
-| **2.8 — current stable** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.8) |
+| **2.8** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.8) |
+| **2.9 — current stable** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.9) |
 
 Original source tags and historical binaries are preserved. See [complete history and original build mapping](docs/VERSION_HISTORY.md) and [CHANGELOG.md](CHANGELOG.md).
 
