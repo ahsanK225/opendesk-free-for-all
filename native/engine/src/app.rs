@@ -26,6 +26,7 @@ pub struct Shared {
     pub frames: Mutex<HashMap<String, Arc<Frame>>>,
     pub stop: AtomicBool,
     pub update_busy: AtomicBool,
+    pub update_cancel: AtomicBool,
 }
 impl Shared {
     pub fn update(&self, change: impl FnOnce(&mut Value)) {
@@ -67,7 +68,7 @@ pub struct App {
 }
 fn normalize_settings(settings:&mut Value)->bool{
     if !settings.is_object(){*settings=serde_json::json!({});}
-    let defaults=serde_json::json!({"profile":"balanced","theme":"dark","micGain":1.0,"speakerVolume":0.8,"micEnabled":false,"speakerEnabled":true,"publicAccess":true});
+    let defaults=serde_json::json!({"profile":"balanced","theme":"dark","micGain":1.0,"speakerVolume":0.8,"micEnabled":false,"speakerEnabled":true,"publicAccess":true,"lanAccess":false});
     let mut changed=false;
     for (key,fallback) in defaults.as_object().unwrap(){
         let value=match key.as_str(){
@@ -102,6 +103,7 @@ impl App {
             frames: Mutex::new(HashMap::new()),
             stop: AtomicBool::new(false),
             update_busy: AtomicBool::new(false),
+            update_cancel: AtomicBool::new(false),
         });
         let (commands, receiver) = mpsc::channel(256);
         let worker = shared.clone();

@@ -1,15 +1,16 @@
 {
-  "version": "2.9",
+  "version": "3.0",
   "channel": "stable",
   "release_date": "2026-11-04",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.9/OpenDesk_v2.9_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.9/OpenDesk_Setup_v2.9_Installer.exe",
-  "sha256": "f6c0d87467684168aa59171fb1a19da36812f65427c2b810e7dbf4d377771e6b",
-  "installer_sha256": "8cbfa195f7e73b1b739f3f5a57d246b4d52d33a41af326ccb94f9e04a98075d1",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0/OpenDesk_v3.0_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0/OpenDesk_Setup_v3.0_Installer.exe",
+  "sha256": "7c50ee80d304aaa1a5923b0a04bb14061fecb60309163eb65d7fbea421068d7d",
+  "installer_sha256": "95abdcdb02b2be38c5a0a0645ec9b38791e3594b5e33c91aa1e7ad313620c83d",
   "changelog": [
-    "A saved device answering with an older protocol is refused, and passwords are not sent to a desktop that cannot prove its identity",
-    "DNS over HTTPS recovery for temporary name resolution failures, including Windows error 11002",
-    "Light theme, session speaker button, mic state icon, and session quality, file size and Reconnect fixes",
-    "New OpenDesk Lite download without voice, file transfer or automatic updates"
+    "In-app update window with download progress and automatic install",
+    "Your mouse stays free while the remote side moves its pointer",
+    "Local network access is now a setting and is off by default",
+    "Faster file transfer with a progress bar, and a clear view of the folder you share",
+    "Microphone test, level meters and clearer voice status"
   ]
 }

@@ -82,6 +82,9 @@ struct Controls {
     volume: AtomicU32,
     gain: AtomicU32,
     received: AtomicU64,
+    mic_level: AtomicU32,
+    speaker_level: AtomicU32,
+    loopback: AtomicBool,
     playback: Mutex<Playback>,
 }
 #[cfg(feature = "full")]
@@ -104,6 +107,9 @@ impl Voice {
             volume: AtomicU32::new(0.8f32.to_bits()),
             gain: AtomicU32::new(1f32.to_bits()),
             received: AtomicU64::new(0),
+            mic_level: AtomicU32::new(0),
+            speaker_level: AtomicU32::new(0),
+            loopback: AtomicBool::new(false),
             playback: Mutex::new(Playback {
                 queue: VecDeque::with_capacity(6000),
                 resampler: Resampler::new(48000, 48000),
@@ -124,6 +130,15 @@ impl Voice {
                     shared.error(format!("Voice: {error:#}"));
                 }
             })?;
+        Ok(voice)
+    }
+    /// Plays this PC's microphone on its own speaker, without any session.
+    pub fn start_test(shared: Arc<Shared>) -> Result<Self> {
+        let (sender, _closed) = crate::transport::channel();
+        let voice = Self::start(shared, sender, TEST_SESSION.into())?;
+        voice.controls.loopback.store(true, Ordering::Release);
+        voice.controls.mic.store(true, Ordering::Release);
+        voice.controls.volume.store(0.8f32.to_bits(), Ordering::Relaxed);
         Ok(voice)
     }
     pub fn refresh_settings(&self, apply_mic: bool) {
@@ -183,24 +198,38 @@ impl Voice {
             .chunks_exact(2)
             .map(|v| i16::from_le_bytes([v[0], v[1]]) as f32 / 32768.0)
             .collect();
-        let mut playback = self.controls.playback.lock().unwrap();
-        if playback.source != rate {
-            playback.source = rate;
-            playback.resampler = Resampler::new(rate, playback.target);
-        }
-        let samples = playback.resampler.process(&mono);
-        let maximum = (playback.target as usize * 120 / 1000).max(1);
-        let overflow = playback
-            .queue
-            .len()
-            .saturating_add(samples.len())
-            .saturating_sub(maximum);
-        let drain = overflow.min(playback.queue.len());
-        playback.queue.drain(..drain);
-        let skip = samples.len().saturating_sub(maximum);
-        playback.queue.extend(samples.into_iter().skip(skip));
-        self.controls.received.fetch_add(1, Ordering::Relaxed);
+        enqueue(&self.controls, rate, &mono);
     }
+}
+#[cfg(feature = "full")]
+const TEST_SESSION: &str = "local-microphone-test";
+#[cfg(feature = "full")]
+fn raise_level(level: &AtomicU32, samples: impl Iterator<Item = f32>) {
+    let peak = samples.fold(0f32, |peak, value| peak.max(value.abs()));
+    if peak > f32::from_bits(level.load(Ordering::Relaxed)) {
+        level.store(peak.to_bits(), Ordering::Relaxed);
+    }
+}
+#[cfg(feature = "full")]
+fn enqueue(controls: &Controls, rate: u32, mono: &[f32]) {
+    raise_level(&controls.speaker_level, mono.iter().copied());
+    let mut playback = controls.playback.lock().unwrap();
+    if playback.source != rate {
+        playback.source = rate;
+        playback.resampler = Resampler::new(rate, playback.target);
+    }
+    let samples = playback.resampler.process(mono);
+    let maximum = (playback.target as usize * 120 / 1000).max(1);
+    let overflow = playback
+        .queue
+        .len()
+        .saturating_add(samples.len())
+        .saturating_sub(maximum);
+    let drain = overflow.min(playback.queue.len());
+    playback.queue.drain(..drain);
+    let skip = samples.len().saturating_sub(maximum);
+    playback.queue.extend(samples.into_iter().skip(skip));
+    controls.received.fetch_add(1, Ordering::Relaxed);
 }
 #[cfg(feature = "full")]
 impl Drop for Voice {
@@ -273,6 +302,7 @@ where
                     frame.iter().map(|v| f32::from_sample(*v)).sum::<f32>() / channels as f32
                 })
                 .collect();
+            raise_level(&controls.mic_level, mono.iter().map(|v| v * gain));
             for sample in resampler.process(&mono) {
                 block.push((sample * gain).clamp(-1.0, 1.0));
                 if block.len() == 960 {
@@ -301,6 +331,7 @@ fn run_audio(
     let mut microphone_error = String::new();
     let mut speaker_error = String::new();
     let mut sent_packets = 0u64;
+    let mut last_sound = std::time::Instant::now();
     let mut retry = std::time::Instant::now() - Duration::from_secs(5);
     let mut output_retry = std::time::Instant::now() - Duration::from_secs(5);
     let mut devices_checked = std::time::Instant::now() - Duration::from_secs(5);
@@ -371,7 +402,7 @@ fn run_audio(
             let result = (|| -> Result<Stream> {
                 let device = host
                     .default_input_device()
-                    .context("No microphone device is available")?;
+                    .context("Windows reports no microphone. Plug one in, or enable it in Sound settings")?;
                 let supported = device.default_input_config()?;
                 let config = supported.clone().into();
                 let stream = match supported.sample_format() {
@@ -407,8 +438,16 @@ fn run_audio(
         }
         if last_status.elapsed() >= Duration::from_millis(500) {
             last_status = std::time::Instant::now();
-            let status = json!({"micRequested":controls.mic.load(Ordering::Acquire),"micReady":input_stream.is_some(),"speakerReady":output_stream.is_some(),"txPackets":sent_packets,"rxPackets":controls.received.load(Ordering::Relaxed),"error":if !microphone_error.is_empty()&&controls.mic.load(Ordering::Acquire){&microphone_error}else{&speaker_error}});
+            let mic_level = f32::from_bits(controls.mic_level.swap(0, Ordering::Relaxed));
+            let speaker_level = f32::from_bits(controls.speaker_level.swap(0, Ordering::Relaxed));
+            if mic_level > 0.002 || input_stream.is_none() {
+                last_sound = std::time::Instant::now();
+            }
+            let status = json!({"micLevel":mic_level,"speakerLevel":speaker_level,"micSilent":last_sound.elapsed()>Duration::from_secs(3),"micRequested":controls.mic.load(Ordering::Acquire),"micReady":input_stream.is_some(),"speakerReady":output_stream.is_some(),"txPackets":sent_packets,"rxPackets":controls.received.load(Ordering::Relaxed),"error":if !microphone_error.is_empty()&&controls.mic.load(Ordering::Acquire){&microphone_error}else{&speaker_error}});
             shared.update(|v| {
+                if session == TEST_SESSION {
+                    v["micTest"]["audio"] = status.clone();
+                }
                 if v["hostSession"]["sessionId"] == session {
                     v["hostSession"]["audio"] = status.clone();
                 }
@@ -423,8 +462,14 @@ fn run_audio(
         }
         if let Ok(samples) = mic_rx.recv_timeout(Duration::from_millis(20))
             && controls.mic.load(Ordering::Acquire)
-            && sender.audio_capacity() > 0
         {
+            if controls.loopback.load(Ordering::Acquire) {
+                enqueue(&controls, 48000, &samples);
+                continue;
+            }
+            if sender.audio_capacity() == 0 {
+                continue;
+            }
             let bytes: Vec<u8> = samples
                 .into_iter()
                 .flat_map(|v| ((v * 32767.0) as i16).to_le_bytes())
@@ -448,12 +493,69 @@ impl Voice {
     ) -> anyhow::Result<Self> {
         anyhow::bail!("Voice is not part of OpenDesk Lite")
     }
+    pub fn start_test(_shared: std::sync::Arc<crate::app::Shared>) -> anyhow::Result<Self> {
+        anyhow::bail!("Voice is not part of OpenDesk Lite")
+    }
     pub fn refresh_settings(&self, _apply_mic: bool) {}
     pub fn mic_enabled(&self) -> bool {
         false
     }
     pub fn toggle_mic(&self) {}
     pub fn push(&self, _payload: &serde_json::Value) {}
+}
+#[cfg(all(test, feature = "full"))]
+mod device_tests {
+    use super::*;
+    /// Reports what the real default devices do; run it with --ignored on a real PC.
+    #[test]
+    #[ignore = "needs real audio devices"]
+    fn default_microphone_and_speaker_open() {
+        let host = cpal::default_host();
+        let speaker = host.default_output_device().expect("no default speaker");
+        println!("speaker config: {:?}", speaker.default_output_config().unwrap());
+        let microphone = host.default_input_device().expect("no default microphone");
+        let supported = microphone.default_input_config().unwrap();
+        println!("microphone config: {supported:?}");
+        let controls = Arc::new(Controls {
+            stop: AtomicBool::new(false),
+            input_failed: AtomicBool::new(false),
+            output_failed: AtomicBool::new(false),
+            mic: AtomicBool::new(true),
+            volume: AtomicU32::new(0),
+            gain: AtomicU32::new(1f32.to_bits()),
+            received: AtomicU64::new(0),
+            mic_level: AtomicU32::new(0),
+            speaker_level: AtomicU32::new(0),
+            loopback: AtomicBool::new(false),
+            playback: Mutex::new(Playback {
+                queue: VecDeque::new(),
+                resampler: Resampler::new(48000, 48000),
+                source: 48000,
+                target: 48000,
+                last: 0.0,
+            }),
+        });
+        let (tx, rx) = mpsc::sync_channel(64);
+        let config = supported.clone().into();
+        let stream = match supported.sample_format() {
+            SampleFormat::F32 => input::<f32>(&microphone, &config, controls.clone(), tx),
+            SampleFormat::I16 => input::<i16>(&microphone, &config, controls.clone(), tx),
+            SampleFormat::U16 => input::<u16>(&microphone, &config, controls.clone(), tx),
+            other => panic!("unsupported format {other:?}"),
+        }
+        .unwrap();
+        stream.play().unwrap();
+        let mut blocks = 0;
+        let until = std::time::Instant::now() + Duration::from_secs(3);
+        while std::time::Instant::now() < until {
+            if rx.recv_timeout(Duration::from_millis(100)).is_ok() {
+                blocks += 1;
+            }
+        }
+        let peak = f32::from_bits(controls.mic_level.load(Ordering::Relaxed));
+        println!("microphone blocks in 3 s: {blocks}, peak level: {peak}");
+        assert!(blocks > 0, "the microphone delivered no audio");
+    }
 }
 #[cfg(test)]
 mod tests {

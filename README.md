@@ -2,11 +2,11 @@
 
 A Windows remote desktop application with a **Rust engine, Qt 6/QML interface and C++ rendering bridge**. Share the primary display, control an approved desktop, talk during a session and exchange files in a folder selected by the host.
 
-**Stable Windows release v2.9:** [Windows installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.9/OpenDesk_Setup_v2.9_Installer.exe) · [Portable executable](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.9/OpenDesk_v2.9_Portable.exe) · [Release notes/checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.9) · [OpenDesk Lite installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v2.9/OpenDeskLite_Setup_v2.9_Installer.exe)
+**Stable Windows release v3.0:** [Windows installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0/OpenDesk_Setup_v3.0_Installer.exe) · [Portable executable](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0/OpenDesk_v3.0_Portable.exe) · [Release notes/checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.0) · [OpenDesk Lite installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0/OpenDeskLite_Setup_v3.0_Installer.exe)
 
-OpenDesk 2.9 is the current stable release. Both repositories publish it as **Latest**, and the live update manifest points to the same build. The [portfolio fork](https://github.com/hamxa8769/opendesk-free-for-all/releases/tag/v2.9) mirrors the current installer and portable executable. [Complete ascending version history: 1.0 through 2.9](docs/VERSION_HISTORY.md).
+OpenDesk 3.0 is the current stable release. Both repositories publish it as **Latest**, and the live update manifest points to the same build. The [portfolio fork](https://github.com/hamxa8769/opendesk-free-for-all/releases/tag/v3.0) mirrors the current installer and portable executable. [Complete ascending version history: 1.0 through 3.0](docs/VERSION_HISTORY.md).
 
-The host also listens on the local network, and that traffic is not encrypted, whatever the Internet access setting says. Use it only on networks you trust. OpenDesk does not send a password to an older desktop that cannot prove its identity, so an older desktop with a password must be updated, or its password turned off, before you can connect to it.
+Local network access is off by default, and its traffic is not encrypted. When you turn on **Settings → Local network access**, use it only on networks you trust. OpenDesk does not send a password to an older desktop that cannot prove its identity, so an older desktop with a password must be updated, or its password turned off, before you can connect to it.
 
 ## Features
 
@@ -43,7 +43,7 @@ Settings, trust and identity live in `%USERPROFILE%\.opendesk`. Portable files a
 
 ## Remote connection and screen sharing
 
-1. **Host:** share the nine-digit address or internet share link. The home screen also shows a local host URL for LAN diagnostics.
+1. **Host:** share the nine-digit address or internet share link. With **Settings → Local network access** on, the home screen also shows a LAN address.
 2. **Viewer:** enter the address, host URL or share link and select **Connect**. On first connection, compare the fingerprint with the host's **Settings** before trusting it.
 3. **Host:** the incoming dialog appears above other applications. Choose permissions and accept. Keyboard/mouse starts selected; voice, clipboard and files require selection. Requests expire after 60 seconds.
 4. **Viewer:** change quality, toggle voice, browse allowed files or disconnect using the session toolbar. Performance targets up to 60 FPS at a smaller frame width; delivered FPS depends on screen changes, CPU, capture and network.
@@ -119,7 +119,7 @@ Install the current stable release through its installer or replace the portable
 | `Failed to load Python DLL` on 2.0.1 | Install a complete native 3.x package. Native builds contain no Python DLL; avoid mixing files from old installations. |
 | Installer waits while closing | Allow the bounded shutdown attempt to finish. Close an instance with different privileges or use matching installer privileges. The helper reports failure rather than waiting forever. |
 | Missing Qt/plugin/VC DLL | Reinstall the complete package or use portable `--repair`. Do not copy only the inner executable. A shorter `OPENDESK_RUNTIME_DIR` can help redirected profiles. |
-| Missing share link/ID lookup | Check internet, Cloudflare reachability and Internet access in Settings. Try the local host URL on LAN. Share URLs can change after a tunnel restart. |
+| Missing share link/ID lookup | Check internet, Cloudflare reachability and Internet access in Settings. On the same network, turn on Settings → Local network access and try the LAN address. Share URLs can change after a tunnel restart. |
 | Incoming request unseen | Keep the host running. A new request restores the minimized window and remains topmost. Windows foreground restrictions can flash the taskbar; secure-desktop prompts remain outside app control. |
 | Low FPS or delayed input | Update both sides, choose Performance and check CPU/network load. FPS measures presentation; static screens need fewer updates. |
 | Voice enabled but silent | Check voice permission, both microphone toggles, Windows privacy/default devices and speaker volume. Inspect packet counters/device errors. Browser users also need permission and resumed playback. |
@@ -130,7 +130,7 @@ Install the current stable release through its installer or replace the portable
 
 ## Version history and changelog
 
-Release numbers advance without gaps: **1.0, 1.1, …, 1.9, 2.0, …, 2.9**. The next release is **3.0**.
+Release numbers advance without gaps: **1.0, 1.1, …, 1.9, 2.0, …, 3.0**. The next release is **3.1**.
 
 | Version | Release notes and downloads |
 | --- | --- |
@@ -153,7 +153,8 @@ Release numbers advance without gaps: **1.0, 1.1, …, 1.9, 2.0, …, 2.9**. The
 | **2.6** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.6) |
 | **2.7** | [Desktop release and downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.7) |
 | **2.8** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.8) |
-| **2.9 — current stable** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.9) |
+| **2.9** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.9) |
+| **3.0 — current stable** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.0) |
 
 Original source tags and historical binaries are preserved. See [complete history and original build mapping](docs/VERSION_HISTORY.md) and [CHANGELOG.md](CHANGELOG.md).
 

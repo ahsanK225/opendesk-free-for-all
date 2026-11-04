@@ -20,6 +20,7 @@ extern "C" char* od_diagnostics(bool capture);
 #include <QScreen>
 #include <QTimer>
 #include <QLocale>
+#include <QVariantMap>
 #include <windows.h>
 #include <dwmapi.h>
 class NativeInstance {
@@ -72,7 +73,7 @@ int main(int argc,char** argv){
         const auto available=window->screen()->availableGeometry();
         window->resize(qMin(1280,qMax(760,available.width()-24)),qMin(820,qMax(520,available.height()-48)));
         window->setPosition(available.center()-QPoint(window->width()/2,window->height()/2));
-        if(parser.isSet(QStringLiteral("smoke-test"))&&parser.isSet(QStringLiteral("smoke-page"))){const auto page=parser.value(QStringLiteral("smoke-page"));if(!QStringList{QStringLiteral("home"),QStringLiteral("settings"),QStringLiteral("saved"),QStringLiteral("files"),QStringLiteral("audio")}.contains(page))return 2;window->setProperty("page",page==QStringLiteral("audio")?QStringLiteral("settings"):page);if(page==QStringLiteral("audio"))QTimer::singleShot(800,window,[window]{QMetaObject::invokeMethod(window,"focusAudio");});}
+        if(parser.isSet(QStringLiteral("smoke-test"))&&parser.isSet(QStringLiteral("smoke-page"))){const auto page=parser.value(QStringLiteral("smoke-page"));if(!QStringList{QStringLiteral("home"),QStringLiteral("settings"),QStringLiteral("saved"),QStringLiteral("files"),QStringLiteral("audio"),QStringLiteral("update"),QStringLiteral("transfer")}.contains(page))return 2;window->setProperty("page",page==QStringLiteral("audio")?QStringLiteral("settings"):page==QStringLiteral("update")?QStringLiteral("home"):page==QStringLiteral("transfer")?QStringLiteral("files"):page);if(page==QStringLiteral("update"))window->setProperty("smokeUpdate",QVariantMap{{QStringLiteral("state"),QStringLiteral("downloading")},{QStringLiteral("version"),QStringLiteral("9.9")},{QStringLiteral("done"),26214400},{QStringLiteral("total"),52428800},{QStringLiteral("speed"),2097152},{QStringLiteral("message"),QStringLiteral("Downloading the update…")}});if(page==QStringLiteral("transfer"))window->setProperty("smokeTransfer",QVariantMap{{QStringLiteral("state"),QStringLiteral("running")},{QStringLiteral("direction"),QStringLiteral("upload")},{QStringLiteral("name"),QStringLiteral("example.zip")},{QStringLiteral("done"),13107200},{QStringLiteral("total"),52428800},{QStringLiteral("speed"),3145728}});if(page==QStringLiteral("audio"))QTimer::singleShot(800,window,[window]{QMetaObject::invokeMethod(window,"focusAudio");});}
         od_set_window_handle(size_t(window->winId()));
         // Keep an unanswered request above other apps, including when minimized.
         // Windows may refuse foreground activation; flashing remains a fallback.

@@ -25,7 +25,7 @@ set_target_properties(OpenDeskNative PROPERTIES OUTPUT_NAME OpenDesk)
 target_include_directories(OpenDeskNative PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(OpenDeskNative URI OpenDesk.Native VERSION 1.0
-  QML_FILES qml/Main.qml qml/Theme.qml qml/ActionButton.qml qml/Panel.qml qml/Glyph.qml qml/Field.qml qml/RemoteCursor.qml qml/VersionBadge.qml qml/Toggle.qml qml/LevelSlider.qml)
+  QML_FILES qml/Main.qml qml/Theme.qml qml/ActionButton.qml qml/Panel.qml qml/Glyph.qml qml/Field.qml qml/RemoteCursor.qml qml/VersionBadge.qml qml/Toggle.qml qml/LevelSlider.qml qml/LevelMeter.qml)
 target_link_libraries(OpenDeskNative PRIVATE "${OPENDESK_ENGINE_LIB}" OpenDeskJpeg Qt6::Core Qt6::Gui Qt6::Quick Qt6::QuickControls2 Qt6::Svg Qt6::Widgets
   userenv ws2_32 crypt32 secur32 bcrypt ncrypt advapi32 iphlpapi ole32 oleaut32 uuid propsys avrt winmm d3d11 dxgi dwmapi ntdll user32 gdi32 shell32)
 target_compile_definitions(OpenDeskNative PRIVATE QT_NO_CAST_FROM_ASCII QT_NO_CAST_TO_ASCII)

@@ -321,9 +321,10 @@ fn host_loop(
     let mut capture = crate::capture::Capture::new()?;
     let mut input = crate::platform::Input::default();
     let mut clipboard = crate::platform::Clipboard::new();
-    let (file_tx, file_rx) = mpsc::sync_channel::<(String, Value)>(8);
+    let (file_tx, file_rx) = mpsc::sync_channel::<(String, Value)>(64);
     if permissions.file_transfer {
         let file_stop = stop.clone();
+        let file_shared = shared.clone();
         let out = sender.clone();
         let id = session.clone();
         let file_root = shared.store.lock().unwrap().config["native_settings"]["sharedRoot"]
@@ -339,6 +340,7 @@ match file_rx.recv_timeout(Duration::from_millis(50)){
 Ok((typ,payload))=>{
 let reply=match files.packet(&typ,&payload){
 Ok(mut reply)=>{
+if reply["status"]=="complete"&&let Some(saved)=reply["final_path"].as_str(){let saved=saved.to_owned();file_shared.update(|v|{if v["hostSession"].is_object(){v["hostSession"]["lastFile"]=json!(saved);}});}
 reply["session_id"]=json!(id);
 packet(if typ=="file_list_req"{
 "file_list_resp"}

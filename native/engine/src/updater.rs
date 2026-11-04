@@ -12,6 +12,7 @@ use tokio::io::AsyncWriteExt;
 const METADATA: &str =
     "https://raw.githubusercontent.com/ahsanK225/opendesk-free-for-all/main/version.json";
 const RELEASE: &str = "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/";
+const CANCELLED: &str = "Update cancelled.";
 fn stable_version(value: &str) -> Option<(u32, u32, u32)> {
     let pieces: Vec<_> = value.split('.').collect();
     if !(2..=3).contains(&pieces.len())
@@ -64,7 +65,8 @@ fn client() -> Result<reqwest::Client> {
         .user_agent(concat!("OpenDesk/", env!("CARGO_PKG_VERSION")))
         .https_only(true)
         .connect_timeout(Duration::from_secs(15))
-        .timeout(Duration::from_secs(300))
+        // A stalled read fails; a slow connection may take as long as it needs.
+        .read_timeout(Duration::from_secs(30))
         .build()?)
 }
 async fn metadata(client: &reqwest::Client) -> Result<Value> {
@@ -80,6 +82,22 @@ async fn metadata(client: &reqwest::Client) -> Result<Value> {
     }
     Ok(serde_json::from_slice(&bytes)?)
 }
+/// Looks for a release soon after start and every six hours. A failure here stays silent.
+pub fn check_on_start(shared: Arc<Shared>) {
+    if cfg!(test) || !cfg!(feature = "full") || std::env::var_os("OPENDESK_DEV_NO_TUNNEL").is_some() {
+        return;
+    }
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(8)).await;
+        while !shared.stop.load(Ordering::Acquire) {
+            if !shared.update_busy.swap(true, Ordering::AcqRel) {
+                let _ = perform(shared.clone(), false).await;
+                shared.update_busy.store(false, Ordering::Release);
+            }
+            tokio::time::sleep(Duration::from_secs(6 * 60 * 60)).await;
+        }
+    });
+}
 pub fn start(shared: Arc<Shared>, install: bool) {
     // The published manifest describes the Full edition only.
     if !cfg!(feature = "full") {
@@ -89,11 +107,14 @@ pub fn start(shared: Arc<Shared>, install: bool) {
     if shared.update_busy.swap(true, Ordering::AcqRel) {
         return;
     }
-    shared.update(|v|v["update"]=json!({"state":if install{"downloading"}else{"checking"},"message":if install{"Downloading and checking the update…"}else{"Checking for updates…"}}));
+    shared.update_cancel.store(false, Ordering::Release);
+    shared.update(|v|v["update"]=json!({"state":if install{"downloading"}else{"checking"},"done":0,"total":0,"message":if install{"Downloading the update…"}else{"Checking for updates…"}}));
     tokio::spawn(async move {
         let result = perform(shared.clone(), install).await;
         if let Err(error) = result {
-            shared.update(|v| v["update"] = json!({"state":"idle","message":format!("{error:#}")}));
+            let message = format!("{error:#}");
+            let state = if install && message != CANCELLED { "failed" } else { "idle" };
+            shared.update(|v| v["update"] = json!({"state":state,"message":message}));
         }
         shared.update_busy.store(false, Ordering::Release);
     });
@@ -104,7 +125,7 @@ async fn perform(shared: Arc<Shared>, install: bool) -> Result<()> {
     let value = metadata(&client).await?;
     let (version, url, expected) = validate(&value, portable.is_some())?;
     if !install {
-        shared.update(|v|v["update"]=json!({"state":"available","version":version,"message":format!("OpenDesk {version} is available.")}));
+        shared.update(|v|v["update"]=json!({"state":"available","version":version,"notes":value["changelog"],"message":format!("OpenDesk {version} is available.")}));
         return Ok(());
     }
     let executable = std::env::current_exe()?;
@@ -132,7 +153,13 @@ async fn perform(shared: Arc<Shared>, install: bool) -> Result<()> {
         if response.content_length().is_some_and(|n|n>512*1024*1024) { bail!("The update exceeds its size limit") }
         let mut output=tokio::fs::OpenOptions::new().write(true).create_new(true).open(&download).await?;
         let mut hash=Sha256::new();let mut size=0usize;
-        while let Some(chunk)=response.chunk().await? { size=size.checked_add(chunk.len()).context("Invalid download size")?;if size>512*1024*1024||shared.stop.load(Ordering::Acquire){bail!("Update cancelled or too large")};output.write_all(&chunk).await?;hash.update(&chunk); }
+        let total=response.content_length().unwrap_or(0);let started=std::time::Instant::now();let mut shown=started;
+        while let Some(chunk)=response.chunk().await? {
+            if shared.update_cancel.swap(false,Ordering::AcqRel){bail!(CANCELLED)}
+            size=size.checked_add(chunk.len()).context("Invalid download size")?;if size>512*1024*1024||shared.stop.load(Ordering::Acquire){bail!("Update cancelled or too large")};output.write_all(&chunk).await?;hash.update(&chunk);
+            if shown.elapsed()>=Duration::from_millis(200){shown=std::time::Instant::now();let speed=size as f64/started.elapsed().as_secs_f64().max(0.001);shared.update(|v|v["update"]=json!({"state":"downloading","version":version,"done":size,"total":total,"speed":speed,"message":"Downloading the update…"}));}
+        }
+        shared.update(|v|v["update"]=json!({"state":"verifying","version":version,"done":size,"total":total,"message":"Checking the download…"}));
         output.sync_all().await?;drop(output);
         if size<1024 || hex::encode(hash.finalize())!=expected { bail!("The update checksum did not match. The installed application was preserved.") }
         let updater=stage.join("OpenDeskSetupHelper.exe");tokio::fs::copy(helper,&updater).await?;
@@ -146,7 +173,7 @@ async fn perform(shared: Arc<Shared>, install: bool) -> Result<()> {
         Ok::<(),anyhow::Error>(())
     }.await;
     if result.is_err() {
-        let _ = tokio::fs::remove_file(download).await;
+        let _ = tokio::fs::remove_dir_all(&stage).await;
     }
     result
 }
@@ -162,12 +189,12 @@ mod tests {
         for invalid in ["2", "2.8-alpha", "2..8", "2.8.0.1"] {
             assert!(stable_version(invalid).is_none());
         }
-        let value = json!({"version":"3.0","download_url":format!("{RELEASE}v3.0/OpenDesk_v3.0_Portable.exe"),"sha256":"a".repeat(64)});
+        let value = json!({"version":"99.0","download_url":format!("{RELEASE}v99.0/OpenDesk_v99.0_Portable.exe"),"sha256":"a".repeat(64)});
         assert!(validate(&value, true).is_ok());
     }
     #[test]
     fn rejects_foreign_asset_and_downgrade() {
-        let mut value = json!({"version":"3.0.0","download_url":format!("{RELEASE}v3.0.0/OpenDesk_v3.0.0_Portable.exe"),"sha256":"a".repeat(64)});
+        let mut value = json!({"version":"99.0.0","download_url":format!("{RELEASE}v99.0.0/OpenDesk_v99.0.0_Portable.exe"),"sha256":"a".repeat(64)});
         assert!(validate(&value, true).is_ok());
         value["download_url"] = json!("https://evil.invalid/app.exe");
         assert!(validate(&value, true).is_err());

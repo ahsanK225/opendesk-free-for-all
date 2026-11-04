@@ -1,6 +1,6 @@
 # OpenDesk native desktop
 
-The native implementation uses a Rust engine, a Qt 6.8.3 / QML desktop, and libjpeg-turbo 3.2.1. It retains the dark/red OpenDesk design and the protocol-v2 browser viewer. The current stable release is 2.9. Public release numbers advance by 0.1; see ../docs/VERSION_HISTORY.md for the full ascending history.
+The native implementation uses a Rust engine, a Qt 6.8.3 / QML desktop, and libjpeg-turbo 3.2.1. It retains the dark/red OpenDesk design and the protocol-v2 browser viewer. The current stable release is 3.0. Public release numbers advance by 0.1; see ../docs/VERSION_HISTORY.md for the full ascending history.
 
 ## Implemented
 

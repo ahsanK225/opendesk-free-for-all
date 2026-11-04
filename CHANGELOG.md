@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.0 stable — 2026-11-04
+
+Two physical PCs and a real microphone were not tested. Results are in [VALIDATION_3_0.md](docs/VALIDATION_3_0.md).
+
+- In-app update window with changelog, download progress, cancel and automatic install. OpenDesk checks 8 seconds after start and every six hours, and asks before installing. A slow download no longer fails at 5 minutes.
+- While the person at the host moves their mouse, the remote pointer shows as an overlay and does not move the Windows cursor. Remote clicks, drags and scrolling still use the one Windows cursor, then hand it back.
+- File transfer sends up to 24 chunks at once with peers that support it and stays one at a time with older ones. Added a progress bar, speed, time left and Cancel. The list refreshes after sending.
+- The Files page shows your shared folder, whether it is shared now, what was last received, and Open folder. The approval dialog names the folder, and the sharing banner shows it.
+- Added a microphone test and level meters. The session says when voice was not allowed and when the microphone is silent. Two-way voice is now ticked by default in the approval dialog; your own microphone stays off until you turn it on.
+- Added Settings → Local network access, off by default. The host listens only on loopback unless it is on, and then only on the private address of the default route. Turning it off closes open local network connections.
+- The host skips a port that another app holds on all interfaces, so the local network address does not collide with it.
+
 ## 2.9 stable — 2026-11-04
 
 Physical two-device use and real older apps were not tested for this release.

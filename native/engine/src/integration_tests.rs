@@ -132,17 +132,24 @@ fn native_endpoints_approve_stream_transfer_and_revoke() {
         true
     );
     let source = case.root.join("payload.bin");
-    let bytes: Vec<u8> = (0..(2 * crate::files::CHUNK + 17))
+    let bytes: Vec<u8> = (0..(200 * crate::files::CHUNK + 17))
         .map(|index| (index * 31 % 251) as u8)
         .collect();
     fs::write(&source, &bytes).unwrap();
+    let timer = Instant::now();
     client.command(json!({"type":"upload","key":key,"source":source,"directory":shared_dir}));
     let uploaded = shared_dir.join("payload.bin");
     wait("atomic upload", || uploaded.is_file());
+    wait("upload progress finished", || {
+        snapshot(&client)["connections"][0]["transferInfo"]["state"] == "done"
+    });
+    println!("upload {} bytes in {:?}", bytes.len(), timer.elapsed());
     assert_eq!(fs::read(&uploaded).unwrap(), bytes);
+    let timer = Instant::now();
     let downloaded = case.root.join("downloaded.bin");
     client.command(json!({"type":"download","key":key,"path":uploaded,"destination":downloaded}));
     wait("atomic download", || downloaded.is_file());
+    println!("download {} bytes in {:?}", bytes.len(), timer.elapsed());
     assert_eq!(fs::read(&downloaded).unwrap(), bytes);
     // Exercise both voice directions while forcing video updates for longer
     // than the reported 10–20 second failure window. No OS input is injected;
@@ -359,6 +366,61 @@ fn archived_v1_9_relay_with_a_password_is_refused_without_sending_it() {
     });
     app.command(json!({"type":"legacy_accept","key":key,"allow":true,"permissions":{"input":true,"audio":false,"clipboard":false,"file_transfer":false}}));
     assert!(wait_for_error(&app).contains("does not send passwords"));
+}
+
+#[test]
+fn local_network_access_follows_its_setting() {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+    let Some(ip) = crate::network::private_address() else {
+        eprintln!("skipped: this PC has no private network address");
+        return;
+    };
+    let case = Case::new();
+    let directory = case.directory("host");
+    let shared = case.directory("shared");
+    config(&directory, &shared);
+    let host = App::create(directory).unwrap();
+    wait("host listener", || {
+        !snapshot(&host)["localUrl"].as_str().unwrap_or("").is_empty()
+    });
+    let local = snapshot(&host)["localUrl"].as_str().unwrap().to_owned();
+    let port = local.rsplit(':').next().unwrap().to_owned();
+    let address = format!("{ip}:{port}");
+    let view = snapshot(&host);
+    assert_eq!(view["settings"]["lanAccess"], false);
+    assert!(view["lanUrl"].is_null());
+    assert!(std::net::TcpStream::connect(&address).is_err(), "off by default");
+    host.command(json!({"type":"setting","name":"lanAccess","value":true}));
+    wait("local network address", || snapshot(&host)["lanUrl"].is_string());
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let (mut socket, _) =
+                tokio_tungstenite::connect_async(crate::directory::ws_url(&address).unwrap())
+                    .await
+                    .unwrap();
+            let register = json!({"type":"register","payload":{"role":"client","protocol":2}});
+            socket
+                .send(Message::Text(register.to_string().into()))
+                .await
+                .unwrap();
+            let first = socket.next().await.unwrap().unwrap().into_text().unwrap();
+            assert!(first.contains("register_resp"));
+            host.command(json!({"type":"setting","name":"lanAccess","value":false}));
+            // A connection already open must not outlive the setting.
+            tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                while let Some(Ok(_)) = socket.next().await {}
+            })
+            .await
+            .expect("the open local network connection was closed");
+        });
+    wait("local network address removed", || snapshot(&host)["lanUrl"].is_null());
+    assert!(std::net::TcpStream::connect(&address).is_err(), "closed again");
+    let loopback = local.trim_start_matches("http://");
+    assert!(std::net::TcpStream::connect(loopback).is_ok(), "this PC keeps access");
 }
 
 const SECRET: &str = "fixture-remote-secret";

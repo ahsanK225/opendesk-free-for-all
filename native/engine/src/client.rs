@@ -254,7 +254,7 @@ send(&tx,&typ,p).await?;
                     },
                     "toggle_mic" if permissions.audio=>{if let Some(voice)=&voice{voice.toggle_mic();shared.connection(&key,|v|v["micEnabled"]=json!(voice.mic_enabled()));}},
                     "audio_settings"=>{if let Some(voice)=&voice{voice.refresh_settings(command["applyMic"]==true);shared.connection(&key,|v|v["micEnabled"]=json!(voice.mic_enabled()));}},
-                    "list_files"|"upload"|"download" if permissions.file_transfer&&!session.is_empty()=>{if let Err(error)=files.command(&command,&tx).await{shared.error(error);}},_=>{}
+                    "list_files"|"upload"|"download"|"cancel_transfer" if permissions.file_transfer&&!session.is_empty()=>{if let Err(error)=files.command(&command,&tx).await{shared.error(error);}},_=>{}
                 }
             },
             _=heartbeat.tick()=>{

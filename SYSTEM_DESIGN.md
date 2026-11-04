@@ -36,7 +36,7 @@ There is no database. `%USERPROFILE%\.opendesk\config.json` holds settings, save
 
 Recorded on 2026-11-04 from the working tree. These are not committed or released, so the description above and earlier in this document may differ until they are:
 
-- The host binds to all interfaces (`0.0.0.0`) rather than loopback, and the UI shows a LAN address. LAN traffic is not encrypted, and the Internet access setting does not disable it.
+- The host always listens on loopback, which the tunnel uses. A second listener opens on the private address of the default route only while the `lanAccess` setting is on (default off). Turning it off closes that listener and any open local network connection, and non-loopback requests are refused. LAN traffic is not encrypted, and the setting is separate from Internet access.
 - Protocol 1 peers are supported through `legacy.rs`, without identity verification and without file transfer. A saved device answering as protocol 1 is refused, and passwords are never sent in this mode, so an older desktop with a password cannot be reached.
 - The `full` Cargo feature is on by default. Lite builds without it, and `Permissions::for_edition` removes voice and file transfer in the engine, not only in the UI.
 - Hosts with a password send protocol 1 peers to attended approval rather than password access.

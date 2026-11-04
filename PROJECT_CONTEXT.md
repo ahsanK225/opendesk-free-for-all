@@ -37,7 +37,7 @@ Present in the code. The core flow is covered by automated loopback tests; older
 
 ### Uncommitted work (in the working tree only)
 
-Released in 2.9.
+Released in 2.9 and 3.0.
 
 - Light theme, `Toggle.qml`, `LevelSlider.qml`, English-locale forcing and settings normalization.
 - Protocol 1 compatibility with older desktops (`legacy.rs`).
@@ -67,7 +67,7 @@ Confirmed by reading the code; none was reproduced by running the application.
 **In uncommitted code:**
 
 1. **Fixed in 2.9 (T-004).** Originally: **High: protocol downgrade bypasses identity pinning.** A server that answers registration as protocol 1 enters legacy mode without any check of the saved key (`native/engine/src/client.rs:138`, `:228`). After the user continues past a warning, the password is sent in plaintext JSON (`client.rs:232`). Unverified legacy address hints from public directories make this reachable when no valid signed record is found (`directory.rs:142`, `:154`). A device that is already trusted should refuse legacy mode. Fix before committing.
-2. **Medium: the host now listens on all interfaces.** `native/engine/src/network.rs:660` binds to `0.0.0.0`; the last commit bound to loopback. LAN traffic, including screen and input, is unencrypted, and the "Internet access" setting does not turn it off. Approval is still required.
+2. **Fixed in 3.0 (T-005).** Originally: **Medium: the host now listens on all interfaces.** `native/engine/src/network.rs:660` binds to `0.0.0.0`; the last commit bound to loopback. LAN traffic, including screen and input, is unencrypted, and the "Internet access" setting does not turn it off. Approval is still required.
 
 **Minor UI:**
 
@@ -111,7 +111,7 @@ Found on this computer during the audit: Rust 1.95.0, CMake 4.3.1, Node 25.3.0, 
 
 ## Recommended next steps
 
-1. Decide LAN exposure (known bug 2, T-005).
+1. Check voice with a real microphone on two PCs (T-016).
 2. Check the built app on real hardware.
 3. Do the two-device internet and headset acceptance run.
 4. Update stale documents, then prepare 2.9.

@@ -28,6 +28,7 @@ public:
     Q_INVOKABLE void openUrl(const QString& value);
     Q_INVOKABLE void uploadFile(const QString& key,const QString& directory);
     Q_INVOKABLE void chooseSharedFolder();
+    Q_INVOKABLE void openSharedFolder();
     Q_INVOKABLE void downloadFile(const QString& key,const QString& path,const QString& filename);
 signals:
     void stateChanged();

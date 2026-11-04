@@ -163,6 +163,21 @@ fn resolve_key(payload: &Value) -> Option<u16> {
 pub struct Input {
     keys: HashSet<u16>,
     buttons: HashSet<u8>,
+    last_cursor: Option<(i32, i32)>,
+    local_moved: Option<std::time::Instant>,
+    remote_target: Option<(i32, i32)>,
+    restore: Option<(i32, i32)>,
+}
+/// How long the person at this PC keeps the cursor after they last moved it.
+const LOCAL_PRIORITY: std::time::Duration = std::time::Duration::from_millis(1000);
+/// Windows has one cursor. A held or pressed remote button needs it; otherwise the person here wins.
+fn follows_remote(pressed: bool, local_active: bool) -> bool {
+    pressed || !local_active
+}
+fn cursor() -> Option<(i32, i32)> {
+    let mut point = windows::Win32::Foundation::POINT::default();
+    unsafe { GetCursorPos(&mut point) }.ok()?;
+    Some((point.x, point.y))
 }
 impl Input {
     fn key(vk: u16, up: bool) {
@@ -205,7 +220,25 @@ impl Input {
             SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
         }
     }
+    /// Any cursor change OpenDesk did not make came from the person at this PC.
+    fn observe(&mut self) -> bool {
+        let now = cursor();
+        if let (Some(last), Some(seen)) = (self.last_cursor, now)
+            && ((last.0 - seen.0).abs() > 1 || (last.1 - seen.1).abs() > 1)
+        {
+            self.local_moved = Some(std::time::Instant::now());
+        }
+        self.last_cursor = now;
+        self.local_moved.is_some_and(|moved| moved.elapsed() < LOCAL_PRIORITY)
+    }
+    fn place(&mut self, position: (i32, i32)) {
+        unsafe {
+            let _ = SetCursorPos(position.0, position.1);
+        }
+        self.last_cursor = Some(position);
+    }
     pub fn release_all(&mut self) {
+        self.restore = None;
         for vk in self.keys.drain() {
             Self::key(vk, true)
         }
@@ -223,17 +256,26 @@ impl Input {
     pub fn handle(&mut self, typ: &str, payload: &Value) {
         match typ {
             "mouse_move" | "mouse_down" | "mouse_up" => {
+                let local_active = self.observe();
+                let pressed = typ != "mouse_move" || !self.buttons.is_empty();
                 if let (Some(x), Some(y)) = (payload["x"].as_f64(), payload["y"].as_f64())
                     && x.is_finite()
                     && y.is_finite()
                 {
-                    unsafe {
+                    let target = unsafe {
                         let width = GetSystemMetrics(SM_CXSCREEN);
                         let height = GetSystemMetrics(SM_CYSCREEN);
-                        let _ = SetCursorPos(
+                        (
                             (x.clamp(0.0, 1.0) * (width - 1) as f64) as i32,
                             (y.clamp(0.0, 1.0) * (height - 1) as f64) as i32,
-                        );
+                        )
+                    };
+                    self.remote_target = Some(target);
+                    if follows_remote(pressed, local_active) {
+                        if local_active && typ == "mouse_down" && self.buttons.is_empty() {
+                            self.restore = cursor();
+                        }
+                        self.place(target);
                     }
                 }
                 if typ != "mouse_move" {
@@ -252,10 +294,19 @@ impl Input {
                         self.buttons.insert(button);
                     } else {
                         self.buttons.remove(&button);
+                        if self.buttons.is_empty()
+                            && let Some(position) = self.restore.take()
+                        {
+                            self.place(position);
+                        }
                     }
                 }
             }
             "mouse_scroll" => {
+                let back = if self.observe() { cursor() } else { None };
+                if let (Some(_), Some(target)) = (back, self.remote_target) {
+                    self.place(target);
+                }
                 for (name, flag, factor) in [
                     ("delta_y", MOUSEEVENTF_WHEEL, -120.0),
                     ("delta_x", MOUSEEVENTF_HWHEEL, 120.0),
@@ -263,6 +314,9 @@ impl Input {
                     if let Some(value) = payload[name].as_f64().filter(|n| n.is_finite()) {
                         Self::mouse(flag, (value.clamp(-100.0, 100.0) * factor) as i32 as u32);
                     }
+                }
+                if let Some(position) = back {
+                    self.place(position);
                 }
             }
             "key_down" | "key_up" => {
@@ -397,6 +451,16 @@ impl Default for Clipboard {
     }
 }
 
+#[cfg(test)]
+mod pointer_tests {
+    use super::follows_remote;
+    #[test]
+    fn the_person_here_keeps_the_cursor_unless_a_remote_button_needs_it() {
+        assert!(follows_remote(false, false));
+        assert!(!follows_remote(false, true));
+        assert!(follows_remote(true, true));
+    }
+}
 #[cfg(test)]
 mod key_tests {
     use super::*;

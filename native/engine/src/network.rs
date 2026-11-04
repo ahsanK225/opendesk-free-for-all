@@ -7,16 +7,18 @@ use anyhow::{Result, bail};
 use axum::{
     Router,
     extract::{
-        State, WebSocketUpgrade,
+        ConnectInfo, Request, State, WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
-    response::IntoResponse,
+    middleware::{Next, from_fn_with_state},
+    response::{IntoResponse, Response},
     routing::get,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
+    net::{IpAddr, SocketAddr},
     sync::{Arc, Mutex, atomic::Ordering},
     time::{Duration, Instant},
 };
@@ -58,8 +60,19 @@ pub struct Runtime {
     clients: Mutex<HashMap<String, mpsc::Sender<Value>>>,
     connections: Arc<Semaphore>,
     started: Instant,
+    mic_test: Mutex<Option<(crate::audio::Voice, Instant)>>,
 }
 impl Runtime {
+    fn stop_mic_test(&self) {
+        if self.mic_test.lock().unwrap().take().is_some() {
+            self.shared.update(|v| v["micTest"] = Value::Null);
+        }
+    }
+    fn lan_access(&self) -> bool {
+        self.shared.store.lock().unwrap().config["native_settings"]["lanAccess"]
+            .as_bool()
+            .unwrap_or(false)
+    }
     fn send(&self, peer: &str, typ: &str, payload: Value) {
         if let Some(tx) = self.peers.lock().unwrap().get(peer) {
             let _ = tx.try_send(Outbound::Packet(packet(typ, payload)));
@@ -282,6 +295,20 @@ impl Runtime {
             }
             "check_updates" => crate::updater::start(self.shared.clone(), false),
             "install_update" => crate::updater::start(self.shared.clone(), true),
+            "cancel_update" => self.shared.update_cancel.store(true, Ordering::Release),
+            "mic_test" => {
+                if self.mic_test.lock().unwrap().is_some() {
+                    self.stop_mic_test();
+                } else {
+                    match crate::audio::Voice::start_test(self.shared.clone()) {
+                        Ok(voice) => {
+                            *self.mic_test.lock().unwrap() = Some((voice, Instant::now()));
+                            self.shared.update(|v| v["micTest"] = json!({"active":true}));
+                        }
+                        Err(error) => self.shared.error(format!("Microphone test: {error:#}")),
+                    }
+                }
+            }
             "shutdown" => {
                 self.shared.stop.store(true, Ordering::Release);
                 self.end_host("OpenDesk closed.");
@@ -368,7 +395,7 @@ impl Runtime {
                         matches!(value.as_str(), Some("balanced" | "performance" | "sharp"))
                     }
                     "theme" => matches!(value.as_str(), Some("dark" | "light")),
-                    "micEnabled" | "speakerEnabled" | "publicAccess" => value.is_boolean(),
+                    "micEnabled" | "speakerEnabled" | "publicAccess" | "lanAccess" => value.is_boolean(),
                     "speakerVolume" => value.as_f64().is_some_and(|n| (0.0..=1.0).contains(&n)),
                     "micGain" => value.as_f64().is_some_and(|n| (0.0..=3.0).contains(&n)),
                     "sharedRoot" => value.as_str().is_some_and(|p| {
@@ -498,7 +525,23 @@ v["activeTab"]=json!(key);
         }
     }
 }
-async fn upgrade(State(runtime): State<Arc<Runtime>>, ws: WebSocketUpgrade) -> impl IntoResponse {
+/// The tunnel and this PC arrive over loopback; everything else needs the local network setting.
+async fn local_only(
+    State(runtime): State<Arc<Runtime>>,
+    ConnectInfo(address): ConnectInfo<SocketAddr>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if !address.ip().is_loopback() && !runtime.lan_access() {
+        return axum::http::StatusCode::FORBIDDEN.into_response();
+    }
+    next.run(request).await
+}
+async fn upgrade(
+    State(runtime): State<Arc<Runtime>>,
+    ConnectInfo(address): ConnectInfo<SocketAddr>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
     let Ok(permit) = runtime.connections.clone().try_acquire_owned() else {
         return axum::http::StatusCode::TOO_MANY_REQUESTS.into_response();
     };
@@ -506,11 +549,11 @@ async fn upgrade(State(runtime): State<Arc<Runtime>>, ws: WebSocketUpgrade) -> i
         .max_frame_size(2 * 1024 * 1024)
         .on_upgrade(move |socket| async move {
             let _permit = permit;
-            peer(runtime, socket).await
+            peer(runtime, socket, !address.ip().is_loopback()).await
         })
         .into_response()
 }
-async fn peer(runtime: Arc<Runtime>, socket: WebSocket) {
+async fn peer(runtime: Arc<Runtime>, socket: WebSocket, lan: bool) {
     let (mut sink, mut source) = socket.split();
     let first = tokio::time::timeout(Duration::from_secs(10), source.next()).await;
     let Ok(Some(Ok(Message::Text(text)))) = first else {
@@ -621,7 +664,7 @@ async fn peer(runtime: Arc<Runtime>, socket: WebSocket) {
         }
         ,
                     _=health.tick()=>{
-                        if runtime.shared.stop.load(Ordering::Acquire)||writer.is_finished()||last_received.elapsed()>Duration::from_secs(45){break}
+                        if runtime.shared.stop.load(Ordering::Acquire)||writer.is_finished()||last_received.elapsed()>Duration::from_secs(45)||(lan&&!runtime.lan_access()){break}
                         let has_session={let host=runtime.host.lock().unwrap();host.active.as_ref().is_some_and(|(id,_)|id==&peer)||host.pending.as_ref().is_some_and(|p|p.peer==peer)};
                         if !has_session&&registered.elapsed()>Duration::from_secs(120){break}
                     },
@@ -632,6 +675,40 @@ async fn peer(runtime: Arc<Runtime>, socket: WebSocket) {
     runtime.peers.lock().unwrap().remove(&peer);
     runtime.legacy_peers.lock().unwrap().remove(&peer);
     runtime.host.lock().unwrap().challenges.remove(&peer);
+}
+/// The private address of the interface that carries this PC's default route.
+pub fn private_address() -> Option<IpAddr> {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    let address = socket.local_addr().ok()?.ip();
+    match address {
+        IpAddr::V4(ip) if ip.is_private() || ip.is_link_local() => Some(address),
+        _ => None,
+    }
+}
+type LanServer = (IpAddr, tokio::task::JoinHandle<std::io::Result<()>>);
+/// Keeps the second listener on the private address only while the setting allows it.
+async fn sync_lan(runtime: &Runtime, router: &Router, port: u16, lan: &mut Option<LanServer>, report: bool) {
+    let wanted = if runtime.lan_access() { private_address() } else { None };
+    if lan.as_ref().map(|(ip, _)| *ip) == wanted {
+        return;
+    }
+    if let Some((_, server)) = lan.take() {
+        server.abort();
+    }
+    if let Some(ip) = wanted {
+        match tokio::net::TcpListener::bind((ip, port)).await {
+            Ok(listener) => {
+                let service = router.clone().into_make_service_with_connect_info::<SocketAddr>();
+                *lan = Some((ip, tokio::spawn(async move { axum::serve(listener, service).await })));
+            }
+            // Periodic retries stay quiet so a busy address does not repeat the notice.
+            Err(error) if report => runtime.shared.error(format!("Local network access could not start: {error}")),
+            Err(_) => {}
+        }
+    }
+    let url = lan.as_ref().map(|(ip, _)| format!("http://{ip}:{port}"));
+    runtime.shared.update(|v| v["lanUrl"] = json!(url));
 }
 pub async fn run(shared: Arc<Shared>, mut commands: mpsc::Receiver<Value>) -> Result<()> {
     let password = {
@@ -654,11 +731,16 @@ pub async fn run(shared: Arc<Shared>, mut commands: mpsc::Receiver<Value>) -> Re
         clients: Mutex::new(HashMap::new()),
         connections: Arc::new(Semaphore::new(16)),
         started: Instant::now(),
+        mic_test: Mutex::new(None),
     });
     let mut listener = None;
     for port in 8080..8100 {
+        // Skip a port another app holds on all interfaces: the local network could not reach us there.
+        if tokio::net::TcpListener::bind((std::net::Ipv4Addr::UNSPECIFIED, port)).await.is_err() {
+            continue;
+        }
         if let Ok(value) =
-            tokio::net::TcpListener::bind((std::net::Ipv4Addr::UNSPECIFIED, port)).await
+            tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await
         {
             listener = Some(value);
             break;
@@ -679,24 +761,34 @@ pub async fn run(shared: Arc<Shared>, mut commands: mpsc::Receiver<Value>) -> Re
     if let Some(web) = web {
         router = router.fallback_service(ServeDir::new(web).append_index_html_on_directories(true));
     }
-    let router = router.with_state(runtime.clone());
-    let server = tokio::spawn(async move { axum::serve(listener, router).await });
+    let router = router
+        .layer(from_fn_with_state(runtime.clone(), local_only))
+        .with_state(runtime.clone());
+    let service = router.clone().into_make_service_with_connect_info::<SocketAddr>();
+    let server = tokio::spawn(async move { axum::serve(listener, service).await });
+    let mut lan = None;
+    sync_lan(&runtime, &router, port, &mut lan, true).await;
     shared.update(|v| {
         v["localUrl"] = json!(format!("http://127.0.0.1:{port}"));
-        if let Ok(socket)=std::net::UdpSocket::bind("0.0.0.0:0") && socket.connect("8.8.8.8:80").is_ok() && let Ok(address)=socket.local_addr() && let std::net::IpAddr::V4(ip)=address.ip() && (ip.is_private()||ip.is_link_local()){v["lanUrl"]=json!(format!("http://{}:{port}",address.ip()));}
         v["status"] = json!("Local host ready");
         v["statusTone"] = json!("ready");
     });
+    crate::updater::check_on_start(shared.clone());
     let tunnel = if std::env::var_os("OPENDESK_DEV_NO_TUNNEL").is_none() {
         Some(tokio::spawn(crate::directory::tunnel(shared.clone(), port)))
     } else {
         None
     };
     let mut health = tokio::time::interval(Duration::from_secs(1));
+    let mut ticks = 0u32;
     loop {
         tokio::select! {
-                    command=commands.recv()=>{let Some(command)=command else{break};runtime.command(command).await;},
+                    command=commands.recv()=>{let Some(command)=command else{break};let lan_changed=command["type"]=="setting"&&command["name"]=="lanAccess";runtime.command(command).await;if lan_changed{sync_lan(&runtime,&router,port,&mut lan,true).await;}},
                     _=health.tick()=>{
+        // The private address can change when the PC moves between networks.
+        ticks=ticks.wrapping_add(1);
+        if runtime.mic_test.lock().unwrap().as_ref().is_some_and(|(_,started)|started.elapsed()>Duration::from_secs(20)){runtime.stop_mic_test();}
+        if ticks.is_multiple_of(10){sync_lan(&runtime,&router,port,&mut lan,false).await;}
         if shared.stop.load(Ordering::Acquire){
         break}
         let (expired, stopped)={
@@ -713,8 +805,12 @@ pub async fn run(shared: Arc<Shared>, mut commands: mpsc::Receiver<Value>) -> Re
         ,
                 }
     }
+    runtime.stop_mic_test();
     runtime.end_host("OpenDesk closed.");
     server.abort();
+    if let Some((_, server)) = lan {
+        server.abort();
+    }
     if let Some(tunnel) = tunnel {
         let _ = tokio::time::timeout(Duration::from_secs(2), tunnel).await;
     }

@@ -18,13 +18,15 @@ use std::{
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 use windows::{
     Win32::Storage::FileSystem::{MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW},
     core::PCWSTR,
 };
 pub const CHUNK: usize = 65536;
+/// Chunks a peer may have in flight. Peers that do not state a window get one at a time.
+const WINDOW: u64 = 24;
 const MAX_SIZE: u64 = 4 * 1024 * 1024 * 1024;
 fn replace(source: &Path, target: &Path) -> Result<()> {
     use std::os::windows::ffi::OsStrExt;
@@ -242,7 +244,7 @@ impl HostFiles {
                 let mut bytes = vec![0; ((size - index * CHUNK as u64).min(CHUNK as u64)) as usize];
                 file.read_exact(&mut bytes)?;
                 Ok(
-                    json!({"file_path":path,"filename":path.file_name().unwrap_or_default().to_string_lossy(),"file_size":size,"chunk_index":index,"total_chunks":total,"data":B64.encode(bytes),"is_last":index+1==total}),
+                    json!({"window":WINDOW,"file_path":path,"filename":path.file_name().unwrap_or_default().to_string_lossy(),"file_size":size,"chunk_index":index,"total_chunks":total,"data":B64.encode(bytes),"is_last":index+1==total}),
                 )
             }
             "file_upload_start" => {
@@ -297,7 +299,7 @@ impl HostFiles {
                         expected,
                     },
                 );
-                Ok(json!({"upload_id":id,"status":"ready"}))
+                Ok(json!({"upload_id":id,"status":"ready","window":WINDOW}))
             }
             "file_chunk" => {
                 let id = text(p, "upload_id")?;
@@ -357,6 +359,9 @@ impl HostFiles {
 struct Download {
     partial: Partial,
     remote: String,
+    name: String,
+    started: Instant,
+    requested: u64,
     index: u64,
     size: Option<u64>,
     hash: Sha256,
@@ -365,9 +370,13 @@ struct Upload {
     file: File,
     id: String,
     filename: String,
+    directory: String,
+    started: Instant,
     expected: String,
     total: u64,
     index: u64,
+    acked: u64,
+    window: u64,
     size: u64,
 }
 enum FileEvent {
@@ -377,12 +386,15 @@ enum FileEvent {
 pub struct ClientFiles {
     sender: mpsc::SyncSender<FileEvent>,
     stop: Arc<AtomicBool>,
+    cancel: Arc<AtomicBool>,
 }
 impl ClientFiles {
     pub fn new(shared: Arc<Shared>, key: String) -> Self {
-        let (sender, receiver) = mpsc::sync_channel(8);
+        let (sender, receiver) = mpsc::sync_channel(64);
         let stop = Arc::new(AtomicBool::new(false));
         let worker_stop = stop.clone();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let worker_cancel = cancel.clone();
         let _ = std::thread::Builder::new()
             .name("opendesk-files".into())
             .spawn(move || {
@@ -390,6 +402,8 @@ impl ClientFiles {
                     shared,
                     key,
                     stop: worker_stop,
+                    cancel: worker_cancel,
+                    shown: Instant::now(),
                     download: None,
                     upload: None,
                 };
@@ -401,6 +415,7 @@ impl ClientFiles {
                                 worker.download = None;
                                 worker.upload = None;
                                 worker.status("Transfer failed");
+                                worker.finished("failed", &format!("{error:#}"));
                             }
                         }
                         Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -408,9 +423,12 @@ impl ClientFiles {
                     }
                 }
             });
-        Self { sender, stop }
+        Self { sender, stop, cancel }
     }
     pub async fn command(&mut self, p: &Value, tx: &Sender<Outbound>) -> Result<()> {
+        if p["type"] == "cancel_transfer" {
+            self.cancel.store(true, Ordering::Release);
+        }
         self.sender
             .try_send(FileEvent::Command(p.clone(), tx.clone()))
             .map_err(|_| anyhow::anyhow!("File transfer queue is busy"))
@@ -430,6 +448,8 @@ struct ClientWorker {
     shared: Arc<Shared>,
     key: String,
     stop: Arc<AtomicBool>,
+    cancel: Arc<AtomicBool>,
+    shown: Instant,
     download: Option<Download>,
     upload: Option<Upload>,
 }
@@ -437,6 +457,33 @@ impl ClientWorker {
     fn status(&self, message: impl ToString) {
         self.shared
             .connection(&self.key, |v| v["transfer"] = json!(message.to_string()));
+    }
+    /// Publishes progress at most five times a second, except when forced.
+    fn progress(&mut self, state: &str, direction: &str, name: &str, (done, total): (u64, u64), started: Instant, force: bool) {
+        if !force && self.shown.elapsed() < Duration::from_millis(200) {
+            return;
+        }
+        self.shown = Instant::now();
+        let speed = done as f64 / started.elapsed().as_secs_f64().max(0.001);
+        self.shared.connection(&self.key, |v| {
+            v["transferInfo"] = json!({"state":state,"direction":direction,"name":name,"done":done,"total":total,"speed":speed});
+        });
+    }
+    fn finished(&self, state: &str, message: &str) {
+        self.shared.connection(&self.key, |v| {
+            v["transferInfo"]["state"] = json!(state);
+            v["transferInfo"]["message"] = json!(message);
+        });
+    }
+    fn upload_fill(&mut self, tx: &Sender<Outbound>) -> Result<()> {
+        while self
+            .upload
+            .as_ref()
+            .is_some_and(|u| u.index < u.total && u.index - u.acked < u.window)
+        {
+            self.upload_chunk(tx)?;
+        }
+        Ok(())
     }
     fn send(tx: &Sender<Outbound>, typ: &str, p: Value) -> Result<()> {
         tx.blocking_send(Outbound::Packet(packet(typ, p)))
@@ -466,6 +513,14 @@ impl ClientWorker {
                     "file_list_req",
                     json!({"path":p["path"].as_str().unwrap_or(".")}),
                 ),
+                "cancel_transfer" => {
+                    self.cancel.store(false, Ordering::Release);
+                    self.download = None;
+                    self.upload = None;
+                    self.status("Transfer cancelled");
+                    self.finished("cancelled", "Transfer cancelled");
+                    Ok(())
+                }
                 "download" => {
                     if self.download.is_some() {
                         bail!("A download is already running")
@@ -482,9 +537,15 @@ impl ClientWorker {
                         bail!("Invalid local filename")
                     };
                     let partial = Partial::create(parent.join(filename))?;
+                    let name = filename.to_string_lossy().into_owned();
+                    let started = Instant::now();
+                    self.progress("running", "download", &name, (0, 0), started, true);
                     self.download = Some(Download {
                         partial,
                         remote: remote.clone(),
+                        name,
+                        started,
+                        requested: 1,
                         index: 0,
                         size: None,
                         hash: Sha256::new(),
@@ -515,10 +576,13 @@ impl ClientWorker {
                         bail!("File exceeds the 4 GiB transfer limit")
                     };
                     self.status(format!("Preparing {filename}…"));
+                    let started = Instant::now();
+                    let mut hashed = 0u64;
+                    self.progress("preparing", "upload", &filename, (0, size), started, true);
                     let mut hash = Sha256::new();
                     let mut bytes = [0; CHUNK];
                     loop {
-                        if self.stop.load(Ordering::Acquire) {
+                        if self.stop.load(Ordering::Acquire) || self.cancel.load(Ordering::Acquire) {
                             bail!("Transfer cancelled")
                         };
                         let count = file.read(&mut bytes)?;
@@ -526,6 +590,8 @@ impl ClientWorker {
                             break;
                         };
                         hash.update(&bytes[..count]);
+                        hashed += count as u64;
+                        self.progress("preparing", "upload", &filename, (hashed, size), started, false);
                     }
                     file.seek(SeekFrom::Start(0))?;
                     let expected = hex::encode(hash.finalize());
@@ -540,9 +606,13 @@ impl ClientWorker {
                         file,
                         id,
                         filename,
+                        directory: p["directory"].as_str().unwrap_or(".").to_owned(),
+                        started: Instant::now(),
                         expected,
                         total,
                         index: 0,
+                        acked: 0,
+                        window: 1,
                         size,
                     });
                     Ok(())
@@ -565,11 +635,13 @@ impl ClientWorker {
                         Ok(())
                     }
                     "file_upload_start" => {
-                        if let Some(upload) = &self.upload
+                        if let Some(upload) = &mut self.upload
                             && p["upload_id"] == upload.id
                             && p["status"] == "ready"
                         {
-                            return self.upload_chunk(&tx);
+                            upload.window = p["window"].as_u64().unwrap_or(1).clamp(1, WINDOW);
+                            upload.started = Instant::now();
+                            return self.upload_fill(&tx);
                         }
                         Ok(())
                     }
@@ -578,7 +650,8 @@ impl ClientWorker {
                             return Ok(());
                         };
                         if p["upload_id"] != upload.id {
-                            bail!("Unexpected upload ID")
+                            // A late reply to a transfer that was cancelled.
+                            return Ok(());
                         };
                         if p["status"] == "complete" {
                             if upload.index != upload.total
@@ -588,18 +661,23 @@ impl ClientWorker {
                             {
                                 bail!("Upload integrity verification failed")
                             };
-                            self.status(format!("Sent {} • SHA-256 verified", upload.filename));
+                            let (name, size, started, directory) = (upload.filename.clone(), upload.size, upload.started, upload.directory.clone());
+                            self.status(format!("Sent {name} • SHA-256 verified"));
+                            self.progress("done", "upload", &name, (size, size), started, true);
                             self.upload = None;
-                            Ok(())
+                            Self::send(&tx, "file_list_req", json!({"path":directory}))
                         } else if p["status"] == "in_progress"
-                            && p["received_chunks"].as_u64() == Some(upload.index)
+                            && p["received_chunks"].as_u64() == Some(upload.acked + 1)
+                            && upload.acked < upload.index
                         {
-                            self.status(format!(
-                                "Sending {} • {}%",
-                                upload.filename,
-                                upload.index * 100 / upload.total
-                            ));
-                            self.upload_chunk(&tx)
+                            let acked = upload.acked + 1;
+                            let (name, size, started, total) = (upload.filename.clone(), upload.size, upload.started, upload.total);
+                            if let Some(upload) = &mut self.upload {
+                                upload.acked = acked;
+                            }
+                            self.status(format!("Sending {name} • {}%", acked * 100 / total));
+                            self.progress("running", "upload", &name, ((acked * CHUNK as u64).min(size), size), started, false);
+                            self.upload_fill(&tx)
                         } else {
                             bail!("Invalid upload acknowledgement")
                         }
@@ -642,18 +720,29 @@ impl ClientWorker {
                                 bail!("Download SHA-256 mismatch")
                             }
                             download.partial.finish()?;
+                            let (name, started) = (download.name.clone(), download.started);
                             self.status("Download complete");
+                            self.progress("done", "download", &name, (size, size), started, true);
                             self.download = None;
                             Ok(())
                         } else {
                             let remote = download.remote.clone();
                             let index = download.index;
+                            let window = p["window"].as_u64().unwrap_or(1).clamp(1, WINDOW);
+                            let first = download.requested;
+                            let last = (index + window).min(total);
+                            download.requested = last.max(first);
+                            let (name, started) = (download.name.clone(), download.started);
                             self.status(format!("Downloading • {}%", index * 100 / total));
-                            Self::send(
-                                &tx,
-                                "file_download_req",
-                                json!({"path":remote,"chunk_index":index}),
-                            )
+                            self.progress("running", "download", &name, ((index * CHUNK as u64).min(size), size), started, false);
+                            for next in first..last {
+                                Self::send(
+                                    &tx,
+                                    "file_download_req",
+                                    json!({"path":remote,"chunk_index":next}),
+                                )?;
+                            }
+                            Ok(())
                         }
                     }
                     _ => Ok(()),

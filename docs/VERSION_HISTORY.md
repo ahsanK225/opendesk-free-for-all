@@ -1,6 +1,6 @@
 # OpenDesk version history
 
-Releases advance by 0.1: **1.0 → 1.1 → … → 1.9 → 2.0 → … → 2.9**. The next release is 3.0. This table is intentionally oldest-first; GitHub displays its built-in release list newest-first.
+Releases advance by 0.1: **1.0 → 1.1 → … → 1.9 → 2.0 → … → 3.0**. The next release is 3.1. This table is intentionally oldest-first; GitHub displays its built-in release list newest-first.
 
 The original source tags and commit history remain available. Historical executable bytes retain their original build identities; the table records their new release number and original tag. Source-only rows have no historical executable to download.
 
@@ -25,7 +25,13 @@ The original source tags and commit history remain available. Historical executa
 | **2.6** | [`v3.0.0-alpha.1`](https://github.com/ahsanK225/opendesk-free-for-all/tree/v3.0.0-alpha.1) | [Archived release and original downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.6) |
 | **2.7** | [`v3.0.0-alpha.2`](https://github.com/ahsanK225/opendesk-free-for-all/tree/v3.0.0-alpha.2) | [Archived release and original downloads](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.7) |
 | **2.8** | Rust engine, Qt/QML desktop | [Installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.8) |
-| **2.9 — current stable** | Rust engine, Qt/QML desktop | [Installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.9) |
+| **2.9** | Rust engine, Qt/QML desktop | [Installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v2.9) |
+| **3.0 — current stable** | Rust engine, Qt/QML desktop | [Installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.0) |
+
+## 3.0 stable release
+
+- In-app update window, free local mouse, local network setting, faster file transfer with progress, clearer folder sharing and voice status.
+- Results and untested cases are in [VALIDATION_3_0.md](VALIDATION_3_0.md).
 
 ## 2.9 stable release
 
