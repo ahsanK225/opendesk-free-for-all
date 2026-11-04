@@ -6,9 +6,17 @@ param(
     [string]$CMake = 'cmake',
     [Parameter(Mandatory)][string]$VcRuntimeDir,
     [string]$InnoCompiler,
+    [ValidateSet('Full','Lite')][string]$Edition = 'Full',
     [switch]$SkipTests
 )
 $ErrorActionPreference = 'Stop'
+$lite = $Edition -eq 'Lite'
+if ($lite -and !$PSBoundParameters.ContainsKey('BuildRoot')) { $BuildRoot = Join-Path $PSScriptRoot '../../native-build-lite' }
+if ($lite -and !$PSBoundParameters.ContainsKey('OutputDir')) { $OutputDir = Join-Path $PSScriptRoot '../dist/native-lite' }
+$engineFeatures = if ($lite) { @('--no-default-features') } else { @() }
+$deployOptions = @('--release','--no-compiler-runtime','--no-translations')
+if ($lite) { $deployOptions += @('--no-opengl-sw','--no-ffmpeg','--no-system-d3d-compiler','--no-system-dxc-compiler') }
+$artifactPrefix = if ($lite) { 'OpenDeskLite' } else { 'OpenDesk' }
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 Set-Location -LiteralPath $repo
 $releaseManifest=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'version.json') -Raw|ConvertFrom-Json
@@ -31,11 +39,11 @@ function Invoke-BuildTool([string]$Executable,[string[]]$ToolArguments) {
 New-Item -ItemType Directory -Force -Path $build,$output | Out-Null
 $env:CARGO_TARGET_DIR = Join-Path $build 'engine'
 if (!$SkipTests) {
-    Invoke-BuildTool cargo @('test','--locked','--release','--lib','--manifest-path','native/engine/Cargo.toml','--','--test-threads=1')
+    Invoke-BuildTool cargo (@('test','--locked','--release','--lib','--manifest-path','native/engine/Cargo.toml') + $engineFeatures + @('--','--test-threads=1'))
     Invoke-BuildTool node @('tests/test_web.cjs')
     Invoke-BuildTool node @('tests/test_release_versions.cjs')
 }
-Invoke-BuildTool cargo @('build','--locked','--release','--lib','--manifest-path','native/engine/Cargo.toml')
+Invoke-BuildTool cargo (@('build','--locked','--release','--lib','--manifest-path','native/engine/Cargo.toml') + $engineFeatures)
 $desktop = Join-Path $build 'desktop'
 Invoke-BuildTool $CMake @('-S','native/desktop','-B',$desktop,'-G','Visual Studio 17 2022','-A','x64',"-DCMAKE_PREFIX_PATH=$qt",("-DTURBOJPEG_ROOT="+[IO.Path]::GetFullPath($TurboJpegRoot)),("-DOPENDESK_ENGINE_LIB="+(Join-Path $env:CARGO_TARGET_DIR 'release/opendesk_engine.lib')))
 Invoke-BuildTool $CMake @('--build',$desktop,'--config','Release','--parallel','2')
@@ -43,7 +51,12 @@ Invoke-BuildTool $CMake @('--build',$desktop,'--config','Release','--parallel','
 $bundle = Join-Path $output ('runtime-'+[Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $bundle | Out-Null
 Copy-Item -LiteralPath (Join-Path $desktop 'Release/OpenDesk.exe') -Destination $bundle
-Invoke-BuildTool (Join-Path $qt 'bin/windeployqt.exe') @('--release','--no-compiler-runtime','--no-translations','--qmldir','native/desktop/qml',(Join-Path $bundle 'OpenDesk.exe'))
+Invoke-BuildTool (Join-Path $qt 'bin/windeployqt.exe') ($deployOptions + @('--qmldir','native/desktop/qml',(Join-Path $bundle 'OpenDesk.exe')))
+# main.cpp fixes the Basic style, so Lite does not ship the styles windeployqt adds alongside it.
+if ($lite) {
+    foreach ($style in 'FluentWinUI3','Windows','Universal','Material','Imagine','Fusion') { Remove-Item -LiteralPath (Join-Path $bundle "qml/QtQuick/Controls/$style") -Recurse -Force -ErrorAction SilentlyContinue }
+    Get-ChildItem -LiteralPath $bundle -File -Filter 'Qt6QuickControls2*.dll' | Where-Object { $_.BaseName -match '^Qt6QuickControls2(FluentWinUI3|Windows|Universal|Material|Imagine|Fusion)' } | Remove-Item -Force
+}
 Copy-Item -LiteralPath (Join-Path $TurboJpegRoot "bin/turbojpeg.dll") -Destination $bundle
 New-Item -ItemType Directory -Path (Join-Path $bundle "licenses") -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $TurboJpegRoot "doc/LICENSE.md") -Destination (Join-Path $bundle "licenses/libjpeg-turbo.txt")
@@ -81,22 +94,25 @@ try {
     Compress-Archive -Path (Join-Path $bundle '*') -DestinationPath $payload -CompressionLevel Optimal
     $env:OPENDESK_PAYLOAD_ZIP = $payload
     Invoke-BuildTool cargo @('build','--locked','--release','--manifest-path','native/launcher/Cargo.toml','--target','x86_64-pc-windows-msvc','--features','portable','--bin','OpenDeskPortable')
-    Copy-Item -LiteralPath (Join-Path $launcher 'OpenDeskPortable.exe') -Destination (Join-Path $output ("OpenDesk_v"+$releaseVersion+"_Portable.exe")) -Force
-    if (!$SkipTests) { & "$PSScriptRoot/test-portable.ps1" -PortablePath (Join-Path $output ("OpenDesk_v"+$releaseVersion+"_Portable.exe")) -EvidenceDir (Join-Path $output 'portable-tests') }
-    if ($InnoCompiler) { Invoke-BuildTool $InnoCompiler @("/DBuildVersion=$releaseVersion","/DAppBundleDir=$bundle","/DMaintenancePath=$helper","/O$output",'native/installer.iss') }
+    Copy-Item -LiteralPath (Join-Path $launcher 'OpenDeskPortable.exe') -Destination (Join-Path $output ($artifactPrefix+"_v"+$releaseVersion+"_Portable.exe")) -Force
+    if (!$SkipTests) { & "$PSScriptRoot/test-portable.ps1" -PortablePath (Join-Path $output ($artifactPrefix+"_v"+$releaseVersion+"_Portable.exe")) -EvidenceDir (Join-Path $output 'portable-tests') }
+    if ($InnoCompiler) { $innoEdition = if ($lite) { @('/DBuildAppName=OpenDesk Lite','/DBuildFilePrefix=OpenDeskLite','/DBuildAppId={{8F2B6C1E-4D7A-4B3E-9A51-2C6E7D9F3A10}') } else { @() }; Invoke-BuildTool $InnoCompiler ($innoEdition + @("/DBuildVersion=$releaseVersion","/DAppBundleDir=$bundle","/DMaintenancePath=$helper","/O$output",'native/installer.iss')) }
 } finally { $env:RUSTFLAGS = $previousFlags; Remove-Item Env:OPENDESK_PAYLOAD_ZIP,Env:OPENDESK_RESOURCE_RES -ErrorAction SilentlyContinue }
 $manifest=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'version.json') -Raw|ConvertFrom-Json
-$portableArtifact=Join-Path $output ("OpenDesk_v"+$releaseVersion+"_Portable.exe")
+$portableArtifact=Join-Path $output ($artifactPrefix+"_v"+$releaseVersion+"_Portable.exe")
 $manifest.sha256=(Get-FileHash -LiteralPath $portableArtifact -Algorithm SHA256).Hash.ToLowerInvariant()
-$installerArtifact=Join-Path $output ("OpenDesk_Setup_v"+$releaseVersion+"_Installer.exe")
+$installerArtifact=Join-Path $output ($artifactPrefix+"_Setup_v"+$releaseVersion+"_Installer.exe")
 $artifacts=@($portableArtifact)
 if ($InnoCompiler -and (Test-Path -LiteralPath $installerArtifact)) {
     $manifest.installer_sha256=(Get-FileHash -LiteralPath $installerArtifact -Algorithm SHA256).Hash.ToLowerInvariant()
     $artifacts+=$installerArtifact
 } else { $manifest.installer_sha256=$null }
-$manifestArtifact=Join-Path $output 'version.json'
-$manifest|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $manifestArtifact
-$artifacts+=$manifestArtifact
+# The update manifest describes the Full edition only; Lite is updated manually.
+if (!$lite) {
+    $manifestArtifact=Join-Path $output 'version.json'
+    $manifest|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $manifestArtifact
+    $artifacts+=$manifestArtifact
+}
 @($artifacts|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant()+'  '+[IO.Path]::GetFileName($_)})|Set-Content -LiteralPath (Join-Path $output 'SHA256SUMS.txt')
 Write-Output "Native runtime: $bundle"
 Write-Output "Artifacts: $output"

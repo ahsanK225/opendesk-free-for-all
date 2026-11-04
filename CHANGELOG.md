@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased — branch `feature/lite-and-compat-fixes`, 2026-11-04
+
+Committed to that branch; not pushed or released.
+
+- Added project engineering setup: `CLAUDE.md`, nine subagents in `.claude/agents`, `PROJECT_CONTEXT.md`, and expanded `PROJECT_STRUCTURE.md`, `SYSTEM_DESIGN.md` and `TASKS.md`. No application code changed in this step.
+- Uncommitted application work from before this setup, unreviewed for release: light theme, protocol 1 compatibility, LAN address and all-interface listening, DNS recovery, bounded directory responses, settings normalization.
+- Test results on a copy of that working tree: engine tests 39 passed, 0 failed; engine Clippy with warnings denied passed; `tests/test_web.cjs` and `tests/test_release_versions.cjs` passed.
+- NOT RUN: Qt/C++ build of this code, launcher tests, `native/test-*.ps1`, GUI, physical two-device or headset checks.
+- Open defects are listed in `TASKS.md`.
+- Fixed the legacy-mode identity bypass: a saved device answering as protocol 1 is refused, and no password is sent in compatibility mode. Older desktops with a password can no longer be reached until they are updated or the password is turned off.
+- Added OpenDesk Lite (`build.ps1 -Edition Lite`): no voice, file transfer or automatic updates, installed separately. Measured 10-13% smaller than Full, with no measured difference in idle memory, idle CPU or warm start.
+- Session quality selector follows the active profile, file sizes show MB and GB, Reconnect replaces the ended tab, the session bar has a speaker button and the mic icon shows its state. Settings has a separate Appearance section.
+- Made packaged test scripts reliable under Windows PowerShell and on loaded machines; no assertion removed.
+- Results and NOT RUN items are in [LITE_AND_COMPATIBILITY_VALIDATION.md](docs/LITE_AND_COMPATIBILITY_VALIDATION.md). Two physical PCs and real older apps were not tested.
+
 ## 2.8 stable — 2026-11-03
 
 - Adopted the approved continuous public version sequence from 1.0 through 2.8, with no missing release numbers.

@@ -53,6 +53,7 @@ fn config(directory: &Path, shared: &Path) {
     fs::write(directory.join("config.json"),serde_json::to_vec(&json!({"native_settings":{"publicAccess":false,"profile":"performance","micEnabled":false,"speakerEnabled":false,"sharedRoot":shared}})).unwrap()).unwrap();
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn native_endpoints_approve_stream_transfer_and_revoke() {
     let case = Case::new();
@@ -255,4 +256,287 @@ fn file_upload_hash_failure_is_atomic_and_paths_are_confined() {
             .flatten()
             .any(|entry| entry.file_name().to_string_lossy().ends_with(".part"))
     );
+}
+
+#[test]
+fn older_viewer_reaches_attended_approval_without_files() {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+    let case = Case::new();
+    let directory = case.directory("host");
+    let shared = case.directory("shared");
+    config(&directory, &shared);
+    let host = App::create(directory).unwrap();
+    wait("host listener", || {
+        !snapshot(&host)["localUrl"].as_str().unwrap_or("").is_empty()
+    });
+    let url = snapshot(&host)["localUrl"].as_str().unwrap().to_owned();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let (mut socket, _) =
+                tokio_tungstenite::connect_async(crate::directory::ws_url(&url).unwrap())
+                    .await
+                    .unwrap();
+            // An older viewer states no protocol at all.
+            let register = json!({"type":"register","payload":{"role":"client"}});
+            socket
+                .send(Message::Text(register.to_string().into()))
+                .await
+                .unwrap();
+            let mut approved = false;
+            let connect = json!({"type":"connect","payload":{"target_id":"remote_host"}});
+            let deadline = Instant::now() + Duration::from_secs(20);
+            loop {
+                let next = tokio::time::timeout_at(deadline.into(), socket.next())
+                    .await
+                    .expect("Timed out waiting for the host")
+                    .unwrap()
+                    .unwrap();
+                let Message::Text(text) = next else { continue };
+                let value: Value = serde_json::from_str(&text).unwrap();
+                let payload = &value["payload"];
+                match value["type"].as_str().unwrap_or("") {
+                    "register_resp" => {
+                        assert_eq!(payload["status"], "ok");
+                        socket
+                            .send(Message::Text(connect.to_string().into()))
+                            .await
+                            .unwrap();
+                    }
+                    "connect_resp" if payload["status"] == "waiting_approval" => {
+                        let view = snapshot(&host);
+                        let incoming = &view["incoming"];
+                        assert_eq!(incoming["legacy"], true);
+                        host.command(json!({"type":"approve","requestId":incoming["requestId"],"allow":true,"permissions":{"input":true,"audio":false,"clipboard":false,"file_transfer":true}}));
+                        approved = true;
+                    }
+                    "connect_resp" => {
+                        assert!(approved);
+                        assert_eq!(payload["status"], "ok");
+                        assert_eq!(payload["permissions"]["input"], true);
+                        assert_eq!(payload["permissions"]["file_transfer"], false);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        });
+}
+
+/// Runs against the relay.py of the v1.9 tag; the ports come from its loopback harness.
+#[test]
+#[ignore = "needs the archived v1.9 relay running on loopback"]
+fn archived_v1_9_relay_connects_in_compatibility_mode() {
+    let port = std::env::var("OPENDESK_V19_OPEN_PORT").unwrap();
+    let case = Case::new();
+    let app = viewer(&case, json!({}));
+    let key = dial(&app, format!("127.0.0.1:{port}"));
+    wait("compatibility consent", || {
+        snapshot(&app)["connections"][0]["needsLegacy"] == true
+    });
+    app.command(json!({"type":"legacy_accept","key":key,"allow":true,"permissions":{"input":true,"audio":false,"clipboard":false,"file_transfer":false}}));
+    wait("connected to the archived relay", || {
+        snapshot(&app)["connections"][0]["state"] == "connected"
+    });
+    let view = snapshot(&app);
+    let session = &view["connections"][0];
+    assert_eq!(session["protocol"], 1);
+    assert_eq!(session["permissions"]["input"], true);
+    assert_eq!(session["permissions"]["file_transfer"], false);
+}
+#[test]
+#[ignore = "needs the archived v1.9 relay running on loopback"]
+fn archived_v1_9_relay_with_a_password_is_refused_without_sending_it() {
+    let port = std::env::var("OPENDESK_V19_LOCKED_PORT").unwrap();
+    let case = Case::new();
+    let app = viewer(&case, json!({}));
+    let key = dial(&app, format!("127.0.0.1:{port}"));
+    wait("compatibility consent", || {
+        snapshot(&app)["connections"][0]["needsLegacy"] == true
+    });
+    app.command(json!({"type":"legacy_accept","key":key,"allow":true,"permissions":{"input":true,"audio":false,"clipboard":false,"file_transfer":false}}));
+    assert!(wait_for_error(&app).contains("does not send passwords"));
+}
+
+const SECRET: &str = "fixture-remote-secret";
+
+struct ScriptedPeer {
+    port: u16,
+    received: std::sync::Arc<std::sync::Mutex<Vec<Value>>>,
+    thread: thread::JoinHandle<()>,
+}
+impl ScriptedPeer {
+    /// A loopback desktop that answers each viewer packet and records all of them.
+    fn start(mut respond: impl FnMut(&Value) -> Vec<Value> + Send + 'static) -> Self {
+        use futures_util::{SinkExt, StreamExt};
+        use tokio_tungstenite::tungstenite::Message;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let received = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log = received.clone();
+        let thread = thread::spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async move {
+                    let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+                    let (stream, _) = listener.accept().await.unwrap();
+                    let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+                    while let Some(Ok(message)) = socket.next().await {
+                        let Message::Text(text) = message else {
+                            continue;
+                        };
+                        let value: Value = serde_json::from_str(&text).unwrap();
+                        log.lock().unwrap().push(value.clone());
+                        for reply in respond(&value) {
+                            let reply = Message::Text(reply.to_string().into());
+                            if socket.send(reply).await.is_err() {
+                                return;
+                            }
+                        }
+                    }
+                });
+        });
+        Self {
+            port,
+            received,
+            thread,
+        }
+    }
+    fn sent(&self, kind: &str) -> Vec<Value> {
+        let received = self.received.lock().unwrap();
+        received
+            .iter()
+            .filter(|p| p["type"] == kind)
+            .cloned()
+            .collect()
+    }
+    fn assert_secret_not_sent(&self) {
+        let received = self.received.lock().unwrap();
+        assert!(!Value::Array(received.clone()).to_string().contains(SECRET));
+    }
+}
+fn reply(kind: &str, payload: Value) -> Vec<Value> {
+    vec![json!({"type":kind,"payload":payload})]
+}
+fn older_desktop(answer: Value) -> ScriptedPeer {
+    ScriptedPeer::start(move |packet| match packet["type"].as_str().unwrap_or("") {
+        "register" => reply("register_resp", json!({"status":"ok","protocol":1})),
+        "connect" => reply("connect_resp", answer.clone()),
+        _ => Vec::new(),
+    })
+}
+fn viewer(case: &Case, trusted: Value) -> App {
+    let directory = case.directory("viewer");
+    let shared = case.directory("shared");
+    fs::write(directory.join("config.json"),serde_json::to_vec(&json!({"trusted_devices":trusted,"native_settings":{"publicAccess":false,"profile":"performance","micEnabled":false,"speakerEnabled":false,"sharedRoot":shared}})).unwrap()).unwrap();
+    App::create(directory).unwrap()
+}
+fn dial(app: &App, target: String) -> String {
+    app.command(json!({"type":"connect","target":target,"password":SECRET}));
+    wait("viewer connection entry", || {
+        snapshot(app)["connections"][0]["key"].is_string()
+    });
+    snapshot(app)["connections"][0]["key"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+fn wait_for_error(app: &App) -> String {
+    wait("refused connection", || {
+        snapshot(app)["connections"][0]["state"] == "error"
+    });
+    snapshot(app)["connections"][0]["message"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+#[test]
+fn saved_device_answering_as_protocol_1_is_refused_without_a_password() {
+    for by_address in [false, true] {
+        let case = Case::new();
+        let peer = older_desktop(json!({"status":"waiting_approval"}));
+        let address = format!("127.0.0.1:{}", peer.port);
+        let (saved_as, target) = if by_address {
+            (format!("ws://{address}/ws"), address)
+        } else {
+            ("123456789".to_owned(), format!("123456789@{address}"))
+        };
+        let app = viewer(&case, json!({ saved_as: "c2F2ZWQtZGV2aWNlLWtleQ==" }));
+        dial(&app, target);
+        assert!(wait_for_error(&app).contains("cannot prove its identity"));
+        assert_ne!(snapshot(&app)["connections"][0]["needsLegacy"], true);
+        assert!(peer.sent("connect").is_empty());
+        peer.assert_secret_not_sent();
+    }
+}
+
+#[test]
+fn compatibility_mode_reports_a_required_password_instead_of_sending_it() {
+    let case = Case::new();
+    let peer = older_desktop(json!({"status":"error","message":"Invalid password."}));
+    let app = viewer(&case, json!({}));
+    let key = dial(&app, format!("127.0.0.1:{}", peer.port));
+    wait("compatibility consent", || {
+        snapshot(&app)["connections"][0]["needsLegacy"] == true
+    });
+    app.command(json!({"type":"legacy_accept","key":key,"allow":true,"permissions":{"input":true,"audio":false,"clipboard":false,"file_transfer":false}}));
+    assert!(wait_for_error(&app).contains("does not send passwords"));
+    assert_ne!(snapshot(&app)["connections"][0]["needsPassword"], true);
+    let connect = peer.sent("connect");
+    assert_eq!(connect.len(), 1);
+    assert!(connect[0]["payload"].get("password").is_none());
+    peer.assert_secret_not_sent();
+}
+
+#[test]
+fn password_command_is_not_forwarded_in_compatibility_mode() {
+    let case = Case::new();
+    let peer = older_desktop(json!({"status":"waiting_approval"}));
+    let app = viewer(&case, json!({}));
+    let key = dial(&app, format!("127.0.0.1:{}", peer.port));
+    wait("compatibility consent", || {
+        snapshot(&app)["connections"][0]["needsLegacy"] == true
+    });
+    app.command(json!({"type":"legacy_accept","key":key,"allow":true,"permissions":{"input":true,"audio":false,"clipboard":false,"file_transfer":false}}));
+    wait("attended request", || {
+        snapshot(&app)["connections"][0]["state"] == "waiting"
+    });
+    app.command(json!({"type":"password","key":key,"password":SECRET}));
+    app.command(json!({"type":"disconnect","key":key}));
+    wait("peer connection closed", || peer.thread.is_finished());
+    assert_eq!(peer.sent("connect").len(), 1);
+    peer.assert_secret_not_sent();
+}
+
+#[test]
+fn downgrade_after_a_verified_identity_is_refused() {
+    let case = Case::new();
+    let device = Store::load(case.directory("device")).unwrap();
+    let peer = ScriptedPeer::start(move |packet| match packet["type"].as_str().unwrap_or("") {
+        "register" => reply("register_resp", json!({"status":"ok","protocol":2})),
+        "identify" => reply(
+            "identity",
+            device.identity_packet(packet["payload"]["nonce"].as_str().unwrap()),
+        ),
+        // Registration is answered a second time once the viewer trusts this key.
+        "connect" => reply("register_resp", json!({"status":"ok","protocol":1})),
+        _ => Vec::new(),
+    });
+    let app = viewer(&case, json!({}));
+    let key = dial(&app, format!("127.0.0.1:{}", peer.port));
+    wait("device verification", || {
+        snapshot(&app)["connections"][0]["needsTrust"] == true
+    });
+    app.command(json!({"type":"trust","key":key,"allow":true}));
+    assert!(wait_for_error(&app).contains("repeated its registration"));
+    assert_ne!(snapshot(&app)["connections"][0]["needsLegacy"], true);
+    assert_eq!(peer.sent("connect").len(), 1);
+    peer.assert_secret_not_sent();
 }

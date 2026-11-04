@@ -6,6 +6,7 @@ param(
     [string]$OutputDir,
     [string]$CMake='cmake',
     [string]$InnoCompiler,
+    [ValidateSet('Full','Lite')][string]$Edition='Full',
     [switch]$SkipTests
 )
 $ErrorActionPreference='Stop'

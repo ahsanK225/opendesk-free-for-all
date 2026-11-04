@@ -1,14 +1,20 @@
+#[cfg(feature = "full")]
 use crate::{
     app::Shared,
     network::{Outbound, packet},
 };
+#[cfg(feature = "full")]
 use anyhow::{Context, Result, bail};
+#[cfg(feature = "full")]
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
+#[cfg(feature = "full")]
 use cpal::{
     FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
+#[cfg(feature = "full")]
 use serde_json::{Value, json};
+#[cfg(feature = "full")]
 use std::{
     collections::VecDeque,
     sync::{
@@ -59,6 +65,7 @@ impl Resampler {
         output
     }
 }
+#[cfg(feature = "full")]
 struct Playback {
     queue: VecDeque<f32>,
     resampler: Resampler,
@@ -66,6 +73,7 @@ struct Playback {
     target: u32,
     last: f32,
 }
+#[cfg(feature = "full")]
 struct Controls {
     stop: AtomicBool,
     input_failed: AtomicBool,
@@ -76,10 +84,12 @@ struct Controls {
     received: AtomicU64,
     playback: Mutex<Playback>,
 }
+#[cfg(feature = "full")]
 pub struct Voice {
     controls: Arc<Controls>,
     shared: Arc<Shared>,
 }
+#[cfg(feature = "full")]
 impl Voice {
     pub fn start(
         shared: Arc<Shared>,
@@ -192,11 +202,13 @@ impl Voice {
         self.controls.received.fetch_add(1, Ordering::Relaxed);
     }
 }
+#[cfg(feature = "full")]
 impl Drop for Voice {
     fn drop(&mut self) {
         self.controls.stop.store(true, Ordering::Release);
     }
 }
+#[cfg(feature = "full")]
 fn output<T>(
     device: &cpal::Device,
     config: &StreamConfig,
@@ -233,6 +245,7 @@ where
         Some(Duration::from_secs(2)),
     )?)
 }
+#[cfg(feature = "full")]
 fn input<T>(
     device: &cpal::Device,
     config: &StreamConfig,
@@ -274,6 +287,7 @@ where
         Some(Duration::from_secs(2)),
     )?)
 }
+#[cfg(feature = "full")]
 fn run_audio(
     shared: Arc<Shared>,
     controls: Arc<Controls>,
@@ -421,6 +435,25 @@ fn run_audio(
     drop(input_stream);
     drop(output_stream);
     Ok(())
+}
+/// Lite builds have no audio devices; permissions never request voice there.
+#[cfg(not(feature = "full"))]
+pub struct Voice;
+#[cfg(not(feature = "full"))]
+impl Voice {
+    pub fn start(
+        _shared: std::sync::Arc<crate::app::Shared>,
+        _sender: crate::transport::Sender<crate::network::Outbound>,
+        _session: String,
+    ) -> anyhow::Result<Self> {
+        anyhow::bail!("Voice is not part of OpenDesk Lite")
+    }
+    pub fn refresh_settings(&self, _apply_mic: bool) {}
+    pub fn mic_enabled(&self) -> bool {
+        false
+    }
+    pub fn toggle_mic(&self) {}
+    pub fn push(&self, _payload: &serde_json::Value) {}
 }
 #[cfg(test)]
 mod tests {

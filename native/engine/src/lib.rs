@@ -1,4 +1,6 @@
 //! Native OpenDesk engine: capture, authorized sessions, media and delivery.
+// The Lite voice stub owns nothing, so dropping it early is a harmless no-op.
+#![cfg_attr(not(feature = "full"), allow(clippy::drop_non_drop))]
 pub mod app;
 pub mod audio;
 pub mod capture;
@@ -10,7 +12,9 @@ pub mod files;
 #[cfg(test)]
 mod integration_tests;
 pub mod jpeg;
+pub mod legacy;
 pub mod media;
+pub mod net;
 pub mod network;
 pub mod platform;
 pub mod protocol;

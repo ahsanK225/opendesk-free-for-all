@@ -65,11 +65,26 @@ pub struct App {
     pub last_poll: AtomicU64,
     completed: std::sync::mpsc::Receiver<()>,
 }
+fn normalize_settings(settings:&mut Value)->bool{
+    if !settings.is_object(){*settings=serde_json::json!({});}
+    let defaults=serde_json::json!({"profile":"balanced","theme":"dark","micGain":1.0,"speakerVolume":0.8,"micEnabled":false,"speakerEnabled":true,"publicAccess":true});
+    let mut changed=false;
+    for (key,fallback) in defaults.as_object().unwrap(){
+        let value=match key.as_str(){
+            "micGain"=>settings[key].as_f64().filter(|n|n.is_finite()).map(|n|serde_json::json!(n.clamp(0.0,3.0))),
+            "speakerVolume"=>settings[key].as_f64().filter(|n|n.is_finite()).map(|n|serde_json::json!(n.clamp(0.0,1.0))),
+            "profile"=>settings[key].as_str().filter(|s|matches!(*s,"balanced"|"performance"|"sharp")).map(|s|serde_json::json!(s)),
+            "theme"=>settings[key].as_str().filter(|s|matches!(*s,"dark"|"light")).map(|s|serde_json::json!(s)),
+            _=>settings[key].as_bool().map(|v|serde_json::json!(v))
+        }.unwrap_or_else(||fallback.clone());
+        if settings[key]!=value{settings[key]=value;changed=true;}
+    }
+    changed
+}
 impl App {
     pub fn create(directory: PathBuf) -> Result<Self> {
         let mut store = Store::load(directory)?;
-        if !store.config["native_settings"].is_object() {
-            store.config["native_settings"] = json!({"profile":"balanced","micGain":1.0,"speakerVolume":0.8,"micEnabled":false,"speakerEnabled":true,"publicAccess":true});
+        if normalize_settings(&mut store.config["native_settings"]) {
             store.save()?;
         }
         if !store.config["native_settings"]["sharedRoot"].is_string() {
@@ -77,7 +92,7 @@ impl App {
                 json!(std::env::var("USERPROFILE").unwrap_or_default());
             store.save()?;
         }
-        let view = json!({"version":env!("CARGO_PKG_VERSION").strip_suffix(".0").unwrap_or(env!("CARGO_PKG_VERSION")),"deviceId":format_id(&store.id()),"deviceName":std::env::var("COMPUTERNAME").unwrap_or_else(|_|"This desktop".into()),"fingerprint":store.fingerprint(),
+        let view = json!({"edition":if cfg!(feature="full"){"full"}else{"lite"},"version":env!("CARGO_PKG_VERSION").strip_suffix(".0").unwrap_or(env!("CARGO_PKG_VERSION")),"deviceId":format_id(&store.id()),"deviceName":std::env::var("COMPUTERNAME").unwrap_or_else(|_|"This desktop".into()),"fingerprint":store.fingerprint(),
             "status":"Starting local host…","statusTone":"pending","localUrl":"","shareUrl":"","activeTab":"home","connections":[],"incoming":null,"hostSession":null,"trustRequest":null,
             "recents":store.config["recent_sessions"],"settings":store.config["native_settings"],"hasPassword":!store.config["unattended_password"].as_str().unwrap_or("").is_empty(),"notice":null,"audioDevices":{"inputs":[],"outputs":[]}});
         let shared = Arc::new(Shared {
@@ -127,6 +142,10 @@ impl App {
                 .error("The command queue is busy. Please retry.");
         }
     }
+}
+#[cfg(test)]mod settings_tests{
+    use super::*;
+    #[test]fn migrated_audio_settings_match_the_display_and_preserve_explicit_mute(){let mut value=json!({"speakerEnabled":false,"micEnabled":false,"micGain":0.0,"custom":"kept"});assert!(normalize_settings(&mut value));assert_eq!(value["speakerVolume"],0.8);assert_eq!(value["micGain"],0.0);assert_eq!(value["speakerEnabled"],false);assert_eq!(value["publicAccess"],true);assert_eq!(value["custom"],"kept");assert!(!normalize_settings(&mut value));}
 }
 impl Drop for App {
     fn drop(&mut self) {

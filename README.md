@@ -93,7 +93,7 @@ cd opendesk-free-for-all
   -InnoCompiler 'C:\Program Files (x86)\Inno Setup 7\ISCC.exe'
 ```
 
-SDK paths are examples. The build verifies the pinned Cloudflare binary and produces a runtime, portable executable, installer, manifest and checksums in `dist/native`. Qt DLLs/plugins remain replaceable; notices and SPDX information ship in `licenses`.
+Add `-Edition Lite` to build OpenDesk Lite in `dist/native-lite`: remote screen, keyboard, mouse, clipboard and connection, without voice, file transfer or automatic updates. SDK paths are examples. The build verifies the pinned Cloudflare binary and produces a runtime, portable executable, installer, manifest and checksums in `dist/native`. Qt DLLs/plugins remain replaceable; notices and SPDX information ship in `licenses`.
 
 ```powershell
 cargo test --release --locked --lib --manifest-path native/engine/Cargo.toml -- --test-threads=1

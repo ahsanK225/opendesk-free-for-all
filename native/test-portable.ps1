@@ -15,6 +15,7 @@ try {
     $env:OPENDESK_RUNTIME_DIR=Join-Path $caseRoot ('deep-'+('x'*180))
     $invalidLog=Join-Path $caseRoot 'overlong-path-stderr.log'
     $invalid=Start-Process -FilePath $PortablePath -ArgumentList @('--no-error-dialog','--config-dir',('"'+$caseRoot+'\profile"')) -WindowStyle Hidden -PassThru -RedirectStandardError $invalidLog
+    $null=$invalid.Handle # Windows PowerShell keeps ExitCode only once the handle is cached.
     if (!$invalid.WaitForExit(15000) -or $invalid.ExitCode -ne 1 -or (Get-Content -LiteralPath $invalidLog -Raw) -notmatch 'cache path is too long') {throw 'Long-path preflight did not provide an actionable error.'}
     Remove-Item Env:OPENDESK_RUNTIME_DIR -ErrorAction SilentlyContinue
     foreach ($mode in @('first-launch','cached-launch','missing-dll-repair','explicit-repair')) {
@@ -30,7 +31,8 @@ try {
         if ($mode -eq 'explicit-repair') {$arguments+='--repair'}
         $watch=[Diagnostics.Stopwatch]::StartNew()
         $process=Start-Process -FilePath $PortablePath -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardError (Join-Path $caseRoot ($mode+'-stderr.log'))
-        if (!$process.WaitForExit(60000) -or $process.ExitCode -ne 0) {throw ('Portable '+$mode+' failed.')}
+        $null=$process.Handle # Windows PowerShell keeps ExitCode only once the handle is cached.
+        if (!$process.WaitForExit(240000) -or $process.ExitCode -ne 0) {throw ('Portable '+$mode+' failed.')}
         $watch.Stop()
         if (!(Test-Path -LiteralPath $state)) {throw 'The native child did not produce startup evidence.'}
         $view=Get-Content -LiteralPath $state -Raw|ConvertFrom-Json

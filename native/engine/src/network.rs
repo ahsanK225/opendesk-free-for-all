@@ -16,7 +16,7 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::{Arc, Mutex, atomic::Ordering},
     time::{Duration, Instant},
 };
@@ -53,6 +53,7 @@ struct Host {
 pub struct Runtime {
     pub shared: Arc<Shared>,
     peers: Mutex<HashMap<String, crate::transport::Sender<Outbound>>>,
+    legacy_peers: Mutex<HashSet<String>>,
     host: Mutex<Host>,
     clients: Mutex<HashMap<String, mpsc::Sender<Value>>>,
     connections: Arc<Semaphore>,
@@ -90,6 +91,7 @@ impl Runtime {
         });
     }
     fn pair(&self, peer: &str, permissions: Permissions, request: &str) -> Result<()> {
+        let permissions = permissions.for_edition();
         let mut host = self.host.lock().unwrap();
         let id = token();
         host.authorization
@@ -170,7 +172,11 @@ impl Runtime {
                     self.error(peer, "Too many password attempts. Retry in one minute.");
                     return;
                 }
-                if let Some(record) = host.password.clone() {
+                if let Some(record) = host
+                    .password
+                    .clone()
+                    .filter(|_| !self.legacy_peers.lock().unwrap().contains(peer))
+                {
                     if let Some(proof) = payload["proof"].as_str() {
                         let valid = host.challenges.remove(peer).is_some_and(|challenge| {
                             challenge.deadline > Instant::now()
@@ -237,7 +243,7 @@ impl Runtime {
                 });
                 drop(host);
                 self.shared
-                    .update(|v| v["incoming"] = json!({"requestId":request,"peer":peer}));
+                    .update(|v| v["incoming"] = json!({"requestId":request,"peer":peer,"legacy":self.legacy_peers.lock().unwrap().contains(peer)}));
                 self.send(
                     peer,
                     "connect_resp",
@@ -296,8 +302,11 @@ impl Runtime {
                 };
                 let Some(peer) = pending else { return };
                 if command["allow"].as_bool() == Some(true) {
-                    let permissions =
+                    let mut permissions: Permissions =
                         serde_json::from_value(command["permissions"].clone()).unwrap_or_default();
+                    if self.legacy_peers.lock().unwrap().contains(&peer) {
+                        permissions.file_transfer = false;
+                    }
                     if let Err(error) = self.pair(&peer, permissions, request) {
                         self.error(&peer, error);
                     }
@@ -358,6 +367,7 @@ impl Runtime {
                     "profile" => {
                         matches!(value.as_str(), Some("balanced" | "performance" | "sharp"))
                     }
+                    "theme" => matches!(value.as_str(), Some("dark" | "light")),
                     "micEnabled" | "speakerEnabled" | "publicAccess" => value.is_boolean(),
                     "speakerVolume" => value.as_f64().is_some_and(|n| (0.0..=1.0).contains(&n)),
                     "micGain" => value.as_f64().is_some_and(|n| (0.0..=3.0).contains(&n)),
@@ -453,7 +463,8 @@ v["activeTab"]=json!(key);
                     {
                         shared.connection(&key, |v| {
                             v["state"] = json!("error");
-                            v["message"] = json!(format!("{error:#}"));
+                            v["message"] = json!(format!("{error}"));
+                            v["details"] = json!(format!("{error:#}"));
                             v["needsTrust"] = json!(false);
                             v["needsPassword"] = json!(false);
                         });
@@ -511,11 +522,9 @@ async fn peer(runtime: Arc<Runtime>, socket: WebSocket) {
     let Ok(value) = serde_json::from_str::<Value>(&text) else {
         return;
     };
-    if value["type"] != "register"
-        || value["payload"]["role"] != "client"
-        || value["payload"]["protocol"] != 2
-    {
-        let _=sink.send(Message::Text(packet("connect_resp",json!({"status":"error","message":"Protocol v2 client registration is required. External host registration is denied."})).to_string().into())).await;
+    let protocol = crate::legacy::protocol(&value["payload"]);
+    if value["type"] != "register" || value["payload"]["role"] != "client" || protocol.is_none() {
+        let _=sink.send(Message::Text(packet("connect_resp",json!({"status":"error","message":"A supported client registration is required (protocol 1 or 2). External host registration is denied."})).to_string().into())).await;
         return;
     }
     let peer = loop {
@@ -529,20 +538,39 @@ async fn peer(runtime: Arc<Runtime>, socket: WebSocket) {
     };
     let (tx, mut rx) = crate::transport::channel();
     runtime.peers.lock().unwrap().insert(peer.clone(), tx);
+    let legacy = protocol == Some(1);
+    if legacy {
+        runtime.legacy_peers.lock().unwrap().insert(peer.clone());
+    }
     runtime.send(
         &peer,
         "register_resp",
-        json!({"status":"ok","id":peer,"clean_id":peer,"role":"client","protocol":2}),
+        json!({"status":"ok","id":peer,"clean_id":peer,"role":"client","protocol":protocol,"supported_protocols":[2,1]}),
     );
     let mut counter = 0u32;
     let mut last = Instant::now();
     let mut last_received = Instant::now();
     let registered = Instant::now();
     let mut health = tokio::time::interval(Duration::from_secs(1));
+    let reporter = runtime.clone();
+    let writer_peer = peer.clone();
     let writer = tokio::spawn(async move {
         while let Some(outgoing) = rx.recv().await {
+            let mut ack = None;
             let message = match outgoing {
+                Outbound::Packet(value) if legacy => match crate::legacy::outgoing(value) {
+                    Ok(Some(p)) => Message::Text(p.to_string().into()),
+                    Ok(None) => continue,
+                    Err(_) => break,
+                },
                 Outbound::Packet(value) => Message::Text(value.to_string().into()),
+                Outbound::Video(bytes) if legacy => {
+                    let Ok(value) = crate::legacy::video_json(&bytes) else {
+                        break;
+                    };
+                    ack = value["payload"]["frame_id"].as_u64();
+                    Message::Text(value.to_string().into())
+                }
                 Outbound::Video(bytes) => Message::Binary(bytes.into()),
                 Outbound::Pong(bytes) => Message::Pong(bytes.into()),
                 Outbound::Close => break,
@@ -552,6 +580,9 @@ async fn peer(runtime: Arc<Runtime>, socket: WebSocket) {
                 Ok(Ok(()))
             ) {
                 break;
+            }
+            if let Some(frame) = ack {
+                reporter.message(&writer_peer, "video_ack", json!({"frame_id":frame}));
             }
         }
     });
@@ -572,7 +603,9 @@ async fn peer(runtime: Arc<Runtime>, socket: WebSocket) {
         break}
         if let Ok(value)=serde_json::from_str::<Value>(&text)
         && let (Some(typ),Some(payload))=(value["type"].as_str(),value["payload"].as_object()){
-        runtime.message(&peer,typ,Value::Object(payload.clone()));
+        let mut payload=if legacy{crate::legacy::incoming(typ,&Value::Object(payload.clone()))}else{Value::Object(payload.clone())};
+        if legacy&&typ=="video_config"{payload["fps"]=json!(payload["fps"].as_u64().unwrap_or(20).clamp(10,20));payload["max_width"]=json!(payload["max_width"].as_u64().unwrap_or(1280).clamp(640,1280));}
+        runtime.message(&peer,if legacy&&typ=="keyframe_req"{"video_refresh"}else{typ},payload);
         }
         }
         ,Some(Ok(Message::Ping(bytes)))=>{
@@ -597,6 +630,7 @@ async fn peer(runtime: Arc<Runtime>, socket: WebSocket) {
     writer.abort();
     runtime.message(&peer, "session_end", json!({}));
     runtime.peers.lock().unwrap().remove(&peer);
+    runtime.legacy_peers.lock().unwrap().remove(&peer);
     runtime.host.lock().unwrap().challenges.remove(&peer);
 }
 pub async fn run(shared: Arc<Shared>, mut commands: mpsc::Receiver<Value>) -> Result<()> {
@@ -608,6 +642,7 @@ pub async fn run(shared: Arc<Shared>, mut commands: mpsc::Receiver<Value>) -> Re
     let runtime = Arc::new(Runtime {
         shared: shared.clone(),
         peers: Mutex::new(HashMap::new()),
+        legacy_peers: Mutex::new(HashSet::new()),
         host: Mutex::new(Host {
             authorization: HostSession::default(),
             pending: None,
@@ -623,7 +658,7 @@ pub async fn run(shared: Arc<Shared>, mut commands: mpsc::Receiver<Value>) -> Re
     let mut listener = None;
     for port in 8080..8100 {
         if let Ok(value) =
-            tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await
+            tokio::net::TcpListener::bind((std::net::Ipv4Addr::UNSPECIFIED, port)).await
         {
             listener = Some(value);
             break;
@@ -640,7 +675,7 @@ pub async fn run(shared: Arc<Shared>, mut commands: mpsc::Receiver<Value>) -> Re
     ]
     .into_iter()
     .find(|p| p.join("index.html").is_file());
-    let mut router = Router::new().route("/ws", get(upgrade));
+    let mut router = Router::new().route("/ws", get(upgrade)).route("/health",get(||async{axum::Json(json!({"app":"OpenDesk","protocol":2,"supported_protocols":[2,1]}))}));
     if let Some(web) = web {
         router = router.fallback_service(ServeDir::new(web).append_index_html_on_directories(true));
     }
@@ -648,6 +683,7 @@ pub async fn run(shared: Arc<Shared>, mut commands: mpsc::Receiver<Value>) -> Re
     let server = tokio::spawn(async move { axum::serve(listener, router).await });
     shared.update(|v| {
         v["localUrl"] = json!(format!("http://127.0.0.1:{port}"));
+        if let Ok(socket)=std::net::UdpSocket::bind("0.0.0.0:0") && socket.connect("8.8.8.8:80").is_ok() && let Ok(address)=socket.local_addr() && let std::net::IpAddr::V4(ip)=address.ip() && (ip.is_private()||ip.is_link_local()){v["lanUrl"]=json!(format!("http://{}:{port}",address.ip()));}
         v["status"] = json!("Local host ready");
         v["statusTone"] = json!("ready");
     });

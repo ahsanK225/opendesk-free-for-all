@@ -60,6 +60,7 @@ fn validate(value: &Value, portable: bool) -> Result<(String, String, String)> {
 }
 fn client() -> Result<reqwest::Client> {
     Ok(reqwest::Client::builder()
+        .dns_resolver(std::sync::Arc::new(crate::net::Resolver))
         .user_agent(concat!("OpenDesk/", env!("CARGO_PKG_VERSION")))
         .https_only(true)
         .connect_timeout(Duration::from_secs(15))
@@ -80,6 +81,11 @@ async fn metadata(client: &reqwest::Client) -> Result<Value> {
     Ok(serde_json::from_slice(&bytes)?)
 }
 pub fn start(shared: Arc<Shared>, install: bool) {
+    // The published manifest describes the Full edition only.
+    if !cfg!(feature = "full") {
+        shared.update(|v| v["update"] = json!({"state":"idle","message":"OpenDesk Lite is updated manually by installing a newer Lite package."}));
+        return;
+    }
     if shared.update_busy.swap(true, Ordering::AcqRel) {
         return;
     }

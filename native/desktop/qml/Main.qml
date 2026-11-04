@@ -8,17 +8,21 @@ ApplicationWindow {
     id: root
     visible:true
     width:1280;height:820;minimumWidth:760;minimumHeight:520
-    title:"OpenDesk"
+    title:lite?"OpenDesk Lite":"OpenDesk"
     color:Theme.background
     font.family:"Segoe UI"
     font.pixelSize:14
     palette.window:Theme.background;palette.windowText:Theme.text;palette.text:Theme.text;palette.buttonText:Theme.text
     palette.base:Theme.background;palette.button:Theme.elevated;palette.highlight:Theme.accent;palette.highlightedText:"white"
     property var model:backend.state
+    Binding{target:Theme;property:"light";value:(root.model.settings||{}).theme==="light"}
     property string page:"home"
     property string activeKey:""
     property string serverActive:"home"
     property bool favoritesOnly:false
+    readonly property bool lite:model.edition==="lite"
+    readonly property string legacyRequestKey:current.needsLegacy?activeKey:""
+    onLegacyRequestKeyChanged:{if(legacyRequestKey.length)legacyDialog.open();else legacyDialog.close();}
     readonly property string approvalRequestId:(model.incoming||{}).requestId||""
     onApprovalRequestIdChanged:{if(approvalRequestId.length)approval.open();else approval.close();}
     readonly property var sessions:model.connections||[]
@@ -27,6 +31,8 @@ ApplicationWindow {
     function send(type,data){let value=data||{};value.type=type;backend.command(value);}
     function connectTo(target){if(target.trim().length)send("connect",{target:target.trim(),password:password.text});}
     function navigate(value){page=value;}
+    function formatSize(bytes){const units=["B","KB","MB","GB","TB"];let value=bytes||0,unit=0;while(value>=1024&&unit<units.length-1){value/=1024;unit++;}return (unit?value.toFixed(1):value)+" "+units[unit];}
+    function focusAudio(){page="settings";Qt.callLater(function(){settingsScroll.contentItem.contentY=Math.max(0,audioPanel.y-12);});}
     function micText(s){let a=s.audio||{};return a.micRequested&&!a.micReady?"Mic retrying":s.micEnabled?"Mic on":"Mic off";}
     Connections {target:backend;function onStateChanged(){if(root.model.exitRequested){root.close();return;}let key=root.model.activeTab||"home";if(key!==root.serverActive){root.serverActive=key;root.activeKey=key==="home"?"":key;root.page="home";}}}
 
@@ -42,19 +48,19 @@ ApplicationWindow {
                     Layout.fillWidth:true;Layout.topMargin:8;Layout.bottomMargin:30;spacing:12
                     Image{source:"qrc:/brand/portal-o.svg";sourceSize.width:36;sourceSize.height:36;Layout.preferredWidth:36;Layout.preferredHeight:36}
                     ColumnLayout {visible:root.width>=1080;spacing:1
-                        Text{text:"OpenDesk";font.pixelSize:20;font.weight:Font.DemiBold;color:Theme.text}
+                        Text{text:root.title;font.pixelSize:20;font.weight:Font.DemiBold;color:Theme.text}
                         Text{text:"YOUR DESKTOP, ANYWHERE";font.pixelSize:9;font.letterSpacing:0.8;color:Theme.faint}
                     }
                 }
                 Repeater {
-                    model:[{key:"home",title:"Home",icon:"\ue80f"},{key:"saved",title:"Saved devices",icon:"\ue734"},{key:"files",title:"File transfer",icon:"\ue8b7"},{key:"settings",title:"Settings",icon:"\ue713"}]
+                    model:[{key:"home",title:"Home",icon:"\ue80f"},{key:"saved",title:"Saved devices",icon:"\ue734"},{key:"files",title:"File transfer",icon:"\ue8b7"},{key:"settings",title:"Settings",icon:"\ue713"}].filter(item=>!root.lite||item.key!=="files")
                     delegate:Button {
                         required property var modelData
                         Layout.fillWidth:true;implicitHeight:46;hoverEnabled:true
                         Accessible.name:modelData.title
                         onClicked:root.navigate(modelData.key)
-                        background:Rectangle{radius:9;color:root.page===modelData.key?"#2d1c25":parent.hovered?Theme.elevated:"transparent"}
-                        contentItem:RowLayout{spacing:13;Glyph{text:modelData.icon;color:root.page===modelData.key?"#ff8986":Theme.muted;Layout.alignment:Qt.AlignVCenter}Text{visible:root.width>=1080;text:modelData.title;font.pixelSize:13;font.weight:root.page===modelData.key?Font.DemiBold:Font.Normal;color:root.page===modelData.key?Theme.text:Theme.muted;Layout.fillWidth:true}}
+                        background:Rectangle{radius:9;color:root.page===modelData.key?Theme.selected:parent.hovered?Theme.elevated:"transparent"}
+                        contentItem:RowLayout{spacing:13;Glyph{text:modelData.icon;color:root.page===modelData.key?Theme.accentText:Theme.muted;Layout.alignment:Qt.AlignVCenter}Text{visible:root.width>=1080;text:modelData.title;font.pixelSize:13;font.weight:root.page===modelData.key?Font.DemiBold:Font.Normal;color:root.page===modelData.key?Theme.text:Theme.muted;Layout.fillWidth:true}}
                         ToolTip.visible:hovered&&root.width<1080;ToolTip.text:modelData.title
                     }
                 }
@@ -117,16 +123,16 @@ ApplicationWindow {
                                 ColumnLayout{anchors.fill:parent;spacing:15
                                     RowLayout{Text{text:"This desktop";font.pixelSize:16;font.weight:Font.DemiBold;color:Theme.text;Layout.fillWidth:true}Rectangle{width:6;height:6;radius:3;color:root.model.statusTone==="ready"?Theme.success:Theme.warning}Text{text:root.model.statusTone==="ready"?"Ready to connect":"Starting";color:Theme.muted;font.pixelSize:11}}
                                     Text{text:root.model.deviceId||"—";font.family:"Consolas";font.pixelSize:37;font.weight:Font.DemiBold;font.letterSpacing:1;color:Theme.text;Layout.topMargin:7}
-                                    RowLayout{spacing:8;ActionButton{text:"Copy address";glyph:"\ue8c8";onClicked:backend.copyText(root.model.deviceId)}ActionButton{text:root.model.hasPassword?"Access settings":"Set password";glyph:"\ue72e";quiet:true;onClicked:localPassword.open()}}
+                                    RowLayout{spacing:8;ActionButton{text:"Copy address";glyph:"\ue8c8";onClicked:backend.copyText(root.model.deviceId)}ActionButton{text:root.model.hasPassword?"Access settings":"Set password";glyph:"\ue72e";quiet:true;onClicked:localPassword.open()}ActionButton{text:"Copy LAN";quiet:true;enabled:Boolean(root.model.lanUrl);onClicked:backend.copyText(root.model.lanUrl)}}
                                     Rectangle{Layout.fillWidth:true;height:1;color:Theme.border}
-                                    RowLayout{Layout.fillWidth:true;Text{text:root.model.shareUrl?"Internet share link ready":"Local host: "+(root.model.localUrl||"starting…");font.pixelSize:11;color:Theme.muted;elide:Text.ElideRight;Layout.fillWidth:true}ActionButton{glyph:"\ue71b";quiet:true;enabled:Boolean(root.model.shareUrl);Accessible.name:"Copy internet share link";onClicked:backend.copyText(root.model.shareUrl)}}
+                                    RowLayout{Layout.fillWidth:true;Text{text:root.model.shareUrl?"Internet share link ready":"LAN: "+(root.model.lanUrl||root.model.localUrl||"starting…");font.pixelSize:11;color:Theme.muted;elide:Text.ElideRight;Layout.fillWidth:true}ActionButton{glyph:"\ue71b";quiet:true;enabled:Boolean(root.model.shareUrl);Accessible.name:"Copy internet share link";onClicked:backend.copyText(root.model.shareUrl)}}
                                 }
                             }
                             Panel {
                                 Layout.fillWidth:true;Layout.preferredWidth:330;implicitHeight:239
                                 ColumnLayout{anchors.fill:parent;spacing:14
                                     Text{text:"Made for focused work";font.pixelSize:16;font.weight:Font.DemiBold;color:Theme.text;Layout.bottomMargin:2}
-                                    Repeater{model:[{icon:"\ue701",title:"Adaptive streaming",detail:"Quality follows your connection."},{icon:"\ue720",title:"Clear conversations",detail:"Talk naturally while you work."},{icon:"\ue8d7",title:"You stay in control",detail:"Choose access for every session."}];delegate:RowLayout{required property var modelData;spacing:14;Glyph{text:modelData.icon;color:"#fa8380"}ColumnLayout{spacing:3;Text{text:modelData.title;color:Theme.text;font.pixelSize:12;font.weight:Font.DemiBold}Text{text:modelData.detail;color:Theme.muted;font.pixelSize:11}}}}
+                                    Repeater{model:[{icon:"\ue701",title:"Adaptive streaming",detail:"Quality follows your connection."},{icon:"\ue720",title:"Clear conversations",detail:"Talk naturally while you work."},{icon:"\ue8d7",title:"You stay in control",detail:"Choose access for every session."}].filter(item=>!root.lite||item.icon!=="\ue720");delegate:RowLayout{required property var modelData;spacing:14;Glyph{text:modelData.icon;color:Theme.accentText}ColumnLayout{spacing:3;Text{text:modelData.title;color:Theme.text;font.pixelSize:12;font.weight:Font.DemiBold}Text{text:modelData.detail;color:Theme.muted;font.pixelSize:11}}}}
                                 }
                             }
                         }
@@ -156,7 +162,7 @@ ApplicationWindow {
                             ListView{Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:3;model:(root.current.files||{}).entries||[]
                                 delegate:ItemDelegate{required property var modelData;width:ListView.view.width;height:48;hoverEnabled:true
                                     background:Rectangle{radius:7;color:parent.hovered?Theme.elevated:"transparent"}
-                                    contentItem:RowLayout{spacing:12;Glyph{text:modelData.is_dir?"\ue8b7":"\ue7c3";color:modelData.is_dir?Theme.warning:Theme.muted}Text{text:modelData.name;color:Theme.text;font.pixelSize:13;Layout.fillWidth:true;elide:Text.ElideMiddle}Text{text:modelData.is_dir?"Folder":modelData.size<1024?modelData.size+" B":(modelData.size/1024).toFixed(1)+" KB";color:Theme.faint;font.pixelSize:11}Glyph{text:modelData.is_dir?"\ue76c":"\ue896"}}
+                                    contentItem:RowLayout{spacing:12;Glyph{text:modelData.is_dir?"\ue8b7":"\ue7c3";color:modelData.is_dir?Theme.warning:Theme.muted}Text{text:modelData.name;color:Theme.text;font.pixelSize:13;Layout.fillWidth:true;elide:Text.ElideMiddle}Text{text:modelData.is_dir?"Folder":root.formatSize(modelData.size);color:Theme.faint;font.pixelSize:11}Glyph{text:modelData.is_dir?"\ue76c":"\ue896"}}
                                     onClicked:{let path=remotePath.text+"/"+modelData.name;if(modelData.is_dir)root.send("list_files",{key:root.activeKey,path:path});else backend.downloadFile(root.activeKey,path,modelData.name);}
                                 }
                                 ScrollBar.vertical:ScrollBar{}
@@ -170,27 +176,31 @@ ApplicationWindow {
                         ColumnLayout{Layout.margins:32;Layout.bottomMargin:0;spacing:7;Text{text:"Settings";font.pixelSize:28;font.weight:Font.DemiBold;color:Theme.text}Text{text:"Tune your workspace. Changes apply without restarting.";font.pixelSize:13;color:Theme.muted}}
                         Panel{Layout.fillWidth:true;Layout.leftMargin:32;Layout.rightMargin:32
                             ColumnLayout{anchors.fill:parent;spacing:18
+                                Text{text:"Appearance";font.pixelSize:17;font.weight:Font.DemiBold;color:Theme.text}
+                                RowLayout{Layout.fillWidth:true;Text{text:"Theme";color:Theme.text;font.pixelSize:13;Layout.fillWidth:true}ComboBox{model:["Dark","Light"];currentIndex:(root.model.settings||{}).theme==="light"?1:0;onActivated:root.send("setting",{name:"theme",value:currentIndex===1?"light":"dark"});Accessible.name:"Application theme";Layout.preferredWidth:180}}
+                                Rectangle{Layout.fillWidth:true;height:1;color:Theme.border}
                                 Text{text:"Connection & privacy";font.pixelSize:17;font.weight:Font.DemiBold;color:Theme.text}
                                 RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Unattended access";color:Theme.text;font.pixelSize:13}Text{text:root.model.hasPassword?"A password is configured for this desktop.":"Every incoming connection needs your approval.";color:Theme.muted;font.pixelSize:11}}Item{Layout.fillWidth:true}ActionButton{text:root.model.hasPassword?"Change password":"Set password";onClicked:localPassword.open()}}
-                                RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Internet access";color:Theme.text;font.pixelSize:13}Text{text:"Publish an expiring, signed directory record through the secure tunnel.";color:Theme.muted;font.pixelSize:11;wrapMode:Text.WordWrap;Layout.maximumWidth:570}}Item{Layout.fillWidth:true}Switch{checked:Boolean((root.model.settings||{}).publicAccess);Accessible.name:"Enable internet access";onToggled:root.send("setting",{name:"publicAccess",value:checked})}}
+                                RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Internet access";color:Theme.text;font.pixelSize:13}Text{text:"Publish an expiring, signed directory record through the secure tunnel.";color:Theme.muted;font.pixelSize:11;wrapMode:Text.WordWrap;Layout.maximumWidth:570}}Item{Layout.fillWidth:true}Toggle{modelChecked:Boolean((root.model.settings||{}).publicAccess);Accessible.name:"Enable internet access";onEdited:(enabled)=>root.send("setting",{name:"publicAccess",value:enabled})}}
                                 Rectangle{Layout.fillWidth:true;height:1;color:Theme.border}
                                 Text{text:"DEVICE IDENTITY FINGERPRINT";color:Theme.faint;font.pixelSize:10;font.letterSpacing:1}
                                 RowLayout{Layout.fillWidth:true;Text{text:root.model.fingerprint||"";font.family:"Consolas";font.pixelSize:12;color:Theme.muted;wrapMode:Text.WrapAnywhere;Layout.fillWidth:true}ActionButton{glyph:"\ue8c8";Accessible.name:"Copy device fingerprint";onClicked:backend.copyText(root.model.fingerprint)}}
                                 Text{text:"Compare this fingerprint on the first connection to a new device.";color:Theme.faint;font.pixelSize:11}
                             }
                         }
-                        Panel{Layout.fillWidth:true;Layout.leftMargin:32;Layout.rightMargin:32
+                        Panel{id:audioPanel;Layout.fillWidth:true;Layout.leftMargin:32;Layout.rightMargin:32
                             ColumnLayout{anchors.fill:parent;spacing:18
-                                Text{text:"Streaming & voice";font.pixelSize:17;font.weight:Font.DemiBold;color:Theme.text}
-                                RowLayout{Layout.fillWidth:true;ColumnLayout{Layout.fillWidth:true;Text{text:"Shared folder";color:Theme.text;font.pixelSize:13}Text{text:(root.model.settings||{}).sharedRoot||"";color:Theme.muted;font.pixelSize:11;elide:Text.ElideMiddle;Layout.fillWidth:true}Text{text:"Changing this folder ends incoming sharing.";color:Theme.faint;font.pixelSize:11}}ActionButton{text:"Choose folder";onClicked:backend.chooseSharedFolder()}}
+                                Text{text:root.lite?"Streaming":"Streaming & voice";font.pixelSize:17;font.weight:Font.DemiBold;color:Theme.text}
+                                RowLayout{visible:!root.lite;Layout.fillWidth:true;ColumnLayout{Layout.fillWidth:true;Text{text:"Shared folder";color:Theme.text;font.pixelSize:13}Text{text:(root.model.settings||{}).sharedRoot||"";color:Theme.muted;font.pixelSize:11;elide:Text.ElideMiddle;Layout.fillWidth:true}Text{text:"Changing this folder ends incoming sharing.";color:Theme.faint;font.pixelSize:11}}ActionButton{text:"Choose folder";onClicked:backend.chooseSharedFolder()}}
                                 RowLayout{Layout.fillWidth:true;Text{text:"Default quality";color:Theme.text;font.pixelSize:13;Layout.fillWidth:true}ComboBox{model:["Balanced","Performance","Sharp"];currentIndex:(root.model.settings||{}).profile==="performance"?1:(root.model.settings||{}).profile==="sharp"?2:0;onActivated:root.send("setting",{name:"profile",value:currentText.toLowerCase()});Accessible.name:"Default video quality";Layout.preferredWidth:200}}
-                                RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Microphone";color:Theme.text;font.pixelSize:13}Text{text:"Enabled only in sessions where voice is permitted.";font.pixelSize:11;color:Theme.muted}}Item{Layout.fillWidth:true}Switch{checked:Boolean((root.model.settings||{}).micEnabled);Accessible.name:"Enable microphone";onToggled:root.send("setting",{name:"micEnabled",value:checked})}}
-                                RowLayout{Layout.fillWidth:true;Text{text:"Microphone level";color:Theme.text;font.pixelSize:13;Layout.fillWidth:true}Slider{from:0;to:3;value:(root.model.settings||{}).micGain===undefined?1:root.model.settings.micGain;onMoved:root.send("setting",{name:"micGain",value:value});Accessible.name:"Microphone gain";Layout.preferredWidth:240}}
-                                RowLayout{Layout.fillWidth:true;Text{text:"Speaker volume";color:Theme.text;font.pixelSize:13;Layout.fillWidth:true}Slider{from:0;to:1;value:(root.model.settings||{}).speakerVolume||0;onMoved:root.send("setting",{name:"speakerVolume",value:value});Accessible.name:"Speaker volume";Layout.preferredWidth:240}}
-                                Text{text:"Headphones reduce feedback during two-way voice calls.";color:Theme.faint;font.pixelSize:11}
+                                RowLayout{visible:!root.lite;Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Microphone";color:Theme.text;font.pixelSize:13}Text{text:"Enabled only in sessions where voice is permitted.";font.pixelSize:11;color:Theme.muted}}Item{Layout.fillWidth:true}Toggle{modelChecked:Boolean((root.model.settings||{}).micEnabled);Accessible.name:"Enable microphone";onEdited:(enabled)=>root.send("setting",{name:"micEnabled",value:enabled})}}
+                                RowLayout{visible:!root.lite;Layout.fillWidth:true;Text{text:"Microphone level "+Math.round(((root.model.settings||{}).micGain===undefined?1:root.model.settings.micGain)*100)+"%";color:Theme.text;font.pixelSize:13;Layout.fillWidth:true}LevelSlider{from:0;to:3;modelValue:(root.model.settings||{}).micGain===undefined?1:root.model.settings.micGain;onEdited:(newValue)=>root.send("setting",{name:"micGain",value:newValue});Accessible.name:"Microphone gain";Layout.preferredWidth:240}}
+                                RowLayout{visible:!root.lite;Layout.fillWidth:true;Text{text:"Speaker";color:Theme.text;font.pixelSize:13;Layout.fillWidth:true}Toggle{modelChecked:(root.model.settings||{}).speakerEnabled!==false;Accessible.name:"Enable speaker";onEdited:(enabled)=>root.send("setting",{name:"speakerEnabled",value:enabled})}}
+                                RowLayout{visible:!root.lite;Layout.fillWidth:true;Text{text:"Speaker volume "+Math.round(((root.model.settings||{}).speakerVolume||0)*100)+"%";color:Theme.text;font.pixelSize:13;Layout.fillWidth:true}LevelSlider{from:0;to:1;modelValue:(root.model.settings||{}).speakerVolume||0;onEdited:(newValue)=>root.send("setting",{name:"speakerVolume",value:newValue});Accessible.name:"Speaker volume";Layout.preferredWidth:240}}
+                                Text{visible:!root.lite;text:"Headphones reduce feedback during two-way voice calls.";color:Theme.faint;font.pixelSize:11}
                             }
                         }
-                        Panel{Layout.fillWidth:true;Layout.leftMargin:32;Layout.rightMargin:32;ColumnLayout{anchors.fill:parent;spacing:12;RowLayout{Layout.fillWidth:true;Text{text:"Software updates";font.pixelSize:17;font.weight:Font.DemiBold;color:Theme.text;Layout.fillWidth:true}ActionButton{text:"Check for updates";enabled:!(root.model.update&&["checking","downloading","installing"].indexOf(root.model.update.state)>=0);onClicked:root.send("check_updates")}ActionButton{text:"Install & restart";primary:true;visible:Boolean(root.model.update&&root.model.update.state==="available");onClicked:root.send("install_update")}}Text{text:(root.model.update||{}).message||"OpenDesk "+(root.model.version||"");color:Theme.muted;font.pixelSize:12;wrapMode:Text.WordWrap;Layout.fillWidth:true}}}
+                        Panel{Layout.fillWidth:true;Layout.leftMargin:32;Layout.rightMargin:32;ColumnLayout{anchors.fill:parent;spacing:12;RowLayout{Layout.fillWidth:true;Text{text:"Software updates";font.pixelSize:17;font.weight:Font.DemiBold;color:Theme.text;Layout.fillWidth:true}ActionButton{visible:!root.lite;text:"Check for updates";enabled:!(root.model.update&&["checking","downloading","installing"].indexOf(root.model.update.state)>=0);onClicked:root.send("check_updates")}ActionButton{text:"Install & restart";primary:true;visible:Boolean(root.model.update&&root.model.update.state==="available");onClicked:root.send("install_update")}}Text{text:root.lite?"OpenDesk Lite "+(root.model.version||"")+" is updated manually by installing a newer Lite package.":(root.model.update||{}).message||"OpenDesk "+(root.model.version||"");color:Theme.muted;font.pixelSize:12;wrapMode:Text.WordWrap;Layout.fillWidth:true}}}
                         RowLayout{Layout.leftMargin:32;Layout.bottomMargin:24;spacing:12;VersionBadge{version:root.model.version||""}Text{text:"Rust engine / Qt native desktop";font.pixelSize:11;color:Theme.faint;Layout.alignment:Qt.AlignVCenter}}
                     }
                 }
@@ -201,9 +211,10 @@ ApplicationWindow {
                             ColumnLayout{spacing:2;Layout.maximumWidth:300;Text{text:root.current.name||root.current.target||"Remote session";color:Theme.text;font.pixelSize:13;font.weight:Font.DemiBold}Text{text:(root.current.audio||{}).error||root.current.message||root.current.state||"";color:(root.current.audio||{}).error?Theme.warning:Theme.muted;font.pixelSize:10;elide:Text.ElideRight;Layout.fillWidth:true}}
                             Item{Layout.fillWidth:true}
                             Text{text:root.current.state==="connected"?((root.current.fps||0)>0?Math.round(root.current.fps)+" FPS":"Idle")+"   ·   "+Math.round(root.current.rtt||0)+" ms":"";font.family:"Consolas";font.pixelSize:11;color:Theme.muted}
-                            ComboBox{model:["Balanced","Performance","Sharp"];Layout.preferredWidth:130;onActivated:root.send("video_profile",{key:root.activeKey,profile:currentText.toLowerCase()});Accessible.name:"Session video quality"}
-                            ActionButton{text:root.micText(root.current);glyph:"\ue720";Accessible.name:"Toggle session microphone";ToolTip.visible:hovered;ToolTip.text:(root.current.audio||{}).error||"Voice packets sent: "+((root.current.audio||{}).txPackets||0)+" / received: "+((root.current.audio||{}).rxPackets||0);enabled:Boolean(root.current.permissions&&root.current.permissions.audio);onClicked:root.send("toggle_mic",{key:root.activeKey})}
-                            ActionButton{glyph:"\ue8b7";Accessible.name:"Remote files";enabled:Boolean(root.current.permissions&&root.current.permissions.file_transfer);onClicked:{root.page="files";root.send("list_files",{key:root.activeKey,path:"."});}}
+                            ComboBox{model:["Balanced","Performance","Sharp"];Layout.preferredWidth:130;currentIndex:root.current.profile==="performance"?1:root.current.profile==="sharp"?2:0;onActivated:root.send("video_profile",{key:root.activeKey,profile:currentText.toLowerCase()});Accessible.name:"Session video quality"}
+                            ActionButton{visible:!root.lite;text:root.micText(root.current);glyph:root.current.micEnabled?"\ue720":"\uec54";Accessible.name:"Toggle session microphone";ToolTip.visible:hovered;ToolTip.text:(root.current.audio||{}).error||"Voice packets sent: "+((root.current.audio||{}).txPackets||0)+" / received: "+((root.current.audio||{}).rxPackets||0);enabled:Boolean(root.current.permissions&&root.current.permissions.audio);onClicked:root.send("toggle_mic",{key:root.activeKey})}
+                            ActionButton{visible:!root.lite;text:(root.model.settings||{}).speakerEnabled!==false?"Speaker on":"Speaker off";glyph:(root.model.settings||{}).speakerEnabled!==false?"\ue767":"\ue74f";Accessible.name:"Toggle speaker";enabled:Boolean(root.current.permissions&&root.current.permissions.audio);onClicked:root.send("setting",{name:"speakerEnabled",value:(root.model.settings||{}).speakerEnabled===false})}
+                            ActionButton{visible:!root.lite;glyph:"\ue8b7";Accessible.name:"Remote files";enabled:Boolean(root.current.permissions&&root.current.permissions.file_transfer);onClicked:{root.page="files";root.send("list_files",{key:root.activeKey,path:"."});}}
                             ActionButton{text:"Disconnect";glyph:"\ue8bb";enabled:root.current.state!=="disconnected"&&root.current.state!=="error";onClicked:root.send("disconnect",{key:root.activeKey})}
                         }
                     }
@@ -215,13 +226,13 @@ ApplicationWindow {
                             BusyIndicator{running:root.current.state!=="error"&&root.current.state!=="disconnected";visible:running;Layout.alignment:Qt.AlignHCenter}
                             Text{text:root.current.state==="error"?"Connection needs attention":root.current.state==="disconnected"?"Session ended":"Connecting to your desktop";color:Theme.text;font.pixelSize:23;font.weight:Font.DemiBold;Layout.alignment:Qt.AlignHCenter}
                             Text{text:root.current.message||"Checking the remote device and waiting for access.";color:Theme.muted;font.pixelSize:13;wrapMode:Text.WordWrap;horizontalAlignment:Text.AlignHCenter;Layout.fillWidth:true}
-                            ActionButton{text:"Reconnect";primary:true;Layout.alignment:Qt.AlignHCenter;visible:root.current.state==="error"||root.current.state==="disconnected";onClicked:root.connectTo(root.current.target||"")}
+                            ActionButton{text:"Reconnect";primary:true;Layout.alignment:Qt.AlignHCenter;visible:root.current.state==="error"||root.current.state==="disconnected";onClicked:{const target=root.current.target||"";root.send("close_session",{key:root.activeKey});root.connectTo(target);}}
                         }
                     }
                 }
             }
-            Rectangle{Layout.fillWidth:true;implicitHeight:root.model.hostSession?48:0;visible:Boolean(root.model.hostSession);color:"#2b1c24"
-                RowLayout{anchors.fill:parent;anchors.leftMargin:24;anchors.rightMargin:24;Text{text:"Your desktop is being shared with "+((root.model.hostSession||{}).peer||"");color:Theme.text;font.pixelSize:12;Layout.fillWidth:true}ActionButton{text:root.micText(root.model.hostSession||{});ToolTip.visible:hovered;ToolTip.text:((root.model.hostSession||{}).audio||{}).error||"Microphone and speaker follow Windows default audio devices";glyph:"\ue720";quiet:true;enabled:Boolean(((root.model.hostSession||{}).permissions||{}).audio);onClicked:root.send("toggle_host_mic")}ActionButton{text:"End sharing";quiet:true;onClicked:root.send("end_sharing")}}
+            Rectangle{Layout.fillWidth:true;implicitHeight:root.model.hostSession?48:0;visible:Boolean(root.model.hostSession);color:Theme.selected
+                RowLayout{anchors.fill:parent;anchors.leftMargin:24;anchors.rightMargin:24;Text{text:"Your desktop is being shared with "+((root.model.hostSession||{}).peer||"");color:Theme.text;font.pixelSize:12;Layout.fillWidth:true}ActionButton{visible:!root.lite;text:root.micText(root.model.hostSession||{});ToolTip.visible:hovered;ToolTip.text:((root.model.hostSession||{}).audio||{}).error||"Microphone and speaker follow Windows default audio devices";glyph:(root.model.hostSession||{}).micEnabled?"\ue720":"\uec54";quiet:true;enabled:Boolean(((root.model.hostSession||{}).permissions||{}).audio);onClicked:root.send("toggle_host_mic")}ActionButton{text:"End sharing";quiet:true;onClicked:root.send("end_sharing")}}
             }
         }
     }
@@ -231,7 +242,7 @@ ApplicationWindow {
             required property var modelData
             Layout.fillWidth:true;Layout.minimumWidth:235;implicitHeight:150;padding:18
             ColumnLayout{anchors.fill:parent;spacing:12
-                RowLayout{Layout.fillWidth:true;Rectangle{width:35;height:35;radius:9;color:"#2f2029";Glyph{anchors.centerIn:parent;text:"\ue7f8";color:"#fa8380"}}Item{Layout.fillWidth:true}ActionButton{glyph:modelData.favorite?"\ue735":"\ue734";quiet:true;Accessible.name:modelData.favorite?"Remove favorite":"Add favorite";onClicked:root.send("favorite",{id:modelData.id})}}
+                RowLayout{Layout.fillWidth:true;Rectangle{width:35;height:35;radius:9;color:Theme.selected;Glyph{anchors.centerIn:parent;text:"\ue7f8";color:Theme.accentText}}Item{Layout.fillWidth:true}ActionButton{glyph:modelData.favorite?"\ue735":"\ue734";quiet:true;Accessible.name:modelData.favorite?"Remove favorite":"Add favorite";onClicked:root.send("favorite",{id:modelData.id})}}
                 Text{text:modelData.alias||modelData.id;color:Theme.text;font.pixelSize:13;font.weight:Font.DemiBold;elide:Text.ElideRight;Layout.fillWidth:true}
                 RowLayout{Layout.fillWidth:true;Text{text:modelData.id;color:Theme.muted;font.family:"Consolas";font.pixelSize:12;Layout.fillWidth:true}ActionButton{glyph:"\ue72a";quiet:true;Accessible.name:"Connect to "+modelData.id;onClicked:root.connectTo(modelData.id)}}
             }
@@ -255,11 +266,24 @@ ApplicationWindow {
         onAccepted:{root.send("password",{key:root.activeKey,password:remoteSecret.text});remoteSecret.clear();}
         onRejected:root.send("disconnect",{key:root.activeKey})
     }
+    Dialog{id:legacyDialog;title:"Connect to an older desktop";modal:true;anchors.centerIn:parent;width:Math.min(520,root.width-48);standardButtons:Dialog.Ok|Dialog.Cancel;closePolicy:Popup.NoAutoClose
+        background:Rectangle{color:Theme.panel;radius:14;border.color:Theme.border}
+        onOpened:{legacyInput.checked=true;legacyAudio.checked=false;legacyClipboard.checked=false;standardButton(Dialog.Ok).text="Continue";}
+        contentItem:ColumnLayout{spacing:12
+            Text{text:"This older desktop cannot verify its identity with a fingerprint. Confirm its address with the owner before continuing.";color:Theme.warning;wrapMode:Text.WordWrap;Layout.fillWidth:true}
+            Text{text:"Screen sharing, control and voice use compatibility mode. File transfer needs a newer desktop.";color:Theme.muted;wrapMode:Text.WordWrap;Layout.fillWidth:true}
+            CheckBox{id:legacyInput;text:"Keyboard and mouse";checked:true}
+            CheckBox{id:legacyAudio;visible:!root.lite;text:"Two-way voice"}
+            CheckBox{id:legacyClipboard;text:"Text clipboard"}
+        }
+        onAccepted:root.send("legacy_accept",{key:root.activeKey,allow:true,permissions:{input:legacyInput.checked,audio:legacyAudio.checked,clipboard:legacyClipboard.checked,file_transfer:false}})
+        onRejected:root.send("legacy_accept",{key:root.activeKey,allow:false})
+    }
     Dialog{id:approval;title:"Incoming connection";modal:true;anchors.centerIn:parent;width:460;standardButtons:Dialog.Ok|Dialog.Cancel
         closePolicy:Popup.NoAutoClose
         onOpened:{allowInput.checked=true;allowAudio.checked=false;allowClipboard.checked=false;allowFiles.checked=false;standardButton(Dialog.Ok).text="Allow connection";standardButton(Dialog.Cancel).text="Reject";forceActiveFocus();}
         background:Rectangle{color:Theme.panel;radius:14;border.color:Theme.border}
-        contentItem:ColumnLayout{spacing:12;Text{text:((root.model.incoming||{}).peer||"A remote desktop")+" wants to connect. Choose what to share.";font.pixelSize:14;color:Theme.text;wrapMode:Text.WordWrap;Layout.fillWidth:true}CheckBox{id:allowInput;text:"Keyboard and mouse";checked:true}CheckBox{id:allowAudio;text:"Two-way voice"}CheckBox{id:allowClipboard;text:"Text clipboard"}CheckBox{id:allowFiles;text:"Files in your chosen shared folder"}}
+        contentItem:ColumnLayout{spacing:12;Text{text:((root.model.incoming||{}).peer||"A remote desktop")+" wants to connect. Choose what to share.";font.pixelSize:14;color:Theme.text;wrapMode:Text.WordWrap;Layout.fillWidth:true}CheckBox{id:allowInput;text:"Keyboard and mouse";checked:true}CheckBox{id:allowAudio;visible:!root.lite;text:"Two-way voice"}CheckBox{id:allowClipboard;text:"Text clipboard"}CheckBox{id:allowFiles;visible:!root.lite;text:(root.model.incoming||{}).legacy?"Files need a newer viewer":"Files in your chosen shared folder";enabled:!(root.model.incoming||{}).legacy}}
         onAccepted:root.send("approve",{requestId:root.model.incoming.requestId,allow:true,permissions:{input:allowInput.checked,audio:allowAudio.checked,clipboard:allowClipboard.checked,file_transfer:allowFiles.checked}})
         onRejected:root.send("approve",{requestId:(root.model.incoming||{}).requestId||"",allow:false})
     }
@@ -274,7 +298,7 @@ ApplicationWindow {
         RemoteCursor{label:"Remote"}
     }
     Rectangle{anchors.horizontalCenter:parent.horizontalCenter;anchors.bottom:parent.bottom;anchors.bottomMargin:22;width:Math.min(660,parent.width-80);height:noticeText.implicitHeight+28;radius:10;color:Theme.elevated;border.color:Theme.border;visible:Boolean(root.model.notice)
-        Text{id:noticeText;anchors.fill:parent;anchors.margins:14;text:(root.model.notice||{}).message||"";color:(root.model.notice||{}).tone==="error"?"#ffaaa4":Theme.text;wrapMode:Text.WordWrap;font.pixelSize:12}
+        Text{id:noticeText;anchors.fill:parent;anchors.margins:14;text:(root.model.notice||{}).message||"";color:(root.model.notice||{}).tone==="error"?Theme.accentText:Theme.text;wrapMode:Text.WordWrap;font.pixelSize:12}
         TapHandler{onTapped:root.send("dismiss_notice")}
     }
 }

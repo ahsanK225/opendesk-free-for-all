@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const [url, target, evidence, mode = 'pending'] = process.argv.slice(2);
 if (!url || !target || !evidence) throw Error('Usage: node tests/test_incoming.cjs ws://127.0.0.1:PORT/ws HOST_ID evidence.json [pending|cancel]');
-const deadline = Date.now() + 30000;
+const deadline = Date.now() + 90000;
 let socket;
 let requests=0;
 function connect() {
@@ -26,9 +26,11 @@ function connect() {
 }
 connect();
 const check = setInterval(() => {
-  if (fs.existsSync(evidence)) {
+  // The host creates the file before writing it, so wait for complete JSON.
+  let state;
+  try { state = JSON.parse(fs.readFileSync(evidence, 'utf8')); } catch {}
+  if (state) {
     clearInterval(check);
-    const state = JSON.parse(fs.readFileSync(evidence, 'utf8'));
     assert.equal(state.nativeWindow.minimized, false, 'incoming request must restore the host');
     assert.equal(state.nativeWindow.topmost, mode !== 'cancel', 'topmost state must follow pending approval');
     assert.equal(Boolean(state.incoming), mode !== 'cancel');

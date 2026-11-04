@@ -11,3 +11,34 @@ CPAL/WASAPI uses the hardware device rate, streaming resampling, 20 ms mono voic
 The Qt desktop has no Python runtime. The Rust maintenance helper can request a graceful shutdown and, after a bounded grace period, terminate only verified OpenDesk processes in the current Windows session. Installed updates run an installer after application exit. Portable updates wait for the app/launcher, verify the staged executable again, retain a rollback copy and atomically replace the launcher. Portable dependencies live in a persistent transactional cache and can be repaired.
 
 HTTPS/WSS protects each tunnel leg; Cloudflare terminates the tunnel. This is not an end-to-end encrypted peer-to-peer transport. The app controls the primary monitor in the logged-in user session; it does not implement a pre-login service, UAC secure-desktop control, multi-monitor selection or AnyDesk's proprietary DeskRT codec.
+
+## Interfaces
+
+The engine serves one local HTTP server:
+
+| Route | Purpose |
+| --- | --- |
+| `GET /ws` | WebSocket for protocol messages; 16 connections at most, 2 MiB message limit |
+| `GET /health` | App name and supported protocols |
+| other paths | Static browser viewer from `web` |
+
+Text messages are JSON of the form `{"type":...,"payload":...}`. Main types: `register`, `identify`, `identity`, `connect`, `auth_challenge`, `connect_resp`, `heartbeat`, `session_end`, input messages, `audio_chunk`, `clipboard_text`, `file_*`, `video_ack`, `video_refresh` and `video_config`. Video travels as binary ODV2 frames decoded strictly by `protocol.rs`. The desktop talks to the engine only through the C ABI in `ffi.rs`.
+
+## Data storage
+
+There is no database. `%USERPROFILE%\.opendesk\config.json` holds settings, saved desktops and trusted device keys, plus the device identity key and unattended password, both protected with DPAPI. Portable runtimes are cached in `%LOCALAPPDATA%\OpenDesk\runtimes` and staged updates in `%LOCALAPPDATA%\OpenDesk\updates`.
+
+## UI design
+
+`Main.qml` holds one window with a sidebar (Home, Saved devices, File transfer, Settings), session tabs and modal dialogs for approval, trust, passwords and legacy mode. `Theme.qml` is the color singleton. Below about 1080 px width the sidebar collapses to icons.
+
+## Uncommitted changes to this design
+
+Recorded on 2026-11-04 from the working tree. These are not committed or released, so the description above and earlier in this document may differ until they are:
+
+- The host binds to all interfaces (`0.0.0.0`) rather than loopback, and the UI shows a LAN address. LAN traffic is not encrypted, and the Internet access setting does not disable it.
+- Protocol 1 peers are supported through `legacy.rs`, without identity verification and without file transfer. A saved device answering as protocol 1 is refused, and passwords are never sent in this mode, so an older desktop with a password cannot be reached.
+- The `full` Cargo feature is on by default. Lite builds without it, and `Permissions::for_edition` removes voice and file transfer in the engine, not only in the UI.
+- Hosts with a password send protocol 1 peers to attended approval rather than password access.
+- DNS failures are retried through DNS over HTTPS with TLS verification of the original hostname (`net.rs`).
+- A light theme is available in Settings.

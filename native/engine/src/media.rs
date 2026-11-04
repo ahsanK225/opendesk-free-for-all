@@ -283,6 +283,7 @@ impl HostWorker {
                 }
                 "local_mic_toggle" => {
                     voice.toggle_mic();
+                    self.shared.update(|v|{if v["hostSession"].is_object(){v["hostSession"]["micEnabled"]=json!(voice.mic_enabled());}});
                     return Ok(());
                 }
                 _ => {}
@@ -516,8 +517,12 @@ break}
     Ok(())
 }
 
+enum DecodeInput {
+    Binary(Vec<u8>),
+    Legacy(String, Value),
+}
 pub struct DecodeWorker {
-    sender: mpsc::SyncSender<Vec<u8>>,
+    sender: mpsc::SyncSender<DecodeInput>,
     stop: Arc<AtomicBool>,
     pub rtt: Arc<AtomicU64>,
     reset: Arc<AtomicBool>,
@@ -529,17 +534,17 @@ impl DecodeWorker {
         session: String,
         out: Sender<Outbound>,
     ) -> Result<Self> {
-        let (sender, receiver) = mpsc::sync_channel::<Vec<u8>>(4);
+        let (sender, receiver) = mpsc::sync_channel::<DecodeInput>(4);
         let stop = Arc::new(AtomicBool::new(false));
         let signal = stop.clone();
         let rtt = Arc::new(AtomicU64::new(0));
         let rtt_worker = rtt.clone();
         let reset = Arc::new(AtomicBool::new(false));
         let reset_worker = reset.clone();
-        std::thread::Builder::new().name("opendesk-video-decode".into()).spawn(move||{let mut decoder=Decoder::default();while !signal.load(Ordering::Acquire){
+        std::thread::Builder::new().name("opendesk-video-decode".into()).spawn(move||{let mut decoder=Decoder::default();let mut legacy=crate::legacy::VideoBridge::default();while !signal.load(Ordering::Acquire){
             if reset_worker.swap(false,Ordering::AcqRel){while receiver.try_recv().is_ok(){} decoder=Decoder::default();let _=out.try_send(Outbound::Packet(packet("video_refresh",json!({}))));}
             match receiver.recv_timeout(Duration::from_millis(50)){
-            Ok(bytes)=>match decoder.decode(&bytes,&session){
+            Ok(input)=>match (match input{DecodeInput::Binary(bytes)=>Ok(bytes),DecodeInput::Legacy(typ,p)=>legacy.convert(&typ,&p,&session)}).and_then(|bytes|decoder.decode(&bytes,&session)){
 Ok(frame)=>{
 let frame_id=frame.generation;
 shared.frames.lock().unwrap().insert(key.clone(),frame);
@@ -565,8 +570,14 @@ let _=out.blocking_send(Outbound::Packet(packet("video_refresh",json!({
         })
     }
     pub async fn push(&self, bytes: Vec<u8>) -> Result<()> {
+        self.enqueue(DecodeInput::Binary(bytes))
+    }
+    pub fn push_legacy(&self, typ: &str, p: Value) -> Result<()> {
+        self.enqueue(DecodeInput::Legacy(typ.into(), p))
+    }
+    fn enqueue(&self, input: DecodeInput) -> Result<()> {
         let sender = self.sender.clone();
-        match sender.try_send(bytes) {
+        match sender.try_send(input) {
             Ok(()) => Ok(()),
             Err(mpsc::TrySendError::Full(_)) => {
                 // A dropped delta invalidates the chain. Reset on the worker,
@@ -593,7 +604,7 @@ impl Decoder {
         let packet = VideoPacket::decode(bytes, session)
             .map_err(|e| anyhow::anyhow!("Invalid video: {e:?}"))?;
         let p = &packet.header.payload;
-        if p.width > 2560 || u64::from(p.width) * u64::from(p.height) > 16 * 1024 * 1024 {
+        if p.width > 8192 || u64::from(p.width) * u64::from(p.height) > 16 * 1024 * 1024 {
             bail!("Video dimensions exceed the native profile limits")
         }
         let full = packet.header.kind == "video_full";

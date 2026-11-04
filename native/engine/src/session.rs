@@ -8,6 +8,20 @@ pub struct Permissions {
     pub clipboard: bool,
     pub file_transfer: bool,
 }
+impl Permissions {
+    /// Lite builds have no voice or file transfer, whatever a peer or the UI requests.
+    pub fn for_edition(self) -> Self {
+        if cfg!(feature = "full") {
+            self
+        } else {
+            Self {
+                audio: false,
+                file_transfer: false,
+                ..self
+            }
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Request {
@@ -131,6 +145,19 @@ impl HostSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn edition_limits_voice_and_files_only_in_lite() {
+        let all = Permissions {
+            input: true,
+            audio: true,
+            clipboard: true,
+            file_transfer: true,
+        };
+        let limited = all.for_edition();
+        assert!(limited.input && limited.clipboard);
+        assert_eq!(limited.audio, cfg!(feature = "full"));
+        assert_eq!(limited.file_transfer, cfg!(feature = "full"));
+    }
     const REQUEST: &str = "request-0123456789";
     const SESSION: &str = "session-0123456789";
     fn active() -> HostSession {

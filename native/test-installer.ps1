@@ -18,6 +18,7 @@ try {
     if (!(Test-Path -LiteralPath $state)) {throw 'Locked legacy application fixture failed to start.'}
     $watch=[Diagnostics.Stopwatch]::StartNew()
     $install=Start-Process -FilePath $InstallerPath -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/NOICONS','/TASKS=',('/DIR="'+$appRoot+'"'),('/LOG="'+$caseRoot+'\installer.log"')) -WindowStyle Hidden -PassThru
+    $null=$install.Handle # Windows PowerShell keeps ExitCode only once the handle is cached.
     if (!$install.WaitForExit(60000) -or $install.ExitCode -ne 0) {throw 'The native installer did not finish successfully within its deadline.'}
     $watch.Stop()
     if (!$old.WaitForExit(1000)) {throw 'The locked old process survived installation.'}
@@ -27,6 +28,7 @@ try {
     $env:QT_FORCE_STDERR_LOGGING='1';$env:OPENDESK_DEV_NO_TUNNEL='1'
     $evidence=Join-Path $caseRoot 'state.json'
     $native=Start-Process -FilePath $app -ArgumentList @('--smoke-test','--config-dir',('"'+$profile+'"'),'--smoke-output',('"'+$evidence+'"'),'--screenshot',('"'+$caseRoot+'\installed.png"')) -WindowStyle Hidden -PassThru -RedirectStandardError (Join-Path $caseRoot 'stderr.log')
+    $null=$native.Handle # Windows PowerShell keeps ExitCode only once the handle is cached.
     if (!$native.WaitForExit(30000) -or $native.ExitCode -ne 0) {throw 'The installed native application failed to launch.'}
     $saved=Get-Content (Join-Path $profile 'config.json') -Raw|ConvertFrom-Json
     $view=Get-Content $evidence -Raw|ConvertFrom-Json

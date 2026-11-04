@@ -20,9 +20,11 @@ $hash=(Get-FileHash -LiteralPath $source).Hash.ToLowerInvariant()
 $parent=Start-Process -FilePath $app -ArgumentList @('--suffix',$suffix) -WindowStyle Hidden -PassThru
 try {
     $apply=Start-Process -FilePath $updater -ArgumentList @('--apply','--no-error-dialog','--parent-pid',$parent.Id,'--source',('"'+$source+'"'),'--sha256',$hash,'--portable-target',('"'+$target+'"')) -WindowStyle Hidden -PassThru
+    $null=$apply.Handle # Windows PowerShell keeps ExitCode only once the handle is cached.
     Start-Sleep -Milliseconds 300
     if ($apply.HasExited) { throw 'The update did not wait for the running application.' }
     $stop=Start-Process -FilePath $helper -ArgumentList @('--shutdown','--force','--timeout','6','--install-dir',('"'+$parentRoot+'"'),'--instance-suffix',$suffix) -WindowStyle Hidden -PassThru
+    $null=$stop.Handle # Windows PowerShell keeps ExitCode only once the handle is cached.
     if (!$stop.WaitForExit(10000) -or $stop.ExitCode -ne 0) { throw 'The fixture parent did not close.' }
     if (!$apply.WaitForExit(10000) -or $apply.ExitCode -ne 0) { throw 'Native portable replacement failed.' }
     $deadline=[DateTime]::UtcNow.AddSeconds(5)

@@ -21,7 +21,9 @@ const BINARY_SHA: &str = "f096265ec2fcbe9bb6e2d64268db167ced3fcbb83d894bdb9e2fcd
 pub fn http() -> Result<Client> {
     Ok(Client::builder()
         .timeout(Duration::from_secs(7))
-        .user_agent("OpenDesk/3.0")
+        .connect_timeout(Duration::from_secs(4))
+        .dns_resolver(Arc::new(crate::net::Resolver))
+        .user_agent(concat!("OpenDesk/", env!("CARGO_PKG_VERSION")))
         .build()?)
 }
 pub fn ws_url(address: &str) -> Result<String> {
@@ -109,57 +111,50 @@ pub fn read_record(record: &str, id: &str, pinned: Option<&str>) -> Result<(Stri
     }
     Ok((ws_url(url.as_str())?, key.into()))
 }
+async fn fetch_text(client:&Client,url:&str,maximum:usize)->Result<String>{
+    let mut response=client.get(url).header("Cache-Control","no-cache").send().await?.error_for_status()?;
+    if response.content_length().is_some_and(|n|n>maximum as u64){bail!("Directory response exceeds its size limit")}
+    let mut data=Vec::new();
+    while let Some(chunk)=response.chunk().await?{if data.len().saturating_add(chunk.len())>maximum{bail!("Directory response exceeds its size limit")};data.extend_from_slice(&chunk);}
+    Ok(String::from_utf8(data)?)
+}
+pub fn legacy_endpoint(record:&str)->Option<String>{
+    let text=serde_json::from_str::<String>(record).unwrap_or_else(|_|record.trim().into());
+    let url=Url::parse(&text).ok()?;
+    if url.scheme()!="https"||!url.host_str().is_some_and(|h|h.ends_with(".trycloudflare.com"))||url.port().is_some_and(|p|p!=443){return None}
+    ws_url(&text).ok()
+}
 pub async fn resolve(shared: &Shared, target: &str) -> Result<(String, String, Option<String>)> {
-    let (id, address) = if let Some((id, address)) = target.split_once('@') {
-        (clean_id(id), address)
-    } else {
-        ("remote_host".into(), target)
-    };
-    if address.contains(['.', ':']) || address == "localhost" {
-        return Ok((id, ws_url(address)?, None));
-    }
-    let id = clean_id(target);
-    if id.len() != 9 || !id.bytes().all(|b| b.is_ascii_digit()) {
-        bail!("Enter a nine-digit device ID or a share URL")
-    }
-    let pinned = shared.store.lock().unwrap().config["trusted_devices"][&id]
-        .as_str()
-        .map(str::to_owned);
-    let client = http()?;
-    for _ in 0..2 {
-        if let Ok(response) = client
-            .get(format!("https://ntfy.sh/opendesk_node_{id}/raw?poll=1"))
-            .send()
-            .await
-            && let Ok(text) = response.text().await
-            && text.len() < 64 * 1024
-        {
-            for line in text.lines().rev() {
-                if let Ok((url, key)) = read_record(line, &id, pinned.as_deref()) {
-                    return Ok((id, url, Some(key)));
-                }
+    let (id,address)=if let Some((id,address))=target.split_once('@'){(clean_id(id),address)}else{("remote_host".into(),target)};
+    if address.contains(['.',':'])||address=="localhost"{return Ok((id,ws_url(address)?,None))}
+    let id=clean_id(target);
+    if id.len()!=9||!id.bytes().all(|b|b.is_ascii_digit()){bail!("Enter a nine-digit device ID or a share URL")}
+    let pinned=shared.store.lock().unwrap().config["trusted_devices"][&id].as_str().map(str::to_owned);
+    let client=http()?;
+    for attempt in 0..2{
+        if attempt>0{tokio::time::sleep(Duration::from_millis(350)).await;}
+        let primary=format!("https://ntfy.sh/opendesk_node_{id}/raw?poll=1&since=3m");
+        let secondary=format!("https://keyvalue.immanuel.co/api/KeyVal/GetValue/s460x9wm/{id}");
+        let (one,two)=tokio::join!(fetch_text(&client,&primary,512*1024),fetch_text(&client,&secondary,16*1024));
+        let mut old=None;
+        if let Ok(text)=one{for line in text.lines().rev(){
+            if let Ok((url,key))=read_record(line,&id,pinned.as_deref()){return Ok((id,url,Some(key)))}
+            if old.is_none(){old=legacy_endpoint(line);}
+        }}
+        if let Ok(text)=two{
+            let text=serde_json::from_str::<String>(&text).unwrap_or(text).replace('-',"/");
+            let padded=format!("{text}{}","=".repeat((4-text.len()%4)%4));
+            if let Ok(bytes)=B64.decode(padded)&&let Ok(record)=String::from_utf8(bytes){
+                if let Ok((url,key))=read_record(&record,&id,pinned.as_deref()){return Ok((id,url,Some(key)))}
+                if old.is_none(){old=legacy_endpoint(&record);}
             }
         }
-        if let Ok(response) = client
-            .get(format!(
-                "https://keyvalue.immanuel.co/api/KeyVal/GetValue/s460x9wm/{id}"
-            ))
-            .send()
-            .await
-            && let Ok(text) = response.text().await
-            && text.len() < 16 * 1024
-        {
-            let text = text.trim().trim_matches('"').replace('-', "/");
-            let padded = format!("{text}{}", "=".repeat((4 - text.len() % 4) % 4));
-            if let Ok(bytes) = B64.decode(padded)
-                && let Ok((url, key)) =
-                    read_record(&String::from_utf8_lossy(&bytes), &id, pinned.as_deref())
-            {
-                return Ok((id, url, Some(key)));
-            }
-        }
+        // This is an unverified address hint, not identity trust. Modern peers
+        // still prove their key; legacy peers require explicit compatibility consent,
+        // are refused for a saved device and never receive a password.
+        if let Some(url)=old{return Ok((id,url,None))}
     }
-    bail!("The desktop is offline or its signed directory record has expired.")
+    bail!("Desktop {id} is not reachable through its current internet address. Check Internet access on the host, or use its latest share link/LAN address.")
 }
 fn binary() -> Option<PathBuf> {
     let current = std::env::current_exe().ok()?;
@@ -192,28 +187,39 @@ pub async fn tunnel(shared: Arc<Shared>, port: u16) {
         }
         let mut command = Command::new(&binary);
         command
-            .args(["tunnel", "--url", &format!("http://127.0.0.1:{port}")])
+            .args(["tunnel", "--no-autoupdate", "--protocol", "http2", "--edge-ip-version", "4", "--url", &format!("http://127.0.0.1:{port}")])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true)
-            .creation_flags(0x08000000);
+            .creation_flags(0x08000000).kill_on_drop(true);
         match command.spawn() {
             Ok(mut process) => {
                 let mut lines = BufReader::new(process.stderr.take().unwrap()).lines();
                 let mut interval = tokio::time::interval(Duration::from_secs(1));
                 let mut url = String::new();
                 let mut published = 0;
+                let mut ready=false;
+                let mut probe:Option<tokio::task::JoinHandle<bool>>=None;
+                let mut checked=std::time::Instant::now()-Duration::from_secs(30);
                 loop {
                     tokio::select! {
                                             line=lines.next_line()=>{
                     match line{
                     Ok(Some(line))=>{
                     if let Some(index)=line.find("https://"){
-                    let candidate=line[index..].split(|c:char|c.is_whitespace()||c=='|'||c=='"').next().unwrap_or("");if let Ok(parsed)=Url::parse(candidate)&& parsed.host_str().is_some_and(|h|h.ends_with(".trycloudflare.com"))&&parsed.path()=="/"{url=candidate.into();delay=1;shared.update(|v|{v["shareUrl"]=json!(url);v["tunnelMessage"]=Value::Null;});}}},_=>break}},
+                    let candidate=line[index..].split(|c:char|c.is_whitespace()||c=='|'||c=='"').next().unwrap_or("");if let Ok(parsed)=Url::parse(candidate)&& parsed.host_str().is_some_and(|h|h.ends_with(".trycloudflare.com"))&&parsed.path()=="/"&&candidate!=url{url=candidate.into();delay=1;ready=false;if let Some(task)=probe.take(){task.abort();}checked=std::time::Instant::now()-Duration::from_secs(30);shared.update(|v|{v["shareUrl"]=json!("");v["tunnelMessage"]=json!("Preparing the internet link; LAN connections are available.");});}}},_=>break}},
                                             _=interval.tick()=>{
                                                 if shared.stop.load(Ordering::Acquire)||!shared.store.lock().unwrap().config["native_settings"]["publicAccess"].as_bool().unwrap_or(true){let _=process.kill().await;break}
-                                                if !url.is_empty()&&store::now().saturating_sub(published)>=30{
+                                                if probe.as_ref().is_some_and(|task|task.is_finished()){
+                                                    ready=probe.take().unwrap().await.unwrap_or(false);
+                                                    shared.update(|v|{v["shareUrl"]=json!(if ready{url.as_str()}else{""});v["tunnelMessage"]=json!(if ready{"Internet link ready."}else{"The internet link is not reachable yet. Retrying; LAN connections are available."});});
+                                                }
+                                                if !url.is_empty()&&probe.is_none()&&checked.elapsed()>=Duration::from_secs(10){
+                                                    checked=std::time::Instant::now();let candidate=url.clone();
+                                                    probe=Some(tokio::spawn(async move{let Ok(client)=http()else{return false};match client.get(format!("{}/health",candidate.trim_end_matches('/'))).timeout(Duration::from_secs(5)).send().await{Ok(r) if r.status().is_success()=>r.json::<Value>().await.is_ok_and(|v|v["app"]=="OpenDesk"&&v["protocol"]==2),_=>false}}));
+                                                }
+                                                if ready&&store::now().saturating_sub(published)>=30{
                     published=store::now();
                     let (id,record)={
                     let store=shared.store.lock().unwrap();
@@ -233,6 +239,7 @@ pub async fn tunnel(shared: Arc<Shared>, port: u16) {
                                             }
                                         }
                 }
+                if let Some(task)=probe{task.abort();}
                 let _ = process.kill().await;
                 let _ = process.wait().await;
             }

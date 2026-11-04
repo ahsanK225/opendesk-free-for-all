@@ -24,6 +24,7 @@ foreach ($mode in @('cooperative','unresponsive')) {
         $watch = [Diagnostics.Stopwatch]::StartNew()
         $report = Join-Path $caseRoot 'shutdown.json'
         $stopper = Start-Process -FilePath $helper -ArgumentList @('--shutdown','--force','--timeout','6','--install-dir',('"'+$caseRoot+'"'),'--instance-suffix',$suffix,'--result-file',('"'+$report+'"')) -WindowStyle Hidden -PassThru
+        $null=$stopper.Handle # Windows PowerShell keeps ExitCode only once the handle is cached.
         if (!$stopper.WaitForExit(10000)) { throw 'Shutdown exceeded its bounded deadline.' }
         if ($stopper.ExitCode -ne 0 -or !$process.WaitForExit(2000)) { throw 'The application remained running.' }
         $watch.Stop()

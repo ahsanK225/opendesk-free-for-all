@@ -8,11 +8,14 @@ use anyhow::{Context, Result, bail};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use std::{
-    sync::{Arc, atomic::Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 use tokio::sync::mpsc;
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::tungstenite::Message;
 
 pub fn profile(name: &str) -> Value {
     match name {
@@ -26,6 +29,39 @@ async fn send(tx: &crate::transport::Sender<Outbound>, typ: &str, payload: Value
         .await
         .context("Remote socket closed")
 }
+async fn establish(
+    shared: &Shared,
+    key: &str,
+    target: &str,
+) -> Result<(String, String, Option<String>, crate::net::Socket)> {
+    let mut last = None;
+    for attempt in 0..3 {
+        if attempt > 0 {
+            tokio::time::sleep(Duration::from_millis(500 * attempt)).await;
+        }
+        shared.connection(key, |v| {
+            v["message"] = json!(if attempt == 0 {
+                "Finding the desktop…".to_owned()
+            } else {
+                format!("Retrying connection ({}/3)…", attempt + 1)
+            })
+        });
+        match crate::directory::resolve(shared, target).await {
+            Ok((id, url, public)) => {
+                shared.connection(key, |v| {
+                    v["url"] = json!(url);
+                    v["message"] = json!("Connecting securely to the desktop…");
+                });
+                match crate::net::connect(&url).await {
+                    Ok(socket) => return Ok((id, url, public, socket)),
+                    Err(error) => last = Some(error),
+                }
+            }
+            Err(error) => last = Some(error),
+        }
+    }
+    bail!("{}", last.context("No desktop address is available")?)
+}
 
 pub async fn run(
     shared: Arc<Shared>,
@@ -34,19 +70,30 @@ pub async fn run(
     mut password: String,
     mut commands: mpsc::Receiver<Value>,
 ) -> Result<()> {
-    let (target_id, url, directory_key) = crate::directory::resolve(&shared, &target).await?;
-    shared.connection(&key, |v| {
-        v["message"] = json!("Verifying the remote device…");
-        v["url"] = json!(url);
-    });
-    let (socket, _) = tokio::time::timeout(Duration::from_secs(15), connect_async(&url))
-        .await
-        .context("Connection timed out")??;
+    let connecting = establish(&shared, &key, &target);
+    tokio::pin!(connecting);
+    let (target_id, url, directory_key, socket) = loop {
+        tokio::select! {
+            result=&mut connecting=>break result?,
+            command=commands.recv()=>{if command.is_none_or(|c|c["type"]=="disconnect"){
+                shared.connection(&key,|v|{v["state"]=json!("disconnected");v["message"]=json!("Connection cancelled");});return Ok(())
+            }}
+        }
+    };
     let (mut sink, mut source) = socket.split();
     let (tx, mut outgoing) = crate::transport::channel();
+    let legacy_wire = Arc::new(AtomicBool::new(false));
+    let writer_legacy = legacy_wire.clone();
     let mut writer = tokio::spawn(async move {
         while let Some(value) = outgoing.recv().await {
             let message = match value {
+                Outbound::Packet(value) if writer_legacy.load(Ordering::Acquire) => {
+                    match crate::legacy::outgoing(value) {
+                        Ok(Some(p)) => Message::Text(p.to_string().into()),
+                        Ok(None) => continue,
+                        Err(_) => return,
+                    }
+                }
                 Outbound::Packet(value) => Message::Text(value.to_string().into()),
                 Outbound::Video(bytes) => Message::Binary(bytes.into()),
                 Outbound::Pong(bytes) => Message::Pong(bytes.into()),
@@ -64,10 +111,10 @@ pub async fn run(
         }
     });
     let result=async {
-        send(&tx,"register",json!({"role":"client","protocol":2})).await?;
+        send(&tx,"register",json!({"role":"client","protocol":2,"supported_protocols":[2,1]})).await?;
         let nonce=store::token();let device=if target_id=="remote_host"{url.clone()}else{target_id.clone()};
         let pinned=shared.store.lock().unwrap().config["trusted_devices"][&device].as_str().map(str::to_owned);
-        let mut verified=false;let mut offered_key=String::new();let mut session=String::new();let mut permissions=Permissions::default();
+        let mut registered=false;let mut verified=false;let mut legacy=false;let mut legacy_limits=Permissions::default();let mut offered_key=String::new();let mut session=String::new();let mut permissions=Permissions::default();
         let mut voice:Option<crate::audio::Voice>=None;let mut decoder:Option<crate::media::DecodeWorker>=None;
         let mut clipboard=crate::platform::Clipboard::new();let mut files=crate::files::ClientFiles::new(shared.clone(),key.clone());
         let started=Instant::now();let mut heartbeat=tokio::time::interval(Duration::from_secs(1));let mut disconnected=false;
@@ -80,11 +127,18 @@ pub async fn run(
                         worker.push(bytes.to_vec()).await?;
                     },
                     Message::Text(text)=>{
-                        if text.len()>2*1024*1024{bail!("Oversized remote control packet")}
-                        let value:Value=serde_json::from_str(&text)?;let p=&value["payload"];let typ=value["type"].as_str().unwrap_or("");
+                        if text.len()>if legacy{12*1024*1024}else{2*1024*1024}{bail!("Oversized remote control packet")}
+                        let value:Value=serde_json::from_str(&text)?;let typ=value["type"].as_str().unwrap_or("");
+                        let mut payload=if legacy{crate::legacy::incoming(typ,&value["payload"])}else{value["payload"].clone()};
+                        if legacy&&!session.is_empty(){payload["session_id"]=json!(session);}
+                        let p=&payload;
                         match typ{
-                            "register_resp"=>{if p["status"]!="ok"||p["protocol"]!=2{bail!("The remote device requires a compatible protocol-v2 build")};send(&tx,"identify",json!({"nonce":nonce})).await?;},
-                            "identity"=>{
+                            "register_resp"=>{if registered{bail!("The remote desktop repeated its registration, so the connection was refused.")};registered=true;if p["status"]!="ok"{bail!("The remote desktop declined registration")};
+                                if p["protocol"]==2{send(&tx,"identify",json!({"nonce":nonce})).await?;}
+                                else if p["protocol"].is_null()||p["protocol"]==1{if !crate::legacy::may_enter(pinned.as_deref(),directory_key.as_deref()){bail!("This known desktop answered with an older protocol that cannot prove its identity, so the connection was refused.")};legacy=true;legacy_wire.store(true,Ordering::Release);shared.connection(&key,|v|{v["needsLegacy"]=json!(true);v["message"]=json!("This older desktop needs compatibility mode. Verify it with its owner to continue.");});}
+                                else{bail!("The remote desktop uses an unsupported protocol. Supported protocols: 1 and 2.")}
+                            },
+                            "identity" if !legacy=>{
                                 let public=verify_identity(p,&nonce)?;
                                 if directory_key.as_ref().is_some_and(|key|*key!=public){bail!("Directory key does not match the connected device")}
                                 if pinned.as_ref().is_some_and(|key|*key!=public){bail!("Saved device identity changed. Compare the fingerprint on the host before clearing its trust record.")}
@@ -106,7 +160,7 @@ v["message"]=json!("Compare the device fingerprint to continue.");
 }
 
                             },
-                            "auth_challenge" if verified=>{
+                            "auth_challenge" if verified&&!legacy=>{
                                 if password.is_empty(){shared.connection(&key,|v|{v["needsPassword"]=json!(true);v["message"]=json!("A remote access password is required.");});}
                                 else{
 let challenge=p.clone();
@@ -121,8 +175,9 @@ send(&tx,"connect",json!({
                             "connect_resp"=>match p["status"].as_str().unwrap_or(""){
                                 "waiting_approval"=>shared.connection(&key,|v|{v["state"]=json!("waiting");v["message"]=json!("Waiting for the host to approve your connection.");}),
                                 "ok" if verified=>{
-                                    session=p["session_id"].as_str().context("Missing session token")?.into();if session.len()<16||session.len()>128{bail!("Invalid session token")}
-                                    permissions=serde_json::from_value(p["permissions"].clone()).context("Invalid session permissions")?;
+                                    session=if legacy{p["session_id"].as_str().filter(|s|(16..=128).contains(&s.len())).map(str::to_owned).unwrap_or_else(store::token)}else{p["session_id"].as_str().context("Missing session token")?.into()};if session.len()<16||session.len()>128{bail!("Invalid session token")}
+                                    permissions=if legacy{crate::legacy::permissions(&p["permissions"],legacy_limits)}else{serde_json::from_value(p["permissions"].clone()).context("Invalid session permissions")?};
+                                    permissions=permissions.for_edition();
                                     let profile_name=shared.store.lock().unwrap().config["native_settings"]["profile"].as_str().unwrap_or("balanced").to_owned();
                                     send(&tx,"video_config",profile(&profile_name)).await?;
                                     decoder=Some(crate::media::DecodeWorker::start(shared.clone(),key.clone(),session.clone(),tx.clone())?);
@@ -135,13 +190,17 @@ v["message"]=json!("Connected");
 v["permissions"]=json!(permissions);
 v["needsPassword"]=json!(false);
 v["profile"]=json!(profile_name);
+v["protocol"]=json!(if legacy{1}else{2});
+v["compatibility"]=json!(legacy);
 v["micEnabled"]=json!(voice.as_ref().is_some_and(|s|s.mic_enabled()));
 }
 );
 
                                 },
+                                "error" if legacy&&p["message"].as_str().is_some_and(|s|s.to_lowercase().contains("password"))=>bail!("This older desktop requires its access password. OpenDesk does not send passwords to a desktop that cannot prove its identity. Update that desktop, or ask its owner to turn off its password."),
                                 "error"|"rejected"=>bail!("{}",p["message"].as_str().unwrap_or("Connection declined")),_=>{}
                             },
+                            "video_full"|"video_delta" if legacy&&!session.is_empty()=>{if let Some(worker)=&decoder{worker.push_legacy(typ,p.clone())?;}},
                             "heartbeat"=>{
 if let Some(sent)=p["echo"].as_f64(){
 let rtt=((started.elapsed().as_secs_f64()-sent)*1000.0).max(0.0);
@@ -167,12 +226,18 @@ shared.connection(&key,|v|v["rtt"]=json!(rtt));
                 let Some(command)=command else{break};let typ=command["type"].as_str().unwrap_or("");
                 match typ{
                     "disconnect"=>{if !session.is_empty(){send(&tx,"input_reset",json!({})).await?;send(&tx,"session_end",json!({})).await?;}disconnected=true;break},
+                    "legacy_accept" if legacy&&!verified=>{
+                        if command["allow"]!=true{disconnected=true;break}
+                        legacy_limits=serde_json::from_value(command["permissions"].clone()).unwrap_or_default();legacy_limits.file_transfer=false;
+                        verified=true;shared.connection(&key,|v|{v["needsLegacy"]=json!(false);v["message"]=json!("Requesting permission from the older desktop…");});
+                        send(&tx,"connect",json!({"target_id":target_id})).await?;
+                    },
                     "trust" if !offered_key.is_empty()&&!verified=>{
                         if command["allow"]!=true{disconnected=true;break}
                         {let mut store=shared.store.lock().unwrap();store.config["trusted_devices"][&device]=json!(offered_key);store.save()?;}
                         verified=true;shared.connection(&key,|v|v["needsTrust"]=json!(false));send(&tx,"connect",json!({"target_id":target_id})).await?;
                     },
-                    "password" if verified=>{password=command["password"].as_str().unwrap_or("").to_owned();shared.connection(&key,|v|v["needsPassword"]=json!(false));send(&tx,"connect",json!({"target_id":target_id})).await?;},
+                    "password" if verified&&!legacy=>{password=command["password"].as_str().unwrap_or("").to_owned();shared.connection(&key,|v|v["needsPassword"]=json!(false));send(&tx,"connect",json!({"target_id":target_id})).await?;},
                     "video_profile" if !session.is_empty()=>{let name=command["profile"].as_str().unwrap_or("balanced");send(&tx,"video_config",profile(name)).await?;shared.connection(&key,|v|v["profile"]=json!(name));},
                     "input" if !session.is_empty()=>{
                         let mut p=command["payload"].clone();
@@ -202,7 +267,7 @@ send(&tx,&typ,p).await?;
         }}
         drop(decoder);drop(voice);
         shared.frames.lock().unwrap().remove(&key);
-        shared.connection(&key,|v|{v["state"]=json!("disconnected");v["needsTrust"]=json!(false);v["needsPassword"]=json!(false);if disconnected{v["message"]=json!("Disconnected");}});Ok(())
+        shared.connection(&key,|v|{v["state"]=json!("disconnected");v["needsTrust"]=json!(false);v["needsLegacy"]=json!(false);v["needsPassword"]=json!(false);if disconnected{v["message"]=json!("Disconnected");}});Ok(())
     }.await;
     shared.frames.lock().unwrap().remove(&key);
     let _ = tx.send(Outbound::Close).await;

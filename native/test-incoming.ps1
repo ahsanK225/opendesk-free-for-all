@@ -10,17 +10,25 @@ try {
     $env:PATH="$env:SystemRoot\System32;$env:SystemRoot"
     $env:OPENDESK_DEV_NO_TUNNEL='1';$env:QT_FORCE_STDERR_LOGGING='1'
     Remove-Item Env:QT_PLUGIN_PATH,Env:QML_IMPORT_PATH,Env:QML2_IMPORT_PATH -ErrorAction SilentlyContinue
+    # Load a fresh bundle once so cold-start disk reads do not race the fixed evidence timer below.
+    $warm=Join-Path $evidence ('warm-'+[Guid]::NewGuid().ToString('N').Substring(0,6))
+    New-Item -ItemType Directory -Force -Path $warm | Out-Null
+    '{"host_id":"123456789","native_settings":{"publicAccess":false,"micEnabled":false}}' | Set-Content -LiteralPath (Join-Path $warm 'config.json')
+    $warmup=Start-Process -FilePath $ApplicationPath -ArgumentList @('--smoke-test','--smoke-minimized','--config-dir',('"'+$warm+'"')) -WindowStyle Normal -PassThru
+    $null=$warmup.Handle # Windows PowerShell keeps ExitCode only once the handle is cached.
+    if(!$warmup.WaitForExit(240000) -or $warmup.ExitCode -ne 0){if(!$warmup.HasExited){$warmup.Kill()};throw 'Native warm-up did not complete'}
     foreach($mode in @('pending','cancel')) {
         $case=Join-Path $evidence ($mode+'-'+[Guid]::NewGuid().ToString('N').Substring(0,6))
         New-Item -ItemType Directory -Force -Path $case | Out-Null
         '{"host_id":"123456789","native_settings":{"publicAccess":false,"micEnabled":false}}' | Set-Content -LiteralPath (Join-Path $case 'config.json')
         $env:QT_SCALE_FACTOR=if($mode -eq 'pending'){'1.5'}else{'1'}
         $state=Join-Path $case 'state.json'
-        $process=Start-Process -FilePath $ApplicationPath -ArgumentList @('--smoke-test','--smoke-minimized','--smoke-delay-ms','10000','--config-dir',('"'+$case+'"'),'--smoke-output',('"'+$state+'"'),'--screenshot',('"'+(Join-Path $case 'window.png')+'"')) -WindowStyle Normal -PassThru -RedirectStandardError (Join-Path $case 'stderr.log')
+        $process=Start-Process -FilePath $ApplicationPath -ArgumentList @('--smoke-test','--smoke-minimized','--smoke-delay-ms','30000','--config-dir',('"'+$case+'"'),'--smoke-output',('"'+$state+'"'),'--screenshot',('"'+(Join-Path $case 'window.png')+'"')) -WindowStyle Normal -PassThru -RedirectStandardError (Join-Path $case 'stderr.log')
+        $null=$process.Handle # Windows PowerShell keeps ExitCode only once the handle is cached.
         try {
             # Discover the port owned by this fixture rather than predicting a
             # free port while another isolated host is shutting down.
-            $limit=[DateTime]::UtcNow.AddSeconds(8)
+            $limit=[DateTime]::UtcNow.AddSeconds(60) # The first launch of a fresh bundle can be slow on a loaded machine.
             do {
                 $listener=Get-NetTCPConnection -OwningProcess $process.Id -State Listen -ErrorAction SilentlyContinue | Where-Object {$_.LocalPort -ge 8080 -and $_.LocalPort -lt 8100} | Select-Object -First 1
                 if(!$listener){Start-Sleep -Milliseconds 100}
