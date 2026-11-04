@@ -111,7 +111,7 @@ Found on this computer during the audit: Rust 1.95.0, CMake 4.3.1, Node 25.3.0, 
 
 ## Recommended next steps
 
-1. Check voice with a real microphone on two PCs (T-016).
+1. Check ID connection, voice and video on two PCs on separate networks (T-016, T-018).
 2. Check the built app on real hardware.
 3. Do the two-device internet and headset acceptance run.
 4. Update stale documents, then prepare 2.9.

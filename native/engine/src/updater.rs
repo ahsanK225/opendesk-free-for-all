@@ -1,4 +1,4 @@
-//! Explicit, hash-verified updates. Application exit and replacement are separate processes.
+//! Automatic, hash-verified updates. Application exit and replacement are separate processes.
 use crate::{app::Shared, store};
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
@@ -82,19 +82,37 @@ async fn metadata(client: &reqwest::Client) -> Result<Value> {
     }
     Ok(serde_json::from_slice(&bytes)?)
 }
-/// Looks for a release soon after start and every six hours. A failure here stays silent.
+/// Installing closes the app, so it must not happen while someone is connected in either direction.
+fn session_active(shared: &Shared) -> bool {
+    let view = shared.view.lock().unwrap();
+    view["hostSession"].is_object()
+        || view["incoming"].is_object()
+        || view["connections"].as_array().is_some_and(|items| items.iter().any(|item| matches!(item["state"].as_str(), Some("connecting" | "connected"))))
+}
+/// Looks for a release soon after start and every half hour, and installs it by itself when no
+/// session is open. Finding nothing stays silent. After a cancel or a failure it waits for the next start.
 pub fn check_on_start(shared: Arc<Shared>) {
     if cfg!(test) || !cfg!(feature = "full") || std::env::var_os("OPENDESK_DEV_NO_TUNNEL").is_some() {
         return;
     }
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(8)).await;
+        let mut stopped = false;
         while !shared.stop.load(Ordering::Acquire) {
-            if !shared.update_busy.swap(true, Ordering::AcqRel) {
-                let _ = perform(shared.clone(), false).await;
+            if !stopped && !shared.update_busy.swap(true, Ordering::AcqRel) {
+                if perform(shared.clone(), false, false).await.is_ok() && !session_active(&shared) {
+                    shared.update_cancel.store(false, Ordering::Release);
+                    shared.update(|v|v["update"]=json!({"state":"downloading","done":0,"total":0,"message":"Downloading the update…"}));
+                    if let Err(error) = perform(shared.clone(), true, true).await {
+                        stopped = true;
+                        let message = format!("{error:#}");
+                        let state = if message != CANCELLED { "failed" } else { "idle" };
+                        shared.update(|v| v["update"] = json!({"state":state,"message":message}));
+                    }
+                }
                 shared.update_busy.store(false, Ordering::Release);
             }
-            tokio::time::sleep(Duration::from_secs(6 * 60 * 60)).await;
+            tokio::time::sleep(Duration::from_secs(30 * 60)).await;
         }
     });
 }
@@ -110,7 +128,7 @@ pub fn start(shared: Arc<Shared>, install: bool) {
     shared.update_cancel.store(false, Ordering::Release);
     shared.update(|v|v["update"]=json!({"state":if install{"downloading"}else{"checking"},"done":0,"total":0,"message":if install{"Downloading the update…"}else{"Checking for updates…"}}));
     tokio::spawn(async move {
-        let result = perform(shared.clone(), install).await;
+        let result = perform(shared.clone(), install, false).await;
         if let Err(error) = result {
             let message = format!("{error:#}");
             let state = if install && message != CANCELLED { "failed" } else { "idle" };
@@ -119,7 +137,7 @@ pub fn start(shared: Arc<Shared>, install: bool) {
         shared.update_busy.store(false, Ordering::Release);
     });
 }
-async fn perform(shared: Arc<Shared>, install: bool) -> Result<()> {
+async fn perform(shared: Arc<Shared>, install: bool, automatic: bool) -> Result<()> {
     let portable = std::env::var_os("OPENDESK_PORTABLE_LAUNCHER").map(PathBuf::from);
     let client = client()?;
     let value = metadata(&client).await?;
@@ -162,6 +180,10 @@ async fn perform(shared: Arc<Shared>, install: bool) -> Result<()> {
         shared.update(|v|v["update"]=json!({"state":"verifying","version":version,"done":size,"total":total,"message":"Checking the download…"}));
         output.sync_all().await?;drop(output);
         if size<1024 || hex::encode(hash.finalize())!=expected { bail!("The update checksum did not match. The installed application was preserved.") }
+        if automatic&&session_active(&shared){
+            shared.update(|v|v["update"]=json!({"state":"waiting","version":version,"message":"The update is ready and installs when this session ends."}));
+            while session_active(&shared){if shared.stop.load(Ordering::Acquire){bail!("Update cancelled or too large")};tokio::time::sleep(Duration::from_secs(5)).await;}
+        }
         let updater=stage.join("OpenDeskSetupHelper.exe");tokio::fs::copy(helper,&updater).await?;
         let mut process=std::process::Command::new(updater);
         process.args(["--apply","--parent-pid",&std::process::id().to_string(),"--source"]).arg(&download).args(["--sha256",&expected]);

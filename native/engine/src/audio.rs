@@ -68,6 +68,7 @@ impl Resampler {
 #[cfg(feature = "full")]
 struct Playback {
     queue: VecDeque<f32>,
+    primed: bool,
     resampler: Resampler,
     source: u32,
     target: u32,
@@ -112,6 +113,7 @@ impl Voice {
             loopback: AtomicBool::new(false),
             playback: Mutex::new(Playback {
                 queue: VecDeque::with_capacity(6000),
+                primed: false,
                 resampler: Resampler::new(48000, 48000),
                 source: 48000,
                 target: 48000,
@@ -203,6 +205,20 @@ impl Voice {
 }
 #[cfg(feature = "full")]
 const TEST_SESSION: &str = "local-microphone-test";
+/// Voice leaves at 16 kHz, a third of the data of 48 kHz. Every peer already accepts this rate.
+#[cfg(feature = "full")]
+const VOICE_RATE: u32 = 16000;
+/// Audio held back after running dry, so a late packet does not cause a click at once.
+#[cfg(feature = "full")]
+const REFILL_MS: usize = 40;
+#[cfg(feature = "full")]
+fn voice_block(samples: &[f32]) -> Vec<u8> {
+    samples
+        .chunks(3)
+        .map(|part| part.iter().sum::<f32>() / part.len() as f32)
+        .flat_map(|v| ((v * 32767.0) as i16).to_le_bytes())
+        .collect()
+}
 #[cfg(feature = "full")]
 fn raise_level(level: &AtomicU32, samples: impl Iterator<Item = f32>) {
     let peak = samples.fold(0f32, |peak, value| peak.max(value.abs()));
@@ -254,7 +270,14 @@ where
             let volume = f32::from_bits(controls.volume.load(Ordering::Relaxed));
             if let Ok(mut state) = controls.playback.try_lock() {
                 for frame in data.chunks_mut(channels) {
-                    let sample = if let Some(value) = state.queue.pop_front() {
+                    if !state.primed && state.queue.len() >= state.target as usize * REFILL_MS / 1000 {
+                        state.primed = true;
+                    }
+                    let next = if state.primed { state.queue.pop_front() } else { None };
+                    if next.is_none() {
+                        state.primed = false;
+                    }
+                    let sample = if let Some(value) = next {
                         state.last = value;
                         value
                     } else {
@@ -326,7 +349,7 @@ fn run_audio(
 ) -> Result<()> {
     let host = cpal::default_host();
     let (mut output_stream, mut input_stream) = (None, None);
-    let (mic_tx, mic_rx) = mpsc::sync_channel(6);
+    let (mic_tx, mic_rx) = mpsc::sync_channel(3);
     let mut last_status = std::time::Instant::now() - Duration::from_secs(2);
     let mut microphone_error = String::new();
     let mut speaker_error = String::new();
@@ -470,11 +493,8 @@ fn run_audio(
             if sender.audio_capacity() == 0 {
                 continue;
             }
-            let bytes: Vec<u8> = samples
-                .into_iter()
-                .flat_map(|v| ((v * 32767.0) as i16).to_le_bytes())
-                .collect();
-            if sender.try_send(Outbound::Packet(packet("audio_chunk",json!({"session_id":session,"data":B64.encode(bytes),"sample_rate":48000,"channels":1,"format":"pcm_s16le"})))).is_ok(){sent_packets+=1;}
+            let bytes = voice_block(&samples);
+            if sender.try_send(Outbound::Packet(packet("audio_chunk",json!({"session_id":session,"data":B64.encode(bytes),"sample_rate":VOICE_RATE,"channels":1,"format":"pcm_s16le"})))).is_ok(){sent_packets+=1;}
         }
     }
     drop(input_stream);
@@ -529,6 +549,7 @@ mod device_tests {
             loopback: AtomicBool::new(false),
             playback: Mutex::new(Playback {
                 queue: VecDeque::new(),
+                primed: false,
                 resampler: Resampler::new(48000, 48000),
                 source: 48000,
                 target: 48000,

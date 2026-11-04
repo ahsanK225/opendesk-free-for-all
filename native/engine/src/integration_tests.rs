@@ -602,3 +602,80 @@ fn downgrade_after_a_verified_identity_is_refused() {
     assert_eq!(peer.sent("connect").len(), 1);
     peer.assert_secret_not_sent();
 }
+
+/// Uses the real tunnel and directories, so it needs internet access and the tunnel enabled.
+#[test]
+#[ignore = "uses public services"]
+fn a_desktop_is_reached_by_id_alone_through_the_public_services() {
+    fn slow_wait(label: &str, seconds: u64, mut ready: impl FnMut() -> bool) -> f64 {
+        let start = Instant::now();
+        while !ready() {
+            assert!(start.elapsed().as_secs() < seconds, "Timed out: {label}");
+            thread::sleep(Duration::from_millis(100));
+        }
+        start.elapsed().as_secs_f64()
+    }
+    assert!(std::env::var_os("OPENDESK_DEV_NO_TUNNEL").is_none());
+    let case = Case::new();
+    let (host_dir, client_dir, late_dir, shared_dir) = (case.directory("host"), case.directory("client"), case.directory("late"), case.directory("shared"));
+    fs::write(host_dir.join("config.json"), serde_json::to_vec(&json!({"native_settings":{"publicAccess":true,"lanAccess":false,"micEnabled":false,"speakerEnabled":false,"sharedRoot":shared_dir}})).unwrap()).unwrap();
+    for directory in [&client_dir, &late_dir] { config(directory, &shared_dir); }
+    let host = App::create(host_dir).unwrap();
+    let client = App::create(client_dir).unwrap();
+    let id: String = snapshot(&host)["deviceId"].as_str().unwrap().chars().filter(char::is_ascii_digit).collect();
+    let tunnel = slow_wait("tunnel ready", 120, || !snapshot(&host)["shareUrl"].as_str().unwrap_or("").is_empty());
+    println!("tunnel ready after {tunnel:.1} s");
+    thread::sleep(Duration::from_secs(5));
+    let share = snapshot(&host)["shareUrl"].as_str().unwrap().to_owned();
+    let compact = host.shared.store.lock().unwrap().compact_record(&share);
+    println!("compact record length: {:?}", compact.as_ref().map(String::len));
+    let usable = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+        let write = crate::directory::post(format!("https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/s460x9wm/{id}/{}", compact.unwrap()), None).await;
+        println!("backup write: {write:?}");
+        let client = crate::directory::http().unwrap();
+        for _ in 0..6 {
+            match client.get(format!("https://keyvalue.immanuel.co/api/KeyVal/GetValue/s460x9wm/{id}")).send().await {
+                Ok(response) => match response.text().await {
+                    Ok(text) => {
+                        println!("backup read length {}", text.len());
+                        if crate::directory::backup_value_is_usable(&text, &id) { return true }
+                    }
+                    Err(error) => println!("backup read failed: {error}"),
+                },
+                Err(error) => println!("backup read failed: {error}"),
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+        false
+    });
+    println!("backup directory holds a usable record: {usable}");
+    client.command(json!({"type":"connect","target":id}));
+    let lookup = slow_wait("device verification", 90, || snapshot(&client)["connections"][0]["needsTrust"] == true);
+    println!("found by ID and connected after {lookup:.1} s");
+    let key = snapshot(&client)["connections"][0]["key"].as_str().unwrap().to_owned();
+    client.command(json!({"type":"trust","key":key,"allow":true}));
+    slow_wait("attended approval", 30, || snapshot(&host)["incoming"].is_object());
+    let request = snapshot(&host)["incoming"]["requestId"].as_str().unwrap().to_owned();
+    host.command(json!({"type":"approve","requestId":request,"allow":true,"permissions":{"input":false,"audio":false,"clipboard":false,"file_transfer":false}}));
+    let first = slow_wait("decoded desktop frame", 30, || client.shared.frames.lock().unwrap().contains_key(&key));
+    println!("first frame after {first:.1} s");
+    let mut rtts = Vec::new();
+    let mut seconds = 0;
+    while seconds < 45 {
+        seconds += 1;
+        thread::sleep(Duration::from_secs(1));
+        let rtt = snapshot(&client)["connections"][0]["rtt"].as_f64();
+        if let Some(rtt) = rtt { rtts.push(rtt); }
+        println!("second: rtt {:.0} host {}", rtt.unwrap_or(0.0), snapshot(&host)["hostSession"]["video"]);
+    }
+    rtts.sort_by(f64::total_cmp);
+    println!("round trip through the tunnel: {} samples, median {:.0} ms, worst {:.0} ms", rtts.len(), rtts.get(rtts.len() / 2).copied().unwrap_or(0.0), rtts.last().copied().unwrap_or(0.0));
+    drop(client);
+    drop(host);
+    if std::env::var_os("OPENDESK_E2E_SKIP_OFFLINE").is_some() { return }
+    thread::sleep(Duration::from_secs(130));
+    let late = App::create(late_dir).unwrap();
+    late.command(json!({"type":"connect","target":id}));
+    slow_wait("offline message", 120, || snapshot(&late)["connections"][0]["message"].as_str().is_some_and(|m| m.contains("last online")));
+    println!("offline desktop says: {}", snapshot(&late)["connections"][0]["message"].as_str().unwrap().replace(&id, "<id>"));
+}

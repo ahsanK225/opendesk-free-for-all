@@ -30,7 +30,7 @@ ApplicationWindow {
     readonly property var updateInfo:smokeUpdate||model.update||({})
     readonly property string updateState:updateInfo.state||"idle"
     property string dismissedUpdate:""
-    onUpdateStateChanged:{if(["downloading","verifying","installing","failed"].indexOf(updateState)>=0||(updateState==="available"&&updateInfo.version!==dismissedUpdate))updateDialog.open();else if(updateState==="idle")updateDialog.close();}
+    onUpdateStateChanged:{if(["downloading","verifying","installing","failed"].indexOf(updateState)>=0||(updateState==="available"&&updateInfo.version!==dismissedUpdate))updateDialog.open();else if(updateState==="idle"||updateState==="waiting")updateDialog.close();}
     onPageChanged:{if(page!=="files")return;if(!activeKey.length)for(let i=0;i<sessions.length;i++)if(sessions[i].state==="connected"){activeKey=sessions[i].key;break;}if(current.state==="connected"&&current.permissions&&current.permissions.file_transfer&&!current.files)send("list_files",{key:activeKey,path:"."});}
     readonly property bool sharingFiles:Boolean(model.hostSession&&model.hostSession.permissions&&model.hostSession.permissions.file_transfer)
     readonly property var transferInfo:smokeTransfer||current.transferInfo||({})
@@ -310,7 +310,7 @@ ApplicationWindow {
         onAccepted:root.send("legacy_accept",{key:root.activeKey,allow:true,permissions:{input:legacyInput.checked,audio:legacyAudio.checked,clipboard:legacyClipboard.checked,file_transfer:false}})
         onRejected:root.send("legacy_accept",{key:root.activeKey,allow:false})
     }
-    Dialog{id:updateDialog;title:root.updateState==="available"?"Update available":root.updateState==="failed"?"Update did not finish":"Updating OpenDesk";modal:true;anchors.centerIn:parent;width:Math.min(480,root.width-48);closePolicy:Popup.NoAutoClose
+    Dialog{id:updateDialog;title:root.updateState==="available"?"Update available":root.updateState==="failed"?"Update did not finish":"Updating OpenDesk";modal:root.updateState==="available"||root.updateState==="failed";anchors.centerIn:parent;width:Math.min(480,root.width-48);closePolicy:Popup.NoAutoClose
         contentItem:ColumnLayout{spacing:12
             Text{text:root.updateState==="available"?"OpenDesk "+(root.updateInfo.version||"")+" is ready to download. You have "+(root.model.version||"")+".":root.updateInfo.message||"";color:Theme.text;font.pixelSize:14;wrapMode:Text.WordWrap;Layout.fillWidth:true}
             Repeater{model:root.updateState==="available"?(root.updateInfo.notes||[]):[];Text{required property var modelData;text:"•  "+modelData;color:Theme.muted;font.pixelSize:12;wrapMode:Text.WordWrap;Layout.fillWidth:true}}

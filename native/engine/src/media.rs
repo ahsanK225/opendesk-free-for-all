@@ -4,7 +4,7 @@ use crate::{
     network::{Outbound, packet},
     protocol::VideoPacket,
     session::Permissions,
-    stream::AckWindow,
+    stream::{AckWindow, Pace},
 };
 use anyhow::{Context, Result, bail};
 use image::{ImageFormat, ImageReader};
@@ -365,17 +365,16 @@ break}
     }
     let mut encoder = TileEncoder::default();
     let mut window = AckWindow::new(3);
+    let mut motion_step = 0u32;
     let start = Instant::now();
     let mut last_raw = None;
     let mut next = Instant::now();
     let mut clipboard_time = Instant::now();
-    let mut requested_width = 1600;
-    let mut width = 1600;
-    let mut quality = 65u8;
-    let mut requested_quality = 65u8;
-    let mut fps = 30u32;
+    let mut pace = Pace::new(30, 1600, 65);
     let mut adapt = Instant::now();
-    let mut baseline_rtt = 0u64;
+    let (mut sent_frames, mut full_frames, mut sent_bytes) = (0u64, 0u64, 0u64);
+    let mut last_refresh = Instant::now();
+    let mut configured = false;
     while !stop.load(Ordering::Acquire) && !shared.stop.load(Ordering::Acquire) {
         let budget = Instant::now();
         for _ in 0..128 {
@@ -387,29 +386,26 @@ break}
             }
             match typ.as_str() {
                 "video_config" => {
-                    fps = p["fps"].as_u64().unwrap_or(30).clamp(10, 60) as u32;
-                    requested_width =
-                        p["max_width"].as_u64().unwrap_or(1600).clamp(640, 2560) as u32;
-                    width = requested_width;
-                    requested_quality = p["quality"].as_u64().unwrap_or(65).clamp(20, 95) as u8;
-                    quality = requested_quality;
+                    pace.configure(
+                        p["fps"].as_u64().unwrap_or(30).clamp(10, 60) as u32,
+                        p["max_width"].as_u64().unwrap_or(1600).clamp(640, 2560) as u32,
+                        p["quality"].as_u64().unwrap_or(65).clamp(20, 95) as u8,
+                    );
+                    window.refresh();
+                    configured = true;
+                }
+                // A burst of requests must not become a burst of full frames.
+                "video_refresh" if last_refresh.elapsed() >= Duration::from_millis(800) => {
+                    last_refresh = Instant::now();
                     window.refresh();
                 }
-                "video_refresh" => window.refresh(),
+                "video_refresh" => {}
                 "video_ack" => {
                     if let Some(frame) = p["frame_id"].as_u64() {
-                        let _ = window.acknowledge(frame, start.elapsed().as_millis() as u64);
-                    }
-                    let rtt = p["rtt_ms"].as_u64().unwrap_or(0).min(2000);
-                    if rtt > 0 {
-                        baseline_rtt = if baseline_rtt == 0 {
-                            rtt
-                        } else {
-                            baseline_rtt.min(rtt)
-                        };
-                        window.set_limit(
-                            ((rtt as f64 / 1000.0 * fps as f64 * 1.2).ceil() as usize).clamp(3, 10),
-                        );
+                        let now = start.elapsed().as_millis() as u64;
+                        if let Some(delay) = window.acknowledge(frame, now) {
+                            pace.on_ack(frame, delay, p["rtt_ms"].as_u64().unwrap_or(0), now);
+                        }
                     }
                 }
                 "input_reset" => input.release_all(),
@@ -471,8 +467,17 @@ break}
         if window.stalled(elapsed) {
             window.refresh();
         }
+        pace.tick(elapsed);
+        window.set_limit(pace.limit());
         if adapt.elapsed() > Duration::from_secs(1) {
             adapt = Instant::now();
+            let (delay, baseline) = pace.delays();
+            shared.update(|v| {
+                if v["hostSession"].is_object() {
+                    v["hostSession"]["video"] = json!({"width":pace.width,"quality":pace.quality,"delayMs":delay,"fastestMs":baseline,"linkKBps":pace.speed(),"sentFrames":sent_frames,"fullFrames":full_frames,"sentBytes":sent_bytes});
+                }
+            });
+            (sent_frames, full_frames, sent_bytes) = (0, 0, 0);
             if let Some(voice) = &voice {
                 shared.update(|v| {
                     if v["hostSession"].is_object() {
@@ -480,18 +485,15 @@ break}
                     }
                 });
             }
-            let old = window.oldest_age(elapsed);
-            if !window.can_send() && old > baseline_rtt + 100 {
-                width = (width * 85 / 100).max(640);
-                quality = quality.saturating_sub(5).max(35);
-            } else if window.can_send() {
-                width = (width + 64).min(requested_width);
-                quality = quality.saturating_add(1).min(requested_quality);
-            }
         }
-        if Instant::now() >= next && window.can_send() && sender.capacity() > 0 {
-            next = Instant::now() + Duration::from_secs_f64(1.0 / fps as f64);
-            let captured = capture.grab()?;
+        // A viewer cannot decode frames until it has joined, and it says so with its first config.
+        let viewer_ready = configured || elapsed >= 500;
+        if viewer_ready && Instant::now() >= next && window.can_send() && sender.capacity() > 0 && pace.ready(elapsed) {
+            next = Instant::now() + Duration::from_secs_f64(1.0 / pace.fps);
+            let captured = match test_motion(&mut motion_step) {
+                Some(raw) => Some(raw),
+                None => capture.grab()?,
+            };
             let changed = captured.is_some();
             if let Some(raw) = captured {
                 last_raw = Some(raw);
@@ -499,12 +501,20 @@ break}
             if (changed || window.needs_keyframe)
                 && let Some(raw) = &last_raw
                 && let Some(encoded) =
-                    encoder.encode(raw, width, quality, window.needs_keyframe, &session)?
+                    encoder.encode(raw, pace.width, pace.quality, window.needs_keyframe, &session)?
             {
                 let id = encoded.id;
                 let full = encoded.full;
+                let size = encoded.data.len() as u64;
                 if sender.try_send(Outbound::Video(encoded.data)).is_ok() {
-                    if !window.sent(id, elapsed, full) {
+                    sent_frames += 1;
+                    sent_bytes += size;
+                    full_frames += u64::from(full);
+                    // Time starts after encoding, so the delay measures the link and the far side.
+                    let sent_at = start.elapsed().as_millis() as u64;
+                    if window.sent(id, sent_at, full) {
+                        pace.on_sent(id, size, sent_at);
+                    } else {
                         window.refresh();
                     }
                 } else {
@@ -522,6 +532,30 @@ break}
 enum DecodeInput {
     Binary(Vec<u8>),
     Legacy(String, Value),
+}
+/// Lets a live test stream moving pictures without touching the real screen.
+fn test_motion(step: &mut u32) -> Option<(u32, u32, Vec<u8>)> {
+    #[cfg(test)]
+    if std::env::var_os("OPENDESK_E2E_MOTION").is_some() {
+        *step += 1;
+        return Some(test_screen(*step));
+    }
+    let _ = step;
+    None
+}
+#[cfg(test)]
+fn test_screen(step: u32) -> (u32, u32, Vec<u8>) {
+    let (w, h) = (1920u32, 1080u32);
+    let mut bytes = vec![40u8; (w * h * 4) as usize];
+    for y in 150..850u32 {
+        let row = y.wrapping_add(step * 6);
+        for x in 300..1500u32 {
+            let i = ((y * w + x) * 4) as usize;
+            let v = if (x / 7 + row / 9) % 5 == 0 { 230 } else { 30 + ((x ^ row) % 40) as u8 };
+            bytes[i..i + 4].copy_from_slice(&[v, v, v, 255]);
+        }
+    }
+    (w, h, bytes)
 }
 pub struct DecodeWorker {
     sender: mpsc::SyncSender<DecodeInput>,
@@ -543,7 +577,7 @@ impl DecodeWorker {
         let rtt_worker = rtt.clone();
         let reset = Arc::new(AtomicBool::new(false));
         let reset_worker = reset.clone();
-        std::thread::Builder::new().name("opendesk-video-decode".into()).spawn(move||{let mut decoder=Decoder::default();let mut legacy=crate::legacy::VideoBridge::default();while !signal.load(Ordering::Acquire){
+        std::thread::Builder::new().name("opendesk-video-decode".into()).spawn(move||{let mut decoder=Decoder::default();let mut legacy=crate::legacy::VideoBridge::default();let mut last_request:Option<Instant>=None;while !signal.load(Ordering::Acquire){
             if reset_worker.swap(false,Ordering::AcqRel){while receiver.try_recv().is_ok(){} decoder=Decoder::default();let _=out.try_send(Outbound::Packet(packet("video_refresh",json!({}))));}
             match receiver.recv_timeout(Duration::from_millis(50)){
             Ok(input)=>match (match input{DecodeInput::Binary(bytes)=>Ok(bytes),DecodeInput::Legacy(typ,p)=>legacy.convert(&typ,&p,&session)}).and_then(|bytes|decoder.decode(&bytes,&session)){
@@ -556,9 +590,13 @@ let _=out.blocking_send(Outbound::Packet(packet("video_ack",json!({
 }
 ,Err(_)=>{
 decoder=Decoder::default();
+// Frames already on the way also fail until the full frame arrives, and need no new request.
+if last_request.is_none_or(|time|time.elapsed()>=Duration::from_secs(1)){
+last_request=Some(Instant::now());
 let _=out.blocking_send(Outbound::Packet(packet("video_refresh",json!({
 }
 ))));
+}
 }
 }
 ,
@@ -782,5 +820,80 @@ mod tests {
         let next = decoder.decode(&delta.data, "session-native-12345").unwrap();
         assert_eq!(next.generation, 2);
         assert_eq!(frame.generation, 1);
+    }
+}
+#[cfg(test)]
+mod link_simulation {
+    use super::*;
+    /// A moving 1080p screen through the real encoder over a modelled link. Run with
+    /// `--ignored --nocapture`. The link is a model, so this compares policies only.
+    #[derive(Clone, Copy, PartialEq)]
+    enum Policy { Before, Now }
+    fn run(policy: Policy, mbps: f64, one_way: u64, seconds: u64) -> (u64, u64, f64, u64) {
+        let rate = mbps * 1_000_000.0 / 8.0 / 1000.0;
+        let mut encoder = TileEncoder::default();
+        let mut window = AckWindow::new(3);
+        let mut pace = Pace::new(30, 1600, 65);
+        let (mut old_width, mut old_quality, mut baseline) = (1600u32, 65u8, 0u64);
+        let (mut free_at, mut next, mut adapt) = (0f64, 0u64, 0u64);
+        let mut acks: Vec<(u64, u64, u64)> = Vec::new();
+        let (mut delays, mut bytes, mut step) = (Vec::new(), 0u64, 0u32);
+        let end = seconds * 1000;
+        for now in (0..end).step_by(2) {
+            let mut index = 0;
+            while index < acks.len() {
+                if acks[index].1 <= now {
+                    let (id, _, sent) = acks.remove(index);
+                    if let Some(delay) = window.acknowledge(id, now) {
+                        if policy == Policy::Now { pace.on_ack(id, delay, one_way * 2 + (free_at - now as f64).max(0.0) as u64, now); }
+                    }
+                    if now > end / 2 { delays.push(now - sent); }
+                } else { index += 1; }
+            }
+            if policy == Policy::Now {
+                pace.tick(now);
+                window.set_limit(pace.limit());
+            } else {
+                let rtt = one_way * 2 + (free_at - now as f64).max(0.0) as u64;
+                baseline = if baseline == 0 { rtt } else { baseline.min(rtt) };
+                window.set_limit(((rtt as f64 / 1000.0 * 30.0 * 1.2).ceil() as usize).clamp(3, 10));
+                if now - adapt >= 1000 {
+                    adapt = now;
+                    if !window.can_send() && window.oldest_age(now) > baseline + 100 {
+                        old_width = (old_width * 85 / 100).max(640);
+                        old_quality = old_quality.saturating_sub(5).max(35);
+                    } else if window.can_send() {
+                        old_width = (old_width + 64).min(1600);
+                        old_quality = old_quality.saturating_add(1).min(65);
+                    }
+                }
+                if window.oldest_age(now) > 2000 { window.refresh(); }
+            }
+            if now >= next && window.can_send() && (policy == Policy::Before || pace.ready(now)) {
+                next = now + (1000.0 / 30.0) as u64;
+                step += 1;
+                let (width, quality) = if policy == Policy::Now { (pace.width, pace.quality) } else { (old_width, old_quality) };
+                if let Some(frame) = encoder.encode(&test_screen(step), width, quality, window.needs_keyframe, "s").unwrap() {
+                    window.sent(frame.id, now, frame.full);
+                    if policy == Policy::Now { pace.on_sent(frame.id, frame.data.len() as u64, now); }
+                    bytes += frame.data.len() as u64;
+                    free_at = free_at.max(now as f64) + frame.data.len() as f64 / rate;
+                    acks.push((frame.id, free_at as u64 + one_way * 2, now));
+                }
+            }
+        }
+        delays.sort_unstable();
+        let at = |p: usize| delays.get(delays.len().saturating_sub(1) * p / 100).copied().unwrap_or(0);
+        (at(50), at(95), delays.len() as f64 / (seconds as f64 / 2.0), bytes / 1024 / seconds)
+    }
+    #[test]
+    #[ignore = "measurement, takes a few minutes"]
+    fn frame_delay_before_and_now() {
+        for mbps in [2.0, 5.0, 20.0] {
+            for (name, policy) in [("before", Policy::Before), ("now", Policy::Now)] {
+                let (p50, p95, fps, rate) = run(policy, mbps, 40, 30);
+                println!("{mbps} Mbps {name}: delay p50 {p50} ms, p95 {p95} ms, {fps:.1} fps, {rate} KB/s");
+            }
+        }
     }
 }

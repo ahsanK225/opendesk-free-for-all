@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.1 stable — 2026-11-05
+
+Tested through the real tunnel on one PC. Two physical PCs on separate networks and a real microphone were not tested. Results are in [VALIDATION_3_1.md](docs/VALIDATION_3_1.md).
+
+- Updates install by themselves from 3.1 on. OpenDesk checks every half hour, downloads with a progress window you can cancel, and installs when no session is open. Going from 3.0 to 3.1 still takes one click, because that is the code 3.0 has. Lite is still updated by hand.
+- The second directory now works. Every signed record was too long for it, and its write request lacked a required header, so ID lookup depended on one service. A compact signed record fits.
+- A host stays inside the primary directory's limit of 250 messages a day per address. It used to publish every 30 seconds, which used that up in about two hours. It now publishes every 30 seconds for the first 30 minutes of a tunnel address, then every 10 minutes.
+- Viewers keep a record for 12 hours, ask the address whether it answers, and use the newest one that does.
+- A dead tunnel is replaced after 3 minutes without an answer, for example after sleep or a network change.
+- New messages say whether the desktop was last online some minutes ago, was not seen for 12 hours, or the directory could not be reached.
+- Video is paced to what actually reached the viewer. The in-flight window used to grow when delay grew, which made the queue longer. A slow link no longer forces extra full frames, and the frames that open a session are no longer repeated.
+- Voice is sent at 16 kHz instead of 48 kHz, about a third of the data, with shorter send queues and a small refill buffer. Every earlier peer already accepts this rate.
+- Viewers up to 3.0 only see a host's record while it is fresh, so after 30 minutes they may fail to find a 3.1 host by ID. Update both PCs, or use a share link.
+
 ## 3.0 stable — 2026-11-04
 
 Two physical PCs and a real microphone were not tested. Results are in [VALIDATION_3_0.md](docs/VALIDATION_3_0.md).

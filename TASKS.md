@@ -35,3 +35,6 @@ Started 2026-11-04. The acceptance list above is preserved as the release gate. 
 | T-015 | Lite and Full side by side | architect | Open | Lite installer shutdown helper also closes a running Full instance; both share one instance name and `%USERPROFILE%\.opendesk` |
 | T-016 | Real microphone and two-PC voice check | release-audit | Open, needs hardware | The PC used for 3.0 has no connected microphone; voice heard on the other PC with a real mic |
 | T-017 | Real update from 3.0 to a later release | release-audit | Open | The update window downloads, verifies and installs a real newer release |
+| T-018 | ID connection between two PCs on separate networks | release-audit | Open, needs hardware | Tested through the real tunnel on one PC only; connect from a phone hotspot to a PC on another network |
+| T-019 | Own directory service | architect, security | Open | Directories are free third-party services without a guarantee; needs a hosted service the project owns |
+| T-020 | Direct UDP path and voice codec | architect | Open | All traffic is TCP through Cloudflare, and voice is uncompressed PCM; a direct path and a codec need new dependencies and a design |

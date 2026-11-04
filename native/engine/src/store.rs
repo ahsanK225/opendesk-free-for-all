@@ -170,8 +170,15 @@ impl Store {
         json!({"nonce":nonce,"public_key":self.key(),"signature":B64.encode(self.identity.sign(format!("OpenDesk-v2:{nonce}").as_bytes()).to_bytes())})
     }
     pub fn directory_record(&self, url: &str) -> Value {
-        let body = json!({"id":self.id(),"url":url,"expires":now()+120}).to_string();
+        let body = crate::directory::record_body(&self.id(), url, now() + crate::directory::FRESH_FOR);
         json!({"key":self.key(),"signature":B64.encode(self.identity.sign(body.as_bytes()).to_bytes()),"body":body})
+    }
+    /// The same signed record, short enough for the backup directory's value limit.
+    pub fn compact_record(&self, url: &str) -> Option<String> {
+        let name = url.strip_prefix("https://")?.strip_suffix(".trycloudflare.com")?;
+        let expires = now() + crate::directory::FRESH_FOR;
+        let signature = self.identity.sign(crate::directory::record_body(&self.id(), url, expires).as_bytes());
+        Some(crate::directory::encode_compact(&self.identity.verifying_key().to_bytes(), &signature.to_bytes(), expires as u32, name))
     }
     pub fn password_record(&self) -> Result<Option<Value>> {
         let value = self.config["unattended_password"].as_str().unwrap_or("");

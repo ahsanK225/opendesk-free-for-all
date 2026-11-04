@@ -1,16 +1,16 @@
 {
-  "version": "3.0",
+  "version": "3.1",
   "channel": "stable",
-  "release_date": "2026-11-04",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0/OpenDesk_v3.0_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.0/OpenDesk_Setup_v3.0_Installer.exe",
-  "sha256": "7c50ee80d304aaa1a5923b0a04bb14061fecb60309163eb65d7fbea421068d7d",
-  "installer_sha256": "95abdcdb02b2be38c5a0a0645ec9b38791e3594b5e33c91aa1e7ad313620c83d",
+  "release_date": "2026-11-05",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.1/OpenDesk_v3.1_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.1/OpenDesk_Setup_v3.1_Installer.exe",
+  "sha256": "0dd07704062870e84ce218c34a8a4fbc6ab02960f6d0fc45580f5e4cdffea6db",
+  "installer_sha256": "0f7b598d030f0ce477a8c8bb7469e69f351b92f30be1ff7647c82b305cc3dc47",
   "changelog": [
-    "In-app update window with download progress and automatic install",
-    "Your mouse stays free while the remote side moves its pointer",
-    "Local network access is now a setting and is off by default",
-    "Faster file transfer with a progress bar, and a clear view of the folder you share",
-    "Microphone test, level meters and clearer voice status"
+    "Updates now download and install by themselves when no session is open",
+    "Connecting by ID is more reliable, with a working second directory",
+    "Video sends only what your connection can carry, which reduces delay",
+    "Voice uses a third of the data",
+    "Clear messages when the other PC is offline or the ID was not found"
   ]
 }

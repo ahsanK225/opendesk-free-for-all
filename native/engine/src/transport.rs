@@ -25,7 +25,7 @@ pub struct Receiver {
 }
 pub fn channel() -> (Sender<Outbound>, Receiver) {
     let (control, cr) = mpsc::channel(128);
-    let (audio, ar) = mpsc::channel(12);
+    let (audio, ar) = mpsc::channel(5);
     let (bulk, br) = mpsc::channel(8);
     let (video, vr) = mpsc::channel(2);
     (
