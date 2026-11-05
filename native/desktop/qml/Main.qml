@@ -20,12 +20,15 @@ ApplicationWindow {
     property string activeKey:""
     property string serverActive:"home"
     property bool favoritesOnly:false
+    property string deviceSearch:""
+    function matchesDevice(item){const q=deviceSearch.trim().toLowerCase();return (!favoritesOnly||item.favorite)&&(!q.length||String(item.alias||"").toLowerCase().indexOf(q)>=0||String(item.id||"").toLowerCase().indexOf(q)>=0);}
     readonly property bool lite:model.edition==="lite"
     readonly property string legacyRequestKey:current.needsLegacy?activeKey:""
     onLegacyRequestKeyChanged:{if(legacyRequestKey.length)legacyDialog.open();else legacyDialog.close();}
     readonly property string approvalRequestId:(model.incoming||{}).requestId||""
     onApprovalRequestIdChanged:{if(approvalRequestId.length)approval.open();else approval.close();}
     property var smokeUpdate:null
+    property bool smokePointer:false
     property var smokeTransfer:null
     readonly property var updateInfo:smokeUpdate||model.update||({})
     readonly property string updateState:updateInfo.state||"idle"
@@ -159,9 +162,9 @@ ApplicationWindow {
                 }
                 ScrollView {id:savedScroll;clip:true;contentWidth:availableWidth
                     ColumnLayout{width:savedScroll.availableWidth;spacing:24
-                        RowLayout{Layout.margins:32;Layout.fillWidth:true;Text{text:"Saved desktops";color:Theme.text;font.pixelSize:28;font.weight:Font.DemiBold;Layout.fillWidth:true}ActionButton{text:root.favoritesOnly?"Show all":"Favorites";glyph:"\ue734";onClicked:root.favoritesOnly=!root.favoritesOnly}}
-                        GridLayout{Layout.leftMargin:32;Layout.rightMargin:32;Layout.fillWidth:true;columns:Math.max(1,Math.floor(width/270));rowSpacing:16;columnSpacing:16;Repeater{model:(root.model.recents||[]).filter(item=>!root.favoritesOnly||item.favorite);delegate:deviceCard}}
-                        Text{visible:!(root.model.recents||[]).length;text:"Connect to a desktop to save it here.";color:Theme.muted;Layout.leftMargin:32}
+                        RowLayout{Layout.margins:32;Layout.fillWidth:true;Text{text:"Saved desktops";color:Theme.text;font.pixelSize:28;font.weight:Font.DemiBold;Layout.fillWidth:true}Field{Layout.preferredWidth:220;placeholderText:"Search";Accessible.name:"Search saved desktops";onTextChanged:root.deviceSearch=text}ActionButton{text:root.favoritesOnly?"Show all":"Favorites";glyph:"\ue734";onClicked:root.favoritesOnly=!root.favoritesOnly}ActionButton{text:"Add desktop";glyph:"\ue710";primary:true;onClicked:deviceEditor.edit(null)}}
+                        GridLayout{Layout.leftMargin:32;Layout.rightMargin:32;Layout.fillWidth:true;columns:Math.max(1,Math.floor(width/270));rowSpacing:16;columnSpacing:16;Repeater{model:(root.model.recents||[]).filter(item=>root.matchesDevice(item));delegate:deviceCard}}
+                        Text{visible:!(root.model.recents||[]).filter(item=>root.matchesDevice(item)).length;text:(root.model.recents||[]).length?"No saved desktop matches.":"Connect to a desktop, or add one, to save it here.";color:Theme.muted;Layout.leftMargin:32}
                         Item{Layout.fillHeight:true;implicitHeight:24}
                     }
                 }
@@ -207,7 +210,8 @@ ApplicationWindow {
                                 RowLayout{Layout.fillWidth:true;Text{text:"Theme";color:Theme.text;font.pixelSize:13;Layout.fillWidth:true}ComboBox{model:["Dark","Light"];currentIndex:(root.model.settings||{}).theme==="light"?1:0;onActivated:root.send("setting",{name:"theme",value:currentIndex===1?"light":"dark"});Accessible.name:"Application theme";Layout.preferredWidth:180}}
                                 Rectangle{Layout.fillWidth:true;height:1;color:Theme.border}
                                 Text{text:"Connection & privacy";font.pixelSize:17;font.weight:Font.DemiBold;color:Theme.text}
-                                RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Unattended access";color:Theme.text;font.pixelSize:13}Text{text:root.model.hasPassword?"A password is configured for this desktop.":"Every incoming connection needs your approval.";color:Theme.muted;font.pixelSize:11}}Item{Layout.fillWidth:true}ActionButton{text:root.model.hasPassword?"Change password":"Set password";onClicked:localPassword.open()}}
+                                RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Access password";color:Theme.text;font.pixelSize:13}Text{text:root.model.hasPassword?"A password is set. It is only used when unattended access is on.":"No password is set.";color:Theme.muted;font.pixelSize:11}}Item{Layout.fillWidth:true}ActionButton{text:root.model.hasPassword?"Change password":"Set password";onClicked:localPassword.open()}}
+                                RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Unattended access";color:Theme.text;font.pixelSize:13}Text{text:!root.model.hasPassword?"Set a password first. Every incoming connection needs your approval.":(root.model.settings||{}).unattendedEnabled?"Anyone with the password connects without your approval, with full access.":"Every incoming connection needs your approval, even with the password.";color:Theme.muted;font.pixelSize:11;wrapMode:Text.WordWrap;Layout.maximumWidth:570}}Item{Layout.fillWidth:true}Toggle{enabled:Boolean(root.model.hasPassword);modelChecked:Boolean(root.model.hasPassword&&(root.model.settings||{}).unattendedEnabled);Accessible.name:"Allow unattended access with the password";onEdited:(enabled)=>root.send("setting",{name:"unattendedEnabled",value:enabled})}}
                                 RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Internet access";color:Theme.text;font.pixelSize:13}Text{text:"Publish an expiring, signed directory record through the secure tunnel.";color:Theme.muted;font.pixelSize:11;wrapMode:Text.WordWrap;Layout.maximumWidth:570}}Item{Layout.fillWidth:true}Toggle{modelChecked:Boolean((root.model.settings||{}).publicAccess);Accessible.name:"Enable internet access";onEdited:(enabled)=>root.send("setting",{name:"publicAccess",value:enabled})}}
                                 RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Local network access";color:Theme.text;font.pixelSize:13}Text{text:"Let devices on this network reach this desktop. Approval or a password is still required. This traffic is not encrypted, so use it only on networks you trust.";color:Theme.muted;font.pixelSize:11;wrapMode:Text.WordWrap;Layout.maximumWidth:570}}Item{Layout.fillWidth:true}Toggle{modelChecked:Boolean((root.model.settings||{}).lanAccess);Accessible.name:"Enable local network access";onEdited:(enabled)=>root.send("setting",{name:"lanAccess",value:enabled})}}
                                 Rectangle{Layout.fillWidth:true;height:1;color:Theme.border}
@@ -274,17 +278,29 @@ ApplicationWindow {
             required property var modelData
             Layout.fillWidth:true;Layout.minimumWidth:235;implicitHeight:150;padding:18
             ColumnLayout{anchors.fill:parent;spacing:12
-                RowLayout{Layout.fillWidth:true;Rectangle{width:35;height:35;radius:Theme.radiusSmall;color:Theme.selected;Glyph{anchors.centerIn:parent;text:"\ue7f8";color:Theme.accentText}}Item{Layout.fillWidth:true}ActionButton{glyph:modelData.favorite?"\ue735":"\ue734";quiet:true;Accessible.name:modelData.favorite?"Remove favorite":"Add favorite";onClicked:root.send("favorite",{id:modelData.id})}}
+                RowLayout{Layout.fillWidth:true;Rectangle{width:35;height:35;radius:Theme.radiusSmall;color:Theme.selected;Glyph{anchors.centerIn:parent;text:"\ue7f8";color:Theme.accentText}}Item{Layout.fillWidth:true}ActionButton{glyph:modelData.favorite?"\ue735":"\ue734";quiet:true;Accessible.name:modelData.favorite?"Remove favorite":"Add favorite";onClicked:root.send("favorite",{id:modelData.id})}ActionButton{glyph:"\ue70f";quiet:true;Accessible.name:"Edit "+modelData.id;onClicked:deviceEditor.edit(modelData)}ActionButton{glyph:"\ue74d";quiet:true;Accessible.name:"Delete "+modelData.id;onClicked:deviceDelete.ask(modelData)}}
                 Text{text:modelData.alias||modelData.id;color:Theme.text;font.pixelSize:13;font.weight:Font.DemiBold;elide:Text.ElideRight;Layout.fillWidth:true}
-                RowLayout{Layout.fillWidth:true;Text{text:modelData.id;color:Theme.muted;font.family:"Consolas";font.pixelSize:12;Layout.fillWidth:true}ActionButton{glyph:"\ue72a";quiet:true;Accessible.name:"Connect to "+modelData.id;onClicked:root.connectTo(modelData.id)}}
+                RowLayout{Layout.fillWidth:true;Text{text:modelData.id;color:Theme.muted;font.family:"Consolas";font.pixelSize:12;Layout.fillWidth:true;elide:Text.ElideRight}ActionButton{glyph:"\ue8c8";quiet:true;Accessible.name:"Copy "+modelData.id;onClicked:backend.copyText(modelData.id)}ActionButton{glyph:"\ue72a";quiet:true;Accessible.name:"Connect to "+modelData.id;onClicked:root.connectTo(modelData.id)}}
             }
         }
     }
-    Dialog{id:localPassword;title:"Unattended access";modal:true;anchors.centerIn:parent;width:430;standardButtons:Dialog.Save|Dialog.Cancel
+    Dialog{id:localPassword;title:"Access password";modal:true;anchors.centerIn:parent;width:430;standardButtons:Dialog.Save|Dialog.Cancel
         background:Rectangle{color:Theme.panel;radius:Theme.radiusLarge;border.color:Theme.border}
-        ColumnLayout{anchors.fill:parent;spacing:16;Text{text:"Use at least 8 characters. This password grants unattended control, voice, clipboard and access to your shared folder. Leave it empty to require approval for every connection.";color:Theme.muted;wrapMode:Text.WordWrap;Layout.fillWidth:true;font.pixelSize:12}Field{id:newPassword;Layout.fillWidth:true;echoMode:TextInput.Password;placeholderText:"New password";Accessible.name:"New unattended password"}}
+        ColumnLayout{anchors.fill:parent;spacing:16;Text{text:"Use at least 8 characters. When unattended access is on in Settings, this password grants control, voice, clipboard and access to your shared folder without your approval. Leave it empty to remove the password.";color:Theme.muted;wrapMode:Text.WordWrap;Layout.fillWidth:true;font.pixelSize:12}Field{id:newPassword;Layout.fillWidth:true;echoMode:TextInput.Password;placeholderText:"New password";Accessible.name:"New access password"}}
         onAccepted:{root.send("set_password",{password:newPassword.text});newPassword.clear();}
         onRejected:newPassword.clear()
+    }
+    Dialog{id:deviceEditor;property string oldId:"";title:oldId.length?"Edit desktop":"Add desktop";modal:true;anchors.centerIn:parent;width:430;standardButtons:Dialog.Save|Dialog.Cancel
+        function edit(item){oldId=item?item.id:"";deviceName.text=item?(item.alias||""):"";deviceAddress.text=item?item.id:"";open();}
+        background:Rectangle{color:Theme.panel;radius:Theme.radiusLarge;border.color:Theme.border}
+        ColumnLayout{anchors.fill:parent;spacing:12;Text{text:"Name";color:Theme.muted;font.pixelSize:12}Field{id:deviceName;Layout.fillWidth:true;maximumLength:64;placeholderText:"Office PC";Accessible.name:"Desktop name"}Text{text:"ID or address";color:Theme.muted;font.pixelSize:12}Field{id:deviceAddress;Layout.fillWidth:true;maximumLength:2048;placeholderText:"123 456 789";Accessible.name:"Desktop ID or address"}}
+        onAccepted:root.send("save_device",{oldId:oldId,id:deviceAddress.text,alias:deviceName.text})
+    }
+    Dialog{id:deviceDelete;property string targetId:"";property string targetName:"";title:"Delete desktop";modal:true;anchors.centerIn:parent;width:430;standardButtons:Dialog.Yes|Dialog.Cancel
+        function ask(item){targetId=item.id;targetName=item.alias||item.id;open();}
+        background:Rectangle{color:Theme.panel;radius:Theme.radiusLarge;border.color:Theme.border}
+        contentItem:Text{text:"Remove "+deviceDelete.targetName+" from your list? You can add it again later.";color:Theme.text;font.pixelSize:13;wrapMode:Text.WordWrap}
+        onAccepted:root.send("remove_device",{id:targetId})
     }
     Dialog{id:trustDialog;title:"Verify this device";modal:true;anchors.centerIn:parent;width:480;visible:Boolean(root.current.needsTrust);standardButtons:Dialog.Ok|Dialog.Cancel
         background:Rectangle{color:Theme.panel;radius:Theme.radiusLarge;border.color:Theme.border}
@@ -339,7 +355,7 @@ ApplicationWindow {
     Window {
         id:remotePointerWindow
         transientParent:null
-        visible:Boolean(root.model.hostSession&&root.model.remoteCursor)
+        visible:root.smokePointer||Boolean(root.model.hostSession&&root.model.remoteCursor)
         width:80;height:46;color:"transparent"
         flags:Qt.Tool|Qt.FramelessWindowHint|Qt.WindowStaysOnTopHint|Qt.WindowTransparentForInput|Qt.WindowDoesNotAcceptFocus
         x:primaryDesktop.x+Math.round(Math.max(0,Math.min(1,(root.model.remoteCursor||{}).x||0))*(primaryDesktop.width-1))

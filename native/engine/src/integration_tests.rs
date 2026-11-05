@@ -191,6 +191,49 @@ fn native_endpoints_approve_stream_transfer_and_revoke() {
 }
 
 #[test]
+fn a_password_needs_approval_until_unattended_access_is_on() {
+    let case = Case::new();
+    let host_dir = case.directory("host");
+    let shared_dir = case.directory("shared");
+    config(&host_dir, &shared_dir);
+    let host = App::create(host_dir).unwrap();
+    wait("host listener", || {
+        !snapshot(&host)["localUrl"].as_str().unwrap_or("").is_empty()
+    });
+    let url = snapshot(&host)["localUrl"].as_str().unwrap().to_owned();
+    host.command(json!({"type":"set_password","password":"fixture-password"}));
+    wait("password", || snapshot(&host)["hasPassword"] == true);
+    let connect = |name: &str| {
+        let directory = case.directory(name);
+        config(&directory, &shared_dir);
+        let client = App::create(directory).unwrap();
+        client.command(json!({"type":"connect","target":url,"password":"fixture-password"}));
+        wait("device verification", || {
+            snapshot(&client)["connections"][0]["needsTrust"] == true
+        });
+        let key = snapshot(&client)["connections"][0]["key"].as_str().unwrap().to_owned();
+        client.command(json!({"type":"trust","key":key,"allow":true}));
+        client
+    };
+    // Off: the right password still waits for the person at the host.
+    let first = connect("first");
+    wait("approval despite password", || snapshot(&host)["incoming"].is_object());
+    assert_ne!(snapshot(&first)["connections"][0]["state"], "connected");
+    let request = snapshot(&host)["incoming"]["requestId"].as_str().unwrap().to_owned();
+    host.command(json!({"type":"approve","requestId":request,"allow":false}));
+    wait("rejected", || snapshot(&host)["incoming"].is_null());
+    drop(first);
+    // On: the same password connects with no request.
+    host.command(json!({"type":"setting","name":"unattendedEnabled","value":true}));
+    wait("option", || snapshot(&host)["settings"]["unattendedEnabled"] == true);
+    let second = connect("second");
+    wait("unattended connection", || {
+        snapshot(&second)["connections"][0]["state"] == "connected"
+    });
+    assert!(snapshot(&host)["incoming"].is_null());
+}
+
+#[test]
 fn legacy_configuration_and_challenges_keep_the_same_identity() {
     let case = Case::new();
     let directory = case.directory("configuration");

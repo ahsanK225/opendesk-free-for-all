@@ -1,6 +1,6 @@
 [package]
 name = "opendesk-engine"
-version = "3.3.0"
+version = "3.4.0"
 edition = "2024"
 license = "MIT"
 description = "Native OpenDesk engine; protocol and authorization migration"
@@ -36,7 +36,7 @@ jpeg-encoder = { version = "0.7", features = ["simd"] }
 fast_image_resize = "6.1"
 cpal = { version = "0.17", optional = true }
 audiopus = { version = "0.2", optional = true }
-windows = { version = "0.61.3", features = ["Win32_Foundation", "Win32_Media_MediaFoundation", "Win32_System_Ole", "Win32_System_Variant", "Win32_Security", "Win32_Security_Cryptography", "Win32_Graphics_Direct3D", "Win32_Graphics_Direct3D11", "Win32_Graphics_Dxgi", "Win32_Graphics_Dxgi_Common", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Threading", "Win32_System_Memory", "Win32_System_DataExchange", "Win32_System_LibraryLoader", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.61.3", features = ["Win32_Foundation", "Win32_Media_MediaFoundation", "Win32_System_Ole", "Win32_System_Variant", "Win32_Security", "Win32_System_JobObjects", "Win32_Security_Cryptography", "Win32_Graphics_Direct3D", "Win32_Graphics_Direct3D11", "Win32_Graphics_Dxgi", "Win32_Graphics_Dxgi_Common", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Threading", "Win32_System_Memory", "Win32_System_DataExchange", "Win32_System_LibraryLoader", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
 
 [profile.dev]
 debug = 0

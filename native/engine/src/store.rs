@@ -204,9 +204,41 @@ impl Store {
         recent["last_seen"] = json!(now());
         values.retain(|v| device_reference(v["id"].as_str().unwrap_or("")) != device_reference(id));
         values.insert(0, recent);
-        values.truncate(100);
+        // Favorites stay when the list is full; the oldest other entry goes.
+        while values.len() > 100 {
+            let plain = values.iter().rposition(|v| v["favorite"] != true);
+            values.remove(plain.unwrap_or(values.len() - 1));
+        }
         self.save()
     }
+}
+/// Adds a desktop, or edits the one named by `old`. Its favorite mark and history stay.
+pub fn save_device(values: &mut Vec<Value>, old: &str, id: &str, alias: &str) -> bool {
+    let id = id.trim();
+    if id.is_empty() || id.len() > 2048 {
+        return false;
+    }
+    let formatted = format_id(id);
+    let alias: String = alias.trim().chars().take(64).collect();
+    let alias = if alias.is_empty() { format!("Desktop • {formatted}") } else { alias };
+    let (reference, previous) = (device_reference(id), device_reference(old));
+    let same = |v: &Value, key: &str| device_reference(v["id"].as_str().unwrap_or("")) == key;
+    let position = values
+        .iter()
+        .position(|v| !previous.is_empty() && same(v, &previous))
+        .or_else(|| values.iter().position(|v| same(v, &reference)));
+    let mut entry = position.map(|at| values.remove(at)).unwrap_or_else(|| json!({"favorite":false}));
+    values.retain(|v| !same(v, &reference));
+    entry["id"] = json!(formatted);
+    entry["alias"] = json!(alias);
+    values.insert(position.unwrap_or(0).min(values.len()), entry);
+    true
+}
+pub fn remove_device(values: &mut Vec<Value>, id: &str) -> bool {
+    let reference = device_reference(id);
+    let before = values.len();
+    values.retain(|v| device_reference(v["id"].as_str().unwrap_or("")) != reference);
+    values.len() != before
 }
 pub fn clean_id(id: &str) -> String {
     id.chars()
@@ -293,5 +325,25 @@ mod address_tests {
             device_reference("123 456 789")
         );
         assert_eq!(format_id("123456789"), "123 456 789");
+    }
+    #[test]
+    fn devices_can_be_added_edited_and_removed() {
+        let mut list = vec![json!({"id":"111 111 111","alias":"Old","favorite":true,"last_seen":5})];
+        assert!(!save_device(&mut list, "", "   ", "Nothing"));
+        assert!(save_device(&mut list, "", "222-222-222", "  Office  "));
+        assert_eq!(list[0]["id"], "222 222 222");
+        assert_eq!(list[0]["alias"], "Office");
+        assert!(save_device(&mut list, "111111111", "333333333", ""));
+        let edited = list.iter().find(|v| v["id"] == "333 333 333").unwrap();
+        assert_eq!(edited["favorite"], true);
+        assert_eq!(edited["last_seen"], 5);
+        assert_eq!(edited["alias"], "Desktop • 333 333 333");
+        // Saving under an ID already in the list leaves one entry for it.
+        assert!(save_device(&mut list, "333 333 333", "222 222 222", "Merged"));
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0]["alias"], "Merged");
+        assert!(remove_device(&mut list, "222-222-222"));
+        assert!(!remove_device(&mut list, "222-222-222"));
+        assert!(list.is_empty());
     }
 }

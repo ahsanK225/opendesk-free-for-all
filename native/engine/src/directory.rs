@@ -17,6 +17,27 @@ use tokio::{
     io::{AsyncBufReadExt, BufReader},
     process::Command,
 };
+/// Ties a helper to this process through a job, so Windows ends it however the app exits.
+fn end_with_app(process: &tokio::process::Child) {
+    use windows::Win32::{Foundation::HANDLE, System::JobObjects::*};
+    static JOB: std::sync::OnceLock<Option<isize>> = std::sync::OnceLock::new();
+    let job = JOB.get_or_init(|| unsafe {
+        let job = CreateJobObjectW(None, windows::core::PCWSTR::null()).ok()?;
+        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(
+            job,
+            JobObjectExtendedLimitInformation,
+            (&raw const limits).cast(),
+            std::mem::size_of_val(&limits) as u32,
+        )
+        .ok()?;
+        Some(job.0 as isize)
+    });
+    if let (Some(job), Some(handle)) = (job, process.raw_handle()) {
+        let _ = unsafe { AssignProcessToJobObject(HANDLE(*job as *mut _), HANDLE(handle as *mut _)) };
+    }
+}
 const BINARY_SHA: &str = "f096265ec2fcbe9bb6e2d64268db167ced3fcbb83d894bdb9e2fcdb26f2ea7e2";
 /// Viewers up to 3.0 only accept a record while `expires` is in the future.
 pub const FRESH_FOR: u64 = 120;
@@ -417,6 +438,7 @@ pub async fn tunnel(shared: Arc<Shared>, port: u16) {
             .creation_flags(0x08000000).kill_on_drop(true);
         match command.spawn() {
             Ok(mut process) => {
+                end_with_app(&process);
                 let mut lines = BufReader::new(process.stderr.take().unwrap()).lines();
                 let mut interval = tokio::time::interval(Duration::from_secs(1));
                 let mut url = String::new();

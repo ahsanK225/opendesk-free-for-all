@@ -1,16 +1,15 @@
 {
-  "version": "3.3",
+  "version": "3.4",
   "channel": "stable",
   "release_date": "2026-11-05",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.3/OpenDesk_v3.3_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.3/OpenDesk_Setup_v3.3_Installer.exe",
-  "sha256": "947cc2ac07efb921a659914117702189f44d1d2301a0e311a96a0190efbd82ab",
-  "installer_sha256": "d251c35e28143a91f421e656a52771088c63f458aaed153b4b0452698fa04c1d",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.4/OpenDesk_v3.4_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.4/OpenDesk_Setup_v3.4_Installer.exe",
+  "sha256": "db87374794116d8c865b6e291461006627783a402a6f23969836d0292728555f",
+  "installer_sha256": "28bc0719f88ae6311dc25996a15faaad4f32314bc8e438066059339fdcbf5287",
   "changelog": [
-    "Direct connection to the other PC, with a relay when that fails",
-    "Much less data for video with H.264, and for voice with Opus",
-    "More places to find a desktop by ID",
-    "The connection route is shown in each session",
-    "A new look"
+    "Closing OpenDesk now ends every session and stops all its processes",
+    "A password no longer skips approval unless Unattended access is on",
+    "Add, edit, search and delete saved desktops",
+    "A fix for the screen blinking on older display drivers"
   ]
 }

@@ -169,6 +169,9 @@ impl Runtime {
                     self.error(peer, "Host ID not found.");
                     return;
                 }
+                let unattended = self.shared.store.lock().unwrap().config["native_settings"]["unattendedEnabled"]
+                    .as_bool()
+                    .unwrap_or(false);
                 let mut host = self.host.lock().unwrap();
                 if host.active.is_some() || host.pending.is_some() {
                     self.error(peer, "This desktop is busy.");
@@ -188,7 +191,7 @@ impl Runtime {
                 if let Some(record) = host
                     .password
                     .clone()
-                    .filter(|_| !self.legacy_peers.lock().unwrap().contains(peer))
+                    .filter(|_| unattended && !self.legacy_peers.lock().unwrap().contains(peer))
                 {
                     if let Some(proof) = payload["proof"].as_str() {
                         let valid = host.challenges.remove(peer).is_some_and(|challenge| {
@@ -395,7 +398,7 @@ impl Runtime {
                         matches!(value.as_str(), Some("balanced" | "performance" | "sharp"))
                     }
                     "theme" => matches!(value.as_str(), Some("dark" | "light")),
-                    "micEnabled" | "speakerEnabled" | "publicAccess" | "lanAccess" => value.is_boolean(),
+                    "micEnabled" | "speakerEnabled" | "publicAccess" | "lanAccess" | "unattendedEnabled" => value.is_boolean(),
                     "speakerVolume" => value.as_f64().is_some_and(|n| (0.0..=1.0).contains(&n)),
                     "micGain" => value.as_f64().is_some_and(|n| (0.0..=3.0).contains(&n)),
                     "sharedRoot" => value.as_str().is_some_and(|p| {
@@ -447,6 +450,28 @@ impl Runtime {
                         item["favorite"] = json!(!item["favorite"].as_bool().unwrap_or(false));
                     }
                     store.save()
+                };
+                if let Err(error) = result {
+                    self.shared.error(error);
+                }
+                self.shared.sync_config();
+            }
+            "save_device" | "remove_device" => {
+                let id = command["id"].as_str().unwrap_or("");
+                let result = {
+                    let mut store = self.shared.store.lock().unwrap();
+                    let values = store.config["recent_sessions"].as_array_mut().unwrap();
+                    let changed = if typ == "save_device" {
+                        store::save_device(
+                            values,
+                            command["oldId"].as_str().unwrap_or(""),
+                            id,
+                            command["alias"].as_str().unwrap_or(""),
+                        )
+                    } else {
+                        store::remove_device(values, id)
+                    };
+                    if changed { store.save() } else { Ok(()) }
                 };
                 if let Err(error) = result {
                     self.shared.error(error);

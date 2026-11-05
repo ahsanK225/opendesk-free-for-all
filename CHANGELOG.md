@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.4 stable — 2026-11-05
+
+- **Closing the app ends everything.** The remote pointer window kept the app alive after the main window closed, so a session continued in the background. Closing now quits, ends the session, and stops the tunnel helper through a Windows job, even if the app is killed.
+- **Unattended access is its own option, off by default.** With it off, every incoming connection needs approval, even with the right password. **A PC that relied on its password must have the option turned on in Settings after updating.**
+- **Saved desktops.** Add, rename, change the ID, delete with a confirmation, search and copy the ID. Favorites stay when the list is full.
+- **Screen blinking.** The app no longer uses flip-model presentation, the likely cause of the whole screen blinking on older display drivers. Set `QT_D3D_NO_FLIP=0` to restore it. This was not reproduced here, because a blink cannot be seen from a screen capture.
+
 ## 3.3 stable — 2026-11-05
 
 Tested on one PC, with traffic going out through the real services. Two PCs on separate networks were not tested. Results are in [VALIDATION_3_3.md](docs/VALIDATION_3_3.md).

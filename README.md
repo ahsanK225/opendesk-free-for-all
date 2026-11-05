@@ -2,9 +2,9 @@
 
 A Windows remote desktop application with a **Rust engine, Qt 6/QML interface and C++ rendering bridge**. Share the primary display, control an approved desktop, talk during a session and exchange files in a folder selected by the host.
 
-**Stable Windows release v3.3:** [Windows installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.3/OpenDesk_Setup_v3.3_Installer.exe) · [Portable executable](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.3/OpenDesk_v3.3_Portable.exe) · [Release notes/checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.3) · [OpenDesk Lite installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.3/OpenDeskLite_Setup_v3.3_Installer.exe)
+**Stable Windows release v3.4:** [Windows installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.4/OpenDesk_Setup_v3.4_Installer.exe) · [Portable executable](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.4/OpenDesk_v3.4_Portable.exe) · [Release notes/checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.4) · [OpenDesk Lite installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.4/OpenDeskLite_Setup_v3.4_Installer.exe)
 
-OpenDesk 3.3 is the current stable release. Both repositories publish it as **Latest**, and the live update manifest points to the same build. The [portfolio fork](https://github.com/hamxa8769/opendesk-free-for-all/releases/tag/v3.3) mirrors the current installer and portable executable. [Complete ascending version history: 1.0 through 3.3](docs/VERSION_HISTORY.md).
+OpenDesk 3.4 is the current stable release. Both repositories publish it as **Latest**, and the live update manifest points to the same build. The [portfolio fork](https://github.com/hamxa8769/opendesk-free-for-all/releases/tag/v3.4) mirrors the current installer and portable executable. [Complete ascending version history: 1.0 through 3.4](docs/VERSION_HISTORY.md).
 
 Local network access is off by default, and its traffic is not encrypted. When you turn on **Settings → Local network access**, use it only on networks you trust. OpenDesk does not send a password to an older desktop that cannot prove its identity, so an older desktop with a password must be updated, or its password turned off, before you can connect to it.
 
@@ -130,7 +130,7 @@ Install the current stable release through its installer or replace the portable
 
 ## Version history and changelog
 
-Release numbers advance without gaps: **1.0, 1.1, …, 1.9, 2.0, …, 3.3**. The next release is **3.4**.
+Release numbers advance without gaps: **1.0, 1.1, …, 1.9, 2.0, …, 3.4**. The next release is **3.5**.
 
 | Version | Release notes and downloads |
 | --- | --- |
@@ -157,7 +157,8 @@ Release numbers advance without gaps: **1.0, 1.1, …, 1.9, 2.0, …, 3.3**. The
 | **3.0** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.0) |
 | **3.1** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.1) |
 | **3.2** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.2) |
-| **3.3 — current stable** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.3) |
+| **3.3** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.3) |
+| **3.4 — current stable** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.4) |
 
 Original source tags and historical binaries are preserved. See [complete history and original build mapping](docs/VERSION_HISTORY.md) and [CHANGELOG.md](CHANGELOG.md).
 

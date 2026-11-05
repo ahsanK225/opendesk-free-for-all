@@ -42,3 +42,6 @@ Started 2026-11-04. The acceptance list above is preserved as the release gate. 
 | T-022 | Windows service and sign-in screen control | architect, security | Open | OpenDesk must be open in a signed-in session, so a locked or restarted PC cannot be reached unattended |
 | T-023 | Code signing | release-audit | Open, needs a certificate | Windows and browsers warn about unsigned files |
 | T-024 | Multiple monitors | implementation | Open | Only the primary monitor is captured |
+| T-025 | Full-screen remote view | ui-ux | Open | The session keeps the sidebar and toolbar on screen |
+| T-026 | Send Ctrl+Alt+Del and other system keys | implementation, security | Open | Needs the Windows service in T-022 |
+| T-027 | Tray icon and optional run in background | ui-ux | Open | Closing quits, so a PC must keep OpenDesk open to stay reachable |

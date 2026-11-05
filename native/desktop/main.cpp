@@ -21,6 +21,7 @@ extern "C" char* od_diagnostics(bool capture);
 #include <QTimer>
 #include <QLocale>
 #include <QVariantMap>
+#include <thread>
 #include <windows.h>
 #include <dwmapi.h>
 class NativeInstance {
@@ -40,6 +41,8 @@ public:
     ~NativeInstance(){if(activate)CloseHandle(activate);if(shutdown)CloseHandle(shutdown);if(mutex)CloseHandle(mutex);}
 };
 int main(int argc,char** argv){
+    // Flip-model swap chains make the whole screen blink on some older display drivers.
+    if(!qEnvironmentVariableIsSet("QT_D3D_NO_FLIP"))qputenv("QT_D3D_NO_FLIP","1");
     QApplication application(argc,argv);QLocale::setDefault(QLocale(QLocale::English,QLocale::UnitedStates));application.setLayoutDirection(Qt::LeftToRight);application.setApplicationName(QStringLiteral("OpenDesk"));application.setApplicationVersion(QStringLiteral(OPENDESK_VERSION));application.setWindowIcon(QIcon(QStringLiteral(":/brand/portal-o.svg")));
     QQuickStyle::setStyle(QStringLiteral("Basic"));QCommandLineParser parser;parser.addHelpOption();parser.addVersionOption();
     parser.addOption({QStringLiteral("config-dir"),QStringLiteral("Isolated configuration directory"),QStringLiteral("path")});
@@ -73,8 +76,10 @@ int main(int argc,char** argv){
         const auto available=window->screen()->availableGeometry();
         window->resize(qMin(1280,qMax(760,available.width()-24)),qMin(820,qMax(520,available.height()-48)));
         window->setPosition(available.center()-QPoint(window->width()/2,window->height()/2));
-        if(parser.isSet(QStringLiteral("smoke-test"))&&parser.isSet(QStringLiteral("smoke-page"))){const auto page=parser.value(QStringLiteral("smoke-page"));if(!QStringList{QStringLiteral("home"),QStringLiteral("settings"),QStringLiteral("saved"),QStringLiteral("files"),QStringLiteral("audio"),QStringLiteral("update"),QStringLiteral("transfer")}.contains(page))return 2;window->setProperty("page",page==QStringLiteral("audio")?QStringLiteral("settings"):page==QStringLiteral("update")?QStringLiteral("home"):page==QStringLiteral("transfer")?QStringLiteral("files"):page);if(page==QStringLiteral("update"))window->setProperty("smokeUpdate",QVariantMap{{QStringLiteral("state"),QStringLiteral("downloading")},{QStringLiteral("version"),QStringLiteral("9.9")},{QStringLiteral("done"),26214400},{QStringLiteral("total"),52428800},{QStringLiteral("speed"),2097152},{QStringLiteral("message"),QStringLiteral("Downloading the update…")}});if(page==QStringLiteral("transfer"))window->setProperty("smokeTransfer",QVariantMap{{QStringLiteral("state"),QStringLiteral("running")},{QStringLiteral("direction"),QStringLiteral("upload")},{QStringLiteral("name"),QStringLiteral("example.zip")},{QStringLiteral("done"),13107200},{QStringLiteral("total"),52428800},{QStringLiteral("speed"),3145728}});if(page==QStringLiteral("audio"))QTimer::singleShot(800,window,[window]{QMetaObject::invokeMethod(window,"focusAudio");});}
+        if(parser.isSet(QStringLiteral("smoke-test"))&&parser.isSet(QStringLiteral("smoke-page"))){const auto page=parser.value(QStringLiteral("smoke-page"));if(!QStringList{QStringLiteral("home"),QStringLiteral("settings"),QStringLiteral("saved"),QStringLiteral("files"),QStringLiteral("audio"),QStringLiteral("update"),QStringLiteral("transfer"),QStringLiteral("pointer")}.contains(page))return 2;if(page==QStringLiteral("pointer"))window->setProperty("smokePointer",true);window->setProperty("page",page==QStringLiteral("audio")?QStringLiteral("settings"):page==QStringLiteral("update")||page==QStringLiteral("pointer")?QStringLiteral("home"):page==QStringLiteral("transfer")?QStringLiteral("files"):page);if(page==QStringLiteral("update"))window->setProperty("smokeUpdate",QVariantMap{{QStringLiteral("state"),QStringLiteral("downloading")},{QStringLiteral("version"),QStringLiteral("9.9")},{QStringLiteral("done"),26214400},{QStringLiteral("total"),52428800},{QStringLiteral("speed"),2097152},{QStringLiteral("message"),QStringLiteral("Downloading the update…")}});if(page==QStringLiteral("transfer"))window->setProperty("smokeTransfer",QVariantMap{{QStringLiteral("state"),QStringLiteral("running")},{QStringLiteral("direction"),QStringLiteral("upload")},{QStringLiteral("name"),QStringLiteral("example.zip")},{QStringLiteral("done"),13107200},{QStringLiteral("total"),52428800},{QStringLiteral("speed"),3145728}});if(page==QStringLiteral("audio"))QTimer::singleShot(800,window,[window]{QMetaObject::invokeMethod(window,"focusAudio");});}
         od_set_window_handle(size_t(window->winId()));
+        // The remote pointer window would otherwise keep the app alive after the main window closes.
+        QObject::connect(window,&QWindow::visibleChanged,&application,[](bool visible){if(!visible)QCoreApplication::exit(0);});
         // Keep an unanswered request above other apps, including when minimized.
         // Windows may refuse foreground activation; flashing remains a fallback.
         QString pendingRequest;
@@ -110,6 +115,9 @@ int main(int argc,char** argv){
             const auto outputPath=parser.value(QStringLiteral("smoke-output"));if(!outputPath.isEmpty()){QFile file(outputPath);okay=file.open(QIODevice::WriteOnly)&&okay;if(file.isOpen()){auto evidence=bridge.state();evidence.insert(QStringLiteral("nativeWindow"),QVariantMap{{QStringLiteral("minimized"),window->visibility()==QWindow::Minimized},{QStringLiteral("topmost"),(GetWindowLongPtrW(HWND(window->winId()),GWL_EXSTYLE)&WS_EX_TOPMOST)!=0},{QStringLiteral("foreground"),GetForegroundWindow()==HWND(window->winId())}});file.write(QJsonDocument::fromVariant(evidence).toJson());}}
             application.exit(okay?0:2);
         });
-        return application.exec();
+        const int code=application.exec();
+        // Exit is final: a stuck engine task must not leave a process behind.
+        std::thread([code]{Sleep(5000);TerminateProcess(GetCurrentProcess(),UINT(code));}).detach();
+        return code;
     }catch(const std::exception& error){QMessageBox::critical(nullptr,QStringLiteral("OpenDesk could not start"),QString::fromUtf8(error.what()));return 1;}
 }
