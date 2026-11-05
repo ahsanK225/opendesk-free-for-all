@@ -77,6 +77,8 @@ struct Playback {
 #[cfg(feature = "full")]
 struct Controls {
     stop: AtomicBool,
+    peer_opus: AtomicBool,
+    opus_decoder: std::sync::Mutex<Option<audiopus::coder::Decoder>>,
     input_failed: AtomicBool,
     output_failed: AtomicBool,
     mic: AtomicBool,
@@ -102,6 +104,8 @@ impl Voice {
     ) -> Result<Self> {
         let controls = Arc::new(Controls {
             stop: AtomicBool::new(false),
+            peer_opus: AtomicBool::new(false),
+            opus_decoder: std::sync::Mutex::new(None),
             input_failed: AtomicBool::new(false),
             output_failed: AtomicBool::new(false),
             mic: AtomicBool::new(false),
@@ -177,7 +181,30 @@ impl Voice {
         self.controls.mic.store(value, Ordering::Release);
         self.shared.update(|v|v["notice"]=json!({"tone":"info","message":if value{"Microphone enabled for this session"}else{"Microphone muted for this session"}}));
     }
+    /// Set once the other side has said that it can decode Opus.
+    pub fn set_peer_opus(&self, value: bool) {
+        self.controls.peer_opus.store(value, Ordering::Release);
+    }
+    fn push_opus(&self, payload: &Value) {
+        let Some(bytes) = payload["data"].as_str().filter(|s| s.len() < 8 * 1024).and_then(|s| B64.decode(s).ok()) else {
+            return;
+        };
+        let mut decoder = self.controls.opus_decoder.lock().unwrap();
+        if decoder.is_none() {
+            *decoder = audiopus::coder::Decoder::new(audiopus::SampleRate::Hz16000, audiopus::Channels::Mono).ok();
+        }
+        let Some(decoder) = decoder.as_mut() else { return };
+        let mut mono = vec![0f32; OPUS_MAX_SAMPLES];
+
+
+        if let Ok(count) = decoder.decode_float(Some(bytes.as_slice()), mono.as_mut_slice(), false) {
+            enqueue(&self.controls, VOICE_RATE, &mono[..count]);
+        }
+    }
     pub fn push(&self, payload: &Value) {
+        if payload["format"] == "opus" {
+            return self.push_opus(payload);
+        }
         if payload["channels"].as_u64().unwrap_or(1) != 1
             || payload["format"].as_str().is_some_and(|f| f != "pcm_s16le")
         {
@@ -208,16 +235,28 @@ const TEST_SESSION: &str = "local-microphone-test";
 /// Voice leaves at 16 kHz, a third of the data of 48 kHz. Every peer already accepts this rate.
 #[cfg(feature = "full")]
 const VOICE_RATE: u32 = 16000;
+/// Room for the longest packet Opus can produce at this rate, 120 ms.
+#[cfg(feature = "full")]
+const OPUS_MAX_SAMPLES: usize = 1920;
+/// Speech stays clear at this rate, a small fraction of the data of uncompressed voice.
+#[cfg(feature = "full")]
+const OPUS_BITRATE: i32 = 24_000;
 /// Audio held back after running dry, so a late packet does not cause a click at once.
 #[cfg(feature = "full")]
 const REFILL_MS: usize = 40;
 #[cfg(feature = "full")]
+fn voice_samples(samples: &[f32]) -> Vec<f32> {
+    samples.chunks(3).map(|part| part.iter().sum::<f32>() / part.len() as f32).collect()
+}
+#[cfg(feature = "full")]
 fn voice_block(samples: &[f32]) -> Vec<u8> {
-    samples
-        .chunks(3)
-        .map(|part| part.iter().sum::<f32>() / part.len() as f32)
-        .flat_map(|v| ((v * 32767.0) as i16).to_le_bytes())
-        .collect()
+    samples.iter().flat_map(|v| ((v * 32767.0) as i16).to_le_bytes()).collect()
+}
+#[cfg(feature = "full")]
+fn opus_encoder() -> Option<audiopus::coder::Encoder> {
+    let mut encoder = audiopus::coder::Encoder::new(audiopus::SampleRate::Hz16000, audiopus::Channels::Mono, audiopus::Application::Voip).ok()?;
+    encoder.set_bitrate(audiopus::Bitrate::BitsPerSecond(OPUS_BITRATE)).ok()?;
+    Some(encoder)
 }
 #[cfg(feature = "full")]
 fn raise_level(level: &AtomicU32, samples: impl Iterator<Item = f32>) {
@@ -350,6 +389,7 @@ fn run_audio(
     let host = cpal::default_host();
     let (mut output_stream, mut input_stream) = (None, None);
     let (mic_tx, mic_rx) = mpsc::sync_channel(3);
+    let mut opus: Option<Option<audiopus::coder::Encoder>> = None;
     let mut last_status = std::time::Instant::now() - Duration::from_secs(2);
     let mut microphone_error = String::new();
     let mut speaker_error = String::new();
@@ -493,8 +533,21 @@ fn run_audio(
             if sender.audio_capacity() == 0 {
                 continue;
             }
-            let bytes = voice_block(&samples);
-            if sender.try_send(Outbound::Packet(packet("audio_chunk",json!({"session_id":session,"data":B64.encode(bytes),"sample_rate":VOICE_RATE,"channels":1,"format":"pcm_s16le"})))).is_ok(){sent_packets+=1;}
+            let samples = voice_samples(&samples);
+            let opus = if controls.peer_opus.load(Ordering::Acquire) {
+                let encoder = opus.get_or_insert_with(opus_encoder);
+                encoder.as_ref().and_then(|encoder| {
+                    let mut coded = [0u8; 1024];
+                    encoder.encode_float(&samples, &mut coded).ok().map(|size| coded[..size].to_vec())
+                })
+            } else {
+                None
+            };
+            let (bytes, format) = match opus {
+                Some(bytes) => (bytes, "opus"),
+                None => (voice_block(&samples), "pcm_s16le"),
+            };
+            if sender.try_send(Outbound::Packet(packet("audio_chunk",json!({"session_id":session,"data":B64.encode(bytes),"sample_rate":VOICE_RATE,"channels":1,"format":format})))).is_ok(){sent_packets+=1;}
         }
     }
     drop(input_stream);
@@ -521,7 +574,35 @@ impl Voice {
         false
     }
     pub fn toggle_mic(&self) {}
+    pub fn set_peer_opus(&self, _value: bool) {}
     pub fn push(&self, _payload: &serde_json::Value) {}
+}
+#[cfg(all(test, feature = "full"))]
+mod opus_tests {
+    use super::*;
+    #[test]
+    fn voice_passes_through_opus_at_a_small_size() {
+        let encoder = opus_encoder().unwrap();
+        let mut decoder = audiopus::coder::Decoder::new(audiopus::SampleRate::Hz16000, audiopus::Channels::Mono).unwrap();
+        let (mut total, mut energy) = (0usize, 0f32);
+        for block in 0..50usize {
+            let input: Vec<f32> = (0..960).map(|i| (((block * 960 + i) as f32) * 440.0 * std::f32::consts::TAU / 48000.0).sin() * 0.3).collect();
+            let samples = voice_samples(&input);
+            assert_eq!(samples.len(), 320);
+            let mut coded = [0u8; 1024];
+            let size = encoder.encode_float(&samples, &mut coded).unwrap();
+            total += size;
+            let mut output = vec![0f32; OPUS_MAX_SAMPLES];
+            let count = decoder.decode_float(Some(&coded[..size]), output.as_mut_slice(), false).unwrap();
+            assert_eq!(count, 320);
+            if block > 10 {
+                energy += output[..count].iter().map(|v| v * v).sum::<f32>();
+            }
+        }
+        // One second of voice, against 32 000 bytes as 16-bit samples.
+        assert!(total < 6000, "{total}");
+        assert!(energy > 100.0, "{energy}");
+    }
 }
 #[cfg(all(test, feature = "full"))]
 mod device_tests {
@@ -538,6 +619,8 @@ mod device_tests {
         println!("microphone config: {supported:?}");
         let controls = Arc::new(Controls {
             stop: AtomicBool::new(false),
+            peer_opus: AtomicBool::new(false),
+            opus_decoder: std::sync::Mutex::new(None),
             input_failed: AtomicBool::new(false),
             output_failed: AtomicBool::new(false),
             mic: AtomicBool::new(true),

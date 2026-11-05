@@ -626,32 +626,18 @@ fn a_desktop_is_reached_by_id_alone_through_the_public_services() {
     let tunnel = slow_wait("tunnel ready", 120, || !snapshot(&host)["shareUrl"].as_str().unwrap_or("").is_empty());
     println!("tunnel ready after {tunnel:.1} s");
     thread::sleep(Duration::from_secs(5));
-    let share = snapshot(&host)["shareUrl"].as_str().unwrap().to_owned();
-    let compact = host.shared.store.lock().unwrap().compact_record(&share);
-    println!("compact record length: {:?}", compact.as_ref().map(String::len));
-    let usable = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
-        let write = crate::directory::post(format!("https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/s460x9wm/{id}/{}", compact.unwrap()), None).await;
-        println!("backup write: {write:?}");
-        let client = crate::directory::http().unwrap();
-        for _ in 0..6 {
-            match client.get(format!("https://keyvalue.immanuel.co/api/KeyVal/GetValue/s460x9wm/{id}")).send().await {
-                Ok(response) => match response.text().await {
-                    Ok(text) => {
-                        println!("backup read length {}", text.len());
-                        if crate::directory::backup_value_is_usable(&text, &id) { return true }
-                    }
-                    Err(error) => println!("backup read failed: {error}"),
-                },
-                Err(error) => println!("backup read failed: {error}"),
-            }
-            tokio::time::sleep(Duration::from_secs(5)).await;
+    let brokers = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        let mut seen = Vec::new();
+        for broker in crate::mqtt::BROKERS {
+            seen.push(crate::mqtt::read(broker, &id).await.map(|v| v.map(|t| t.len())).map_err(|e| e.to_string()));
         }
-        false
+        seen
     });
-    println!("backup directory holds a usable record: {usable}");
+    println!("brokers hold: {brokers:?}");
     client.command(json!({"type":"connect","target":id}));
     let lookup = slow_wait("device verification", 90, || snapshot(&client)["connections"][0]["needsTrust"] == true);
-    println!("found by ID and connected after {lookup:.1} s");
+    println!("found by ID and connected after {lookup:.1} s, route {}", snapshot(&client)["connections"][0]["route"]);
     let key = snapshot(&client)["connections"][0]["key"].as_str().unwrap().to_owned();
     client.command(json!({"type":"trust","key":key,"allow":true}));
     slow_wait("attended approval", 30, || snapshot(&host)["incoming"].is_object());
@@ -666,7 +652,7 @@ fn a_desktop_is_reached_by_id_alone_through_the_public_services() {
         thread::sleep(Duration::from_secs(1));
         let rtt = snapshot(&client)["connections"][0]["rtt"].as_f64();
         if let Some(rtt) = rtt { rtts.push(rtt); }
-        println!("second: rtt {:.0} host {}", rtt.unwrap_or(0.0), snapshot(&host)["hostSession"]["video"]);
+        println!("second: rtt {:.0} route {} {}ms host {}", rtt.unwrap_or(0.0), snapshot(&client)["connections"][0]["route"], snapshot(&client)["connections"][0]["routeMs"], snapshot(&host)["hostSession"]["video"]);
     }
     rtts.sort_by(f64::total_cmp);
     println!("round trip through the tunnel: {} samples, median {:.0} ms, worst {:.0} ms", rtts.len(), rtts.get(rtts.len() / 2).copied().unwrap_or(0.0), rtts.last().copied().unwrap_or(0.0));

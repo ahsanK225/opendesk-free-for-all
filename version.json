@@ -1,13 +1,16 @@
 {
-  "version": "3.2",
+  "version": "3.3",
   "channel": "stable",
   "release_date": "2026-11-05",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.2/OpenDesk_v3.2_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.2/OpenDesk_Setup_v3.2_Installer.exe",
-  "sha256": "41261574bdf3a16348dcfb66cbc20478bb6070d307c2c8cc4521e9f6f16ccdf5",
-  "installer_sha256": "44ab4b4ebc67fc2d468726b0f50e625df319f109377f1e08feb83667f18034d2",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.3/OpenDesk_v3.3_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.3/OpenDesk_Setup_v3.3_Installer.exe",
+  "sha256": "947cc2ac07efb921a659914117702189f44d1d2301a0e311a96a0190efbd82ab",
+  "installer_sha256": "d251c35e28143a91f421e656a52771088c63f458aaed153b4b0452698fa04c1d",
   "changelog": [
-    "A desktop whose clock is wrong can now be found by ID",
-    "Updating from inside the app now works from this version on"
+    "Direct connection to the other PC, with a relay when that fails",
+    "Much less data for video with H.264, and for voice with Opus",
+    "More places to find a desktop by ID",
+    "The connection route is shown in each session",
+    "A new look"
   ]
 }

@@ -201,12 +201,21 @@
       "hasPublishedRelease": true,
       "assetCount": 6,
       "action": "Published stable release under this tag"
+    },
+    {
+      "oldTag": null,
+      "newTag": "v3.2",
+      "newDisplayVersion": "3.2",
+      "sourceCommit": "58a8487164a12b809d3f2629c3129745e40e5493",
+      "hasPublishedRelease": true,
+      "assetCount": 6,
+      "action": "Published stable release under this tag"
     }
   ],
   "nextStableRelease": {
-    "tag": "v3.2",
-    "displayVersion": "3.2",
-    "cargoVersion": "3.2.0",
+    "tag": "v3.3",
+    "displayVersion": "3.3",
+    "cargoVersion": "3.3.0",
     "channel": "stable",
     "latest": true
   },

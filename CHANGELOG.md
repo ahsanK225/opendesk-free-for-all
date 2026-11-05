@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.3 stable — 2026-11-05
+
+Tested on one PC, with traffic going out through the real services. Two PCs on separate networks were not tested. Results are in [VALIDATION_3_3.md](docs/VALIDATION_3_3.md).
+
+- **Direct connections.** Viewers dial the device key with iroh: UDP with hole punching, a public relay when that fails, and the Cloudflare tunnel after that. Hosts up to 3.2 are still reached by their tunnel, and viewers up to 3.2 still use the tunnel of a 3.3 host.
+- **H.264 video** through the codecs built into Windows, used when both sides have it. JPEG tiles remain for older peers, the browser viewer and any codec failure.
+- **Opus voice** at 24 kbit/s when both sides have it. Uncompressed 16 kHz voice remains for older peers.
+- **More ID directories.** Records also go to two public MQTT brokers as retained messages, which have no daily limit like the first directory. A record works without a tunnel address, so a PC whose tunnel is down can still be found.
+- **Interface.** A black and red theme with sharper corners, and each session shows its route: Direct, Relay, Cloudflare or Local network.
+
 ## 3.2 stable — 2026-11-05
 
 Fix for a failure seen between two real PCs: a friend could not reach a laptop by ID during a session the other way round.

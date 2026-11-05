@@ -19,9 +19,9 @@ use tokio_tungstenite::tungstenite::Message;
 
 pub fn profile(name: &str) -> Value {
     match name {
-        "performance" => json!({"fps":60,"max_width":1280,"quality":55}),
-        "sharp" => json!({"fps":30,"max_width":2560,"quality":85}),
-        _ => json!({"fps":30,"max_width":1600,"quality":65}),
+        "performance" => json!({"fps":60,"max_width":1280,"quality":55,"codecs":codecs()}),
+        "sharp" => json!({"fps":30,"max_width":2560,"quality":85,"codecs":codecs()}),
+        _ => json!({"fps":30,"max_width":1600,"quality":65,"codecs":codecs()}),
     }
 }
 async fn send(tx: &crate::transport::Sender<Outbound>, typ: &str, payload: Value) -> Result<()> {
@@ -29,8 +29,22 @@ async fn send(tx: &crate::transport::Sender<Outbound>, typ: &str, payload: Value
         .await
         .context("Remote socket closed")
 }
+/// What this viewer can decode beyond the JPEG tiles every peer has.
+fn codecs() -> Vec<&'static str> {
+    let mut codecs = Vec::new();
+    if crate::h264::available() {
+        codecs.push("h264");
+    }
+    if cfg!(feature = "full") {
+        codecs.push("opus");
+    }
+    codecs
+}
+fn has_codec(payload: &Value, name: &str) -> bool {
+    payload["codecs"].as_array().is_some_and(|codecs| codecs.iter().any(|codec| codec == name))
+}
 async fn establish(
-    shared: &Shared,
+    shared: &Arc<Shared>,
     key: &str,
     target: &str,
 ) -> Result<(String, String, Option<String>, crate::net::Socket)> {
@@ -46,10 +60,13 @@ async fn establish(
                 format!("Retrying connection ({}/3)…", attempt + 1)
             })
         });
-        match crate::directory::resolve(shared, target).await {
+        match crate::directory::resolve(shared, target, key).await {
             Ok((id, url, public)) => {
                 shared.connection(key, |v| {
                     v["url"] = json!(url);
+                    if !url.starts_with("ws://127.0.0.1") {
+                        v["route"] = json!(if url.contains(".trycloudflare.com") { "Cloudflare" } else { "Local network" });
+                    }
                     v["message"] = json!("Connecting securely to the desktop…");
                 });
                 match crate::net::connect(&url).await {
@@ -181,7 +198,7 @@ send(&tx,"connect",json!({
                                     let profile_name=shared.store.lock().unwrap().config["native_settings"]["profile"].as_str().unwrap_or("balanced").to_owned();
                                     send(&tx,"video_config",profile(&profile_name)).await?;
                                     decoder=Some(crate::media::DecodeWorker::start(shared.clone(),key.clone(),session.clone(),tx.clone())?);
-                                    if permissions.audio{match crate::audio::Voice::start(shared.clone(),tx.clone(),session.clone()){Ok(stream)=>voice=Some(stream),Err(error)=>shared.error(format!("Voice is unavailable: {error:#}"))}}
+                                    if permissions.audio{match crate::audio::Voice::start(shared.clone(),tx.clone(),session.clone()){Ok(stream)=>{stream.set_peer_opus(has_codec(p,"opus"));voice=Some(stream)},Err(error)=>shared.error(format!("Voice is unavailable: {error:#}"))}}
                                     {let mut store=shared.store.lock().unwrap();store.remember(&target)?;}shared.sync_config();
                                     shared.connection(&key,|v|{
 v["state"]=json!("connected");

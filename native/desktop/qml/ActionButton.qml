@@ -14,7 +14,7 @@ Button {
     opacity:enabled?1:0.42
     Accessible.name:text
     background:Rectangle {
-        radius:9
+        radius:Theme.radiusSmall
         color:control.primary?(control.down?Theme.accentHover:control.hovered?Theme.accentHover:Theme.accent):(control.down?Theme.pressed:control.hovered?Theme.hover:control.quiet?"transparent":Theme.elevated)
         border.color:control.activeFocus?Theme.accent:control.quiet?"transparent":control.primary?"transparent":Theme.border
         border.width:control.activeFocus?2:1

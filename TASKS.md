@@ -36,5 +36,9 @@ Started 2026-11-04. The acceptance list above is preserved as the release gate. 
 | T-016 | Real microphone and two-PC voice check | release-audit | Open, needs hardware | The PC used for 3.0 has no connected microphone; voice heard on the other PC with a real mic |
 | T-017 | Real update from 3.0 to a later release | release-audit | Open | The update window downloads, verifies and installs a real newer release |
 | T-018 | ID connection between two PCs on separate networks | release-audit | Open, needs hardware | Tested through the real tunnel on one PC only; connect from a phone hotspot to a PC on another network |
-| T-019 | Own directory service | architect, security | Open | Directories are free third-party services without a guarantee; needs a hosted service the project owns |
-| T-020 | Direct UDP path and voice codec | architect | Open | All traffic is TCP through Cloudflare, and voice is uncompressed PCM; a direct path and a codec need new dependencies and a design |
+| T-019 | Own directory and relay | architect, security | Open | Directories and the relay are public services without a guarantee; iroh advises against its public relays for production, so hosting `iroh-relay` is the next step for reliability |
+| T-020 | Direct path, H.264 and Opus | architect | Done in 3.3 | Works through the real services on one PC; two networks are T-018 |
+| T-021 | Hardware H.264 and separate voice stream | architect | Open | Software H.264 runs on the CPU; voice shares one QUIC stream with video, so loss on it delays both |
+| T-022 | Windows service and sign-in screen control | architect, security | Open | OpenDesk must be open in a signed-in session, so a locked or restarted PC cannot be reached unattended |
+| T-023 | Code signing | release-audit | Open, needs a certificate | Windows and browsers warn about unsigned files |
+| T-024 | Multiple monitors | implementation | Open | Only the primary monitor is captured |

@@ -186,6 +186,43 @@ impl TileEncoder {
         }))
     }
 }
+/// Keeps the encoder that fits the current picture size, and the frame numbers across changes.
+#[derive(Default)]
+struct H264Stream {
+    encoder: Option<crate::h264::Encoder>,
+    resizer: fast_image_resize::Resizer,
+    frame: u64,
+}
+impl H264Stream {
+    fn encode(&mut self, raw: &(u32, u32, Vec<u8>), max_width: u32, fps: u32, link_kbps: u64, force: bool, session: &str) -> Result<Option<(Vec<u8>, bool, u64)>> {
+        let (w, h, bytes) = raw;
+        let mut resized;
+        let (width, height, stride, current) = if *w > max_width {
+            let view = fast_image_resize::images::ImageRef::new(*w, *h, bytes.as_slice(), fast_image_resize::PixelType::U8x4)?;
+            let width = max_width & !1;
+            let height = (((*h as u64 * width as u64) / (*w as u64)).max(2) as u32) & !1;
+            resized = fast_image_resize::images::Image::new(width, height, fast_image_resize::PixelType::U8x4);
+            let options = fast_image_resize::ResizeOptions::new().use_alpha(false).resize_alg(fast_image_resize::ResizeAlg::Interpolation(fast_image_resize::FilterType::Bilinear));
+            self.resizer.resize(&view, &mut resized, Some(&options))?;
+            (width, height, width as usize * 4, resized.buffer())
+        } else {
+            (*w & !1, *h & !1, *w as usize * 4, bytes.as_slice())
+        };
+        // About 0.1 bit a pixel suits screen content, within what the link carried.
+        let wanted = (u64::from(width) * u64::from(height) * u64::from(fps) / 10).clamp(1_000_000, 20_000_000);
+        let bitrate = if link_kbps > 0 { wanted.min(link_kbps * 8 * 900).max(250_000) } else { wanted } as u32;
+        let fresh = self.encoder.as_ref().is_none_or(|encoder| encoder.width != width || encoder.height != height);
+        if fresh {
+            self.encoder = Some(crate::h264::Encoder::new(width, height, fps, bitrate)?);
+        }
+        let encoder = self.encoder.as_mut().context("No H.264 encoder")?;
+        encoder.set_bitrate(bitrate);
+        self.frame = self.frame.checked_add(1).context("Video frame counter exhausted")?;
+        Ok(encoder.encode(current, stride, self.frame, force || fresh, session)?.map(|(data, key)| (data, key, self.frame)))
+    }
+}
+/// Extra frames after the picture stops moving, so that it sharpens to full quality.
+const SETTLE_FRAMES: u32 = 15;
 pub struct HostWorker {
     pub session: String,
     commands: mpsc::SyncSender<(String, Value)>,
@@ -375,6 +412,7 @@ break}
     let (mut sent_frames, mut full_frames, mut sent_bytes) = (0u64, 0u64, 0u64);
     let mut last_refresh = Instant::now();
     let mut configured = false;
+    let (mut h264, mut use_h264, mut settle) = (H264Stream::default(), false, 0u32);
     while !stop.load(Ordering::Acquire) && !shared.stop.load(Ordering::Acquire) {
         let budget = Instant::now();
         for _ in 0..128 {
@@ -393,6 +431,10 @@ break}
                     );
                     window.refresh();
                     configured = true;
+                    use_h264 = p["codecs"].as_array().is_some_and(|codecs| codecs.iter().any(|codec| codec == "h264")) && crate::h264::available();
+                    if let Some(voice) = &voice {
+                        voice.set_peer_opus(p["codecs"].as_array().is_some_and(|codecs| codecs.iter().any(|codec| codec == "opus")));
+                    }
                 }
                 // A burst of requests must not become a burst of full frames.
                 "video_refresh" if last_refresh.elapsed() >= Duration::from_millis(800) => {
@@ -498,7 +540,35 @@ break}
             if let Some(raw) = captured {
                 last_raw = Some(raw);
             }
-            if (changed || window.needs_keyframe)
+            if use_h264 {
+                settle = if changed { SETTLE_FRAMES } else { settle.saturating_sub(1) };
+                if (changed || window.needs_keyframe || settle > 0) && let Some(raw) = &last_raw {
+                    match h264.encode(raw, pace.width, pace.fps as u32, pace.speed(), window.needs_keyframe, &session) {
+                        Ok(Some((data, key, id))) => {
+                            let size = data.len() as u64;
+                            if sender.try_send(Outbound::Video(data)).is_ok() {
+                                sent_frames += 1;
+                                sent_bytes += size;
+                                full_frames += u64::from(key);
+                                let sent_at = start.elapsed().as_millis() as u64;
+                                if window.sent(id, sent_at, key) {
+                                    pace.on_sent(id, size, sent_at);
+                                } else {
+                                    window.refresh();
+                                }
+                            } else {
+                                window.refresh();
+                            }
+                        }
+                        Ok(None) => {}
+                        // JPEG tiles work everywhere, so a codec failure only costs efficiency.
+                        Err(_) => {
+                            use_h264 = false;
+                            window.refresh();
+                        }
+                    }
+                }
+            } else if (changed || window.needs_keyframe)
                 && let Some(raw) = &last_raw
                 && let Some(encoded) =
                     encoder.encode(raw, pace.width, pace.quality, window.needs_keyframe, &session)?
@@ -580,8 +650,9 @@ impl DecodeWorker {
         std::thread::Builder::new().name("opendesk-video-decode".into()).spawn(move||{let mut decoder=Decoder::default();let mut legacy=crate::legacy::VideoBridge::default();let mut last_request:Option<Instant>=None;while !signal.load(Ordering::Acquire){
             if reset_worker.swap(false,Ordering::AcqRel){while receiver.try_recv().is_ok(){} decoder=Decoder::default();let _=out.try_send(Outbound::Packet(packet("video_refresh",json!({}))));}
             match receiver.recv_timeout(Duration::from_millis(50)){
-            Ok(input)=>match (match input{DecodeInput::Binary(bytes)=>Ok(bytes),DecodeInput::Legacy(typ,p)=>legacy.convert(&typ,&p,&session)}).and_then(|bytes|decoder.decode(&bytes,&session)){
-Ok(frame)=>{
+            Ok(input)=>match (match input{DecodeInput::Binary(bytes)=>Ok(bytes),DecodeInput::Legacy(typ,p)=>legacy.convert(&typ,&p,&session)}).and_then(|bytes|decoder.decode_any(&bytes,&session)){
+Ok(None)=>{}
+Ok(Some(frame))=>{
 let frame_id=frame.generation;
 shared.frames.lock().unwrap().insert(key.clone(),frame);
 let _=out.blocking_send(Outbound::Packet(packet("video_ack",json!({
@@ -638,8 +709,26 @@ impl Drop for DecodeWorker {
 #[derive(Default)]
 struct Decoder {
     frame: Option<Arc<Frame>>,
+    h264: Option<(crate::h264::Decoder, u32, u32)>,
 }
 impl Decoder {
+    fn decode_any(&mut self, bytes: &[u8], session: &str) -> Result<Option<Arc<Frame>>> {
+        if !bytes.starts_with(crate::h264::MAGIC) {
+            return self.decode(bytes, session).map(Some);
+        }
+        let packet = crate::h264::read(bytes, session)?;
+        if packet.key && self.h264.as_ref().is_none_or(|(_, width, height)| *width != packet.width || *height != packet.height) {
+            self.h264 = Some((crate::h264::Decoder::new()?, packet.width, packet.height));
+        }
+        let (decoder, width, height) = self.h264.as_mut().context("A keyframe is required")?;
+        if *width != packet.width || *height != packet.height {
+            bail!("A keyframe is required")
+        }
+        let Some(pixels) = decoder.decode(&packet)? else { return Ok(None) };
+        let frame = Arc::new(Frame { width: packet.width, height: packet.height, generation: packet.frame, pixels });
+        self.frame = Some(frame.clone());
+        Ok(Some(frame))
+    }
     fn decode(&mut self, bytes: &[u8], session: &str) -> Result<Arc<Frame>> {
         let packet = VideoPacket::decode(bytes, session)
             .map_err(|e| anyhow::anyhow!("Invalid video: {e:?}"))?;

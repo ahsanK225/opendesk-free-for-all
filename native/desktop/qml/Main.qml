@@ -61,7 +61,7 @@ ApplicationWindow {
                     Image{source:"qrc:/brand/portal-o.svg";sourceSize.width:36;sourceSize.height:36;Layout.preferredWidth:36;Layout.preferredHeight:36}
                     ColumnLayout {visible:root.width>=1080;spacing:1
                         Text{text:root.title;font.pixelSize:20;font.weight:Font.DemiBold;color:Theme.text}
-                        Text{text:"YOUR DESKTOP, ANYWHERE";font.pixelSize:9;font.letterSpacing:0.8;color:Theme.faint}
+                        Text{text:"SILENT. DIRECT. IN CONTROL.";font.pixelSize:9;font.letterSpacing:0.8;color:Theme.faint}
                     }
                 }
                 Repeater {
@@ -71,13 +71,13 @@ ApplicationWindow {
                         Layout.fillWidth:true;implicitHeight:46;hoverEnabled:true
                         Accessible.name:modelData.title
                         onClicked:root.navigate(modelData.key)
-                        background:Rectangle{radius:9;color:root.page===modelData.key?Theme.selected:parent.hovered?Theme.elevated:"transparent"}
+                        background:Rectangle{radius:Theme.radiusSmall;color:root.page===modelData.key?Theme.selected:parent.hovered?Theme.elevated:"transparent"}
                         contentItem:RowLayout{spacing:13;Glyph{text:modelData.icon;color:root.page===modelData.key?Theme.accentText:Theme.muted;Layout.alignment:Qt.AlignVCenter}Text{visible:root.width>=1080;text:modelData.title;font.pixelSize:13;font.weight:root.page===modelData.key?Font.DemiBold:Font.Normal;color:root.page===modelData.key?Theme.text:Theme.muted;Layout.fillWidth:true}}
                         ToolTip.visible:hovered&&root.width<1080;ToolTip.text:modelData.title
                     }
                 }
                 Item{Layout.fillHeight:true}
-                Rectangle {Layout.fillWidth:true;implicitHeight:root.width>=1080?84:48;color:Theme.panel;radius:11;border.color:Theme.border
+                Rectangle {Layout.fillWidth:true;implicitHeight:root.width>=1080?84:48;color:Theme.panel;radius:Theme.radiusSmall;border.color:Theme.border
                     ColumnLayout{anchors.fill:parent;anchors.margins:12;spacing:7
                         RowLayout{spacing:8;Rectangle{width:7;height:7;radius:4;color:root.model.statusTone==="ready"?Theme.success:root.model.statusTone==="error"?Theme.accent:Theme.warning}Text{visible:root.width>=1080;text:root.model.status||"Starting…";color:Theme.muted;font.pixelSize:11;elide:Text.ElideRight;Layout.fillWidth:true}}
                         VersionBadge{visible:root.width>=1080;version:root.model.version||"";Layout.alignment:Qt.AlignLeft|Qt.AlignVCenter}
@@ -113,8 +113,8 @@ ApplicationWindow {
                         width:homeScroll.availableWidth;spacing:24
                         Item{implicitHeight:10}
                         ColumnLayout{Layout.leftMargin:32;Layout.rightMargin:32;Layout.fillWidth:true;spacing:7
-                            Text{text:"A workspace without distance.";color:Theme.text;font.pixelSize:29;font.weight:Font.DemiBold}
-                            Text{text:"Connect securely, share your screen, and get back to work.";color:Theme.muted;font.pixelSize:13}
+                            Text{text:"Reach any desktop by its ID.";color:Theme.text;font.pixelSize:29;font.weight:Font.DemiBold}
+                            Text{text:"Direct when the network allows it, relayed when it does not. You approve every session.";color:Theme.muted;font.pixelSize:13}
                         }
                         Panel {
                             Layout.fillWidth:true;Layout.leftMargin:32;Layout.rightMargin:32
@@ -144,7 +144,7 @@ ApplicationWindow {
                                 Layout.fillWidth:true;Layout.preferredWidth:330;implicitHeight:239
                                 ColumnLayout{anchors.fill:parent;spacing:14
                                     Text{text:"Made for focused work";font.pixelSize:16;font.weight:Font.DemiBold;color:Theme.text;Layout.bottomMargin:2}
-                                    Repeater{model:[{icon:"\ue701",title:"Adaptive streaming",detail:"Quality follows your connection."},{icon:"\ue720",title:"Clear conversations",detail:"Talk naturally while you work."},{icon:"\ue8d7",title:"You stay in control",detail:"Choose access for every session."}].filter(item=>!root.lite||item.icon!=="\ue720");delegate:RowLayout{required property var modelData;spacing:14;Glyph{text:modelData.icon;color:Theme.accentText}ColumnLayout{spacing:3;Text{text:modelData.title;color:Theme.text;font.pixelSize:12;font.weight:Font.DemiBold}Text{text:modelData.detail;color:Theme.muted;font.pixelSize:11}}}}
+                                    Repeater{model:[{icon:"\ue701",title:"Direct route",detail:"Goes straight to the other PC when it can."},{icon:"\ue720",title:"Clear conversations",detail:"Talk naturally while you work."},{icon:"\ue8d7",title:"You stay in control",detail:"Choose access for every session."}].filter(item=>!root.lite||item.icon!=="\ue720");delegate:RowLayout{required property var modelData;spacing:14;Glyph{text:modelData.icon;color:Theme.accentText}ColumnLayout{spacing:3;Text{text:modelData.title;color:Theme.text;font.pixelSize:12;font.weight:Font.DemiBold}Text{text:modelData.detail;color:Theme.muted;font.pixelSize:11}}}}
                                 }
                             }
                         }
@@ -239,6 +239,7 @@ ApplicationWindow {
                         RowLayout{anchors.fill:parent;anchors.margins:12;spacing:10
                             ColumnLayout{spacing:2;Layout.maximumWidth:300;Text{text:root.current.name||root.current.target||"Remote session";color:Theme.text;font.pixelSize:13;font.weight:Font.DemiBold}Text{text:(root.current.audio||{}).error||(root.current.state==="connected"&&root.current.permissions&&!root.current.permissions.audio&&!root.lite?"Voice was not allowed for this session":root.current.message||root.current.state||"");color:(root.current.audio||{}).error?Theme.warning:Theme.muted;font.pixelSize:10;elide:Text.ElideRight;Layout.fillWidth:true}}
                             Item{Layout.fillWidth:true}
+                            Rectangle{visible:root.current.state==="connected"&&!!root.current.route;implicitWidth:routeLabel.implicitWidth+16;implicitHeight:22;radius:Theme.radiusSmall;color:Theme.elevated;border.width:1;border.color:root.current.route==="Direct"?Theme.success:Theme.border;Accessible.name:"Connection route "+(root.current.route||"");Text{id:routeLabel;anchors.centerIn:parent;text:root.current.route||"";font.pixelSize:11;font.weight:Font.DemiBold;color:root.current.route==="Direct"?Theme.success:Theme.muted}}
                             Text{text:root.current.state==="connected"?((root.current.fps||0)>0?Math.round(root.current.fps)+" FPS":"Idle")+"   ·   "+Math.round(root.current.rtt||0)+" ms":"";font.family:"Consolas";font.pixelSize:11;color:Theme.muted}
                             ComboBox{model:["Balanced","Performance","Sharp"];Layout.preferredWidth:130;currentIndex:root.current.profile==="performance"?1:root.current.profile==="sharp"?2:0;onActivated:root.send("video_profile",{key:root.activeKey,profile:currentText.toLowerCase()});Accessible.name:"Session video quality"}
                             ActionButton{visible:!root.lite;text:root.micText(root.current);glyph:root.current.micEnabled?"\ue720":"\uec54";Accessible.name:"Toggle session microphone";ToolTip.visible:hovered;ToolTip.text:root.audioHelp(root.current);enabled:Boolean(root.current.permissions&&root.current.permissions.audio);onClicked:root.send("toggle_mic",{key:root.activeKey})}
@@ -273,32 +274,32 @@ ApplicationWindow {
             required property var modelData
             Layout.fillWidth:true;Layout.minimumWidth:235;implicitHeight:150;padding:18
             ColumnLayout{anchors.fill:parent;spacing:12
-                RowLayout{Layout.fillWidth:true;Rectangle{width:35;height:35;radius:9;color:Theme.selected;Glyph{anchors.centerIn:parent;text:"\ue7f8";color:Theme.accentText}}Item{Layout.fillWidth:true}ActionButton{glyph:modelData.favorite?"\ue735":"\ue734";quiet:true;Accessible.name:modelData.favorite?"Remove favorite":"Add favorite";onClicked:root.send("favorite",{id:modelData.id})}}
+                RowLayout{Layout.fillWidth:true;Rectangle{width:35;height:35;radius:Theme.radiusSmall;color:Theme.selected;Glyph{anchors.centerIn:parent;text:"\ue7f8";color:Theme.accentText}}Item{Layout.fillWidth:true}ActionButton{glyph:modelData.favorite?"\ue735":"\ue734";quiet:true;Accessible.name:modelData.favorite?"Remove favorite":"Add favorite";onClicked:root.send("favorite",{id:modelData.id})}}
                 Text{text:modelData.alias||modelData.id;color:Theme.text;font.pixelSize:13;font.weight:Font.DemiBold;elide:Text.ElideRight;Layout.fillWidth:true}
                 RowLayout{Layout.fillWidth:true;Text{text:modelData.id;color:Theme.muted;font.family:"Consolas";font.pixelSize:12;Layout.fillWidth:true}ActionButton{glyph:"\ue72a";quiet:true;Accessible.name:"Connect to "+modelData.id;onClicked:root.connectTo(modelData.id)}}
             }
         }
     }
     Dialog{id:localPassword;title:"Unattended access";modal:true;anchors.centerIn:parent;width:430;standardButtons:Dialog.Save|Dialog.Cancel
-        background:Rectangle{color:Theme.panel;radius:14;border.color:Theme.border}
+        background:Rectangle{color:Theme.panel;radius:Theme.radiusLarge;border.color:Theme.border}
         ColumnLayout{anchors.fill:parent;spacing:16;Text{text:"Use at least 8 characters. This password grants unattended control, voice, clipboard and access to your shared folder. Leave it empty to require approval for every connection.";color:Theme.muted;wrapMode:Text.WordWrap;Layout.fillWidth:true;font.pixelSize:12}Field{id:newPassword;Layout.fillWidth:true;echoMode:TextInput.Password;placeholderText:"New password";Accessible.name:"New unattended password"}}
         onAccepted:{root.send("set_password",{password:newPassword.text});newPassword.clear();}
         onRejected:newPassword.clear()
     }
     Dialog{id:trustDialog;title:"Verify this device";modal:true;anchors.centerIn:parent;width:480;visible:Boolean(root.current.needsTrust);standardButtons:Dialog.Ok|Dialog.Cancel
-        background:Rectangle{color:Theme.panel;radius:14;border.color:Theme.border}
+        background:Rectangle{color:Theme.panel;radius:Theme.radiusLarge;border.color:Theme.border}
         ColumnLayout{anchors.fill:parent;spacing:16;Text{text:"First connection to "+(root.current.target||"")+". Compare this fingerprint with the host's Settings before trusting it.";color:Theme.muted;font.pixelSize:13;wrapMode:Text.WordWrap;Layout.fillWidth:true}Text{text:root.current.fingerprint||"";font.family:"Consolas";font.pixelSize:14;color:Theme.text;wrapMode:Text.WrapAnywhere;Layout.fillWidth:true}}
         onAccepted:root.send("trust",{key:root.activeKey,allow:true})
         onRejected:root.send("trust",{key:root.activeKey,allow:false})
     }
     Dialog{id:remotePassword;title:"Remote access password";modal:true;anchors.centerIn:parent;width:420;visible:Boolean(root.current.needsPassword);standardButtons:Dialog.Ok|Dialog.Cancel
-        background:Rectangle{color:Theme.panel;radius:14;border.color:Theme.border}
+        background:Rectangle{color:Theme.panel;radius:Theme.radiusLarge;border.color:Theme.border}
         Field{id:remoteSecret;width:parent.width;echoMode:TextInput.Password;placeholderText:"Password for this desktop";Accessible.name:"Remote desktop password"}
         onAccepted:{root.send("password",{key:root.activeKey,password:remoteSecret.text});remoteSecret.clear();}
         onRejected:root.send("disconnect",{key:root.activeKey})
     }
     Dialog{id:legacyDialog;title:"Connect to an older desktop";modal:true;anchors.centerIn:parent;width:Math.min(520,root.width-48);standardButtons:Dialog.Ok|Dialog.Cancel;closePolicy:Popup.NoAutoClose
-        background:Rectangle{color:Theme.panel;radius:14;border.color:Theme.border}
+        background:Rectangle{color:Theme.panel;radius:Theme.radiusLarge;border.color:Theme.border}
         onOpened:{legacyInput.checked=true;legacyAudio.checked=false;legacyClipboard.checked=false;standardButton(Dialog.Ok).text="Continue";}
         contentItem:ColumnLayout{spacing:12
             Text{text:"This older desktop cannot verify its identity with a fingerprint. Confirm its address with the owner before continuing.";color:Theme.warning;wrapMode:Text.WordWrap;Layout.fillWidth:true}
@@ -330,7 +331,7 @@ ApplicationWindow {
     Dialog{id:approval;title:"Incoming connection";modal:true;anchors.centerIn:parent;width:460;standardButtons:Dialog.Ok|Dialog.Cancel
         closePolicy:Popup.NoAutoClose
         onOpened:{allowInput.checked=true;allowAudio.checked=true;allowClipboard.checked=false;allowFiles.checked=false;standardButton(Dialog.Ok).text="Allow connection";standardButton(Dialog.Cancel).text="Reject";forceActiveFocus();}
-        background:Rectangle{color:Theme.panel;radius:14;border.color:Theme.border}
+        background:Rectangle{color:Theme.panel;radius:Theme.radiusLarge;border.color:Theme.border}
         contentItem:ColumnLayout{spacing:12;Text{text:((root.model.incoming||{}).peer||"A remote desktop")+" wants to connect. Choose what to share.";font.pixelSize:14;color:Theme.text;wrapMode:Text.WordWrap;Layout.fillWidth:true}CheckBox{id:allowInput;text:"Keyboard and mouse";checked:true}CheckBox{id:allowAudio;visible:!root.lite;text:"Two-way voice"}CheckBox{id:allowClipboard;text:"Text clipboard"}CheckBox{id:allowFiles;visible:!root.lite;text:(root.model.incoming||{}).legacy?"Files need a newer viewer":"Files in "+((root.model.settings||{}).sharedRoot||"your shared folder");enabled:!(root.model.incoming||{}).legacy}}
         onAccepted:root.send("approve",{requestId:root.model.incoming.requestId,allow:true,permissions:{input:allowInput.checked,audio:allowAudio.checked,clipboard:allowClipboard.checked,file_transfer:allowFiles.checked}})
         onRejected:root.send("approve",{requestId:(root.model.incoming||{}).requestId||"",allow:false})
@@ -345,7 +346,7 @@ ApplicationWindow {
         y:primaryDesktop.y+Math.round(Math.max(0,Math.min(1,(root.model.remoteCursor||{}).y||0))*(primaryDesktop.height-1))
         RemoteCursor{label:"Remote"}
     }
-    Rectangle{anchors.horizontalCenter:parent.horizontalCenter;anchors.bottom:parent.bottom;anchors.bottomMargin:22;width:Math.min(660,parent.width-80);height:noticeText.implicitHeight+28;radius:10;color:Theme.elevated;border.color:Theme.border;visible:Boolean(root.model.notice)
+    Rectangle{anchors.horizontalCenter:parent.horizontalCenter;anchors.bottom:parent.bottom;anchors.bottomMargin:22;width:Math.min(660,parent.width-80);height:noticeText.implicitHeight+28;radius:Theme.radiusSmall;color:Theme.elevated;border.color:Theme.border;visible:Boolean(root.model.notice)
         Text{id:noticeText;anchors.fill:parent;anchors.margins:14;text:(root.model.notice||{}).message||"";color:(root.model.notice||{}).tone==="error"?Theme.accentText:Theme.text;wrapMode:Text.WordWrap;font.pixelSize:12}
         TapHandler{onTapped:root.send("dismiss_notice")}
     }

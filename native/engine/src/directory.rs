@@ -40,14 +40,15 @@ pub fn encode_compact(key: &[u8; 32], signature: &[u8; 64], expires: u32, name: 
 /// Rebuilds the full signed record, which then passes the normal checks.
 fn decode_compact(text: &str, id: &str) -> Option<String> {
     let text = text.strip_prefix(COMPACT_PREFIX)?;
-    if text.len() <= COMPACT_FIXED || !text.is_char_boundary(COMPACT_FIXED) { return None }
+    if text.len() < COMPACT_FIXED || !text.is_char_boundary(COMPACT_FIXED) { return None }
     let (fixed, name) = text.split_at(COMPACT_FIXED);
     if name.len() > 63 || !name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-') { return None }
     let fixed = URL_SAFE_NO_PAD.decode(fixed).ok()?;
     if fixed.len() != 100 { return None }
     let expires = u32::from_be_bytes(fixed[96..100].try_into().ok()?) as u64;
     if expires < FRESH_FOR { return None }
-    let body = record_body(id, &format!("https://{name}.trycloudflare.com"), expires);
+    let address = if name.is_empty() { String::new() } else { format!("https://{name}.trycloudflare.com") };
+    let body = record_body(id, &address, expires);
     Some(json!({"key":B64.encode(&fixed[..32]),"signature":B64.encode(&fixed[32..96]),"body":body}).to_string())
 }
 /// Whether a value read from the backup directory is a usable signed record.
@@ -142,7 +143,15 @@ fn read_record(record: &str, id: &str, pinned: Option<&str>) -> Result<Found> {
     let expires = record["expires"].as_u64().unwrap_or(0);
     let until = record["valid_until"].as_u64().unwrap_or(expires).max(expires);
     let now = store::now();
-    let url = Url::parse(record["url"].as_str().unwrap_or(""))?;
+    let address = record["url"].as_str().unwrap_or("");
+    // A device key is enough to dial, so a newer host may have no tunnel to offer.
+    if address.is_empty() && record["valid_until"].is_u64() {
+        if record["id"] != id || until > now + VALID_FOR + CLOCK_ROOM {
+            bail!("Directory record is invalid")
+        }
+        return Ok(Found { url: String::new(), key: key.into(), expires, until });
+    }
+    let url = Url::parse(address)?;
     if record["id"] != id
         || until > now + VALID_FOR + CLOCK_ROOM
         || url.scheme() != "https"
@@ -189,7 +198,7 @@ fn candidates(found: &[Found], now: u64) -> Vec<Found> {
 /// A long-lived record can point at an old tunnel, so ask the address before using it.
 async fn pick(client: &Client, found: &[Found]) -> Option<Found> {
     let now = store::now();
-    let list = candidates(found, now);
+    let list: Vec<Found> = candidates(found, now).into_iter().filter(|f| !f.url.is_empty()).collect();
     let probes: Vec<_> = list.iter().map(|f| { let (client, url) = (client.clone(), f.url.clone()); tokio::spawn(async move { healthy(&client, &url).await }) }).collect();
     for (found, probe) in list.iter().zip(probes) {
         if probe.await.unwrap_or(false) { return Some(found.clone()) }
@@ -210,7 +219,81 @@ pub fn legacy_endpoint(record:&str)->Option<String>{
     if url.scheme()!="https"||!url.host_str().is_some_and(|h|h.ends_with(".trycloudflare.com"))||url.port().is_some_and(|p|p!=443){return None}
     ws_url(&text).ok()
 }
-pub async fn resolve(shared: &Shared, target: &str) -> Result<(String, String, Option<String>)> {
+#[derive(Default)]
+struct Lookup {
+    found: Vec<Found>,
+    old: Option<String>,
+    reached: bool,
+}
+/// Asks every directory at once and stops waiting once a quick one has answered.
+async fn lookup(client: &Client, id: &str, pinned: Option<&str>) -> Lookup {
+    let state = Arc::new(std::sync::Mutex::new(Lookup::default()));
+    let (id, pinned) = (id.to_owned(), pinned.map(str::to_owned));
+    let mut quick = Vec::new();
+    {
+        let (state, client, id, pinned) = (state.clone(), client.clone(), id.clone(), pinned.clone());
+        quick.push(tokio::spawn(async move {
+            let url = format!("https://ntfy.sh/opendesk_node_{id}/json?poll=1&since=12h");
+            if let Ok(text) = fetch_text(&client, &url, 1024 * 1024).await {
+                let (found, old) = read_feed(&text, &id, pinned.as_deref(), store::now());
+                let mut state = state.lock().unwrap();
+                state.reached = true;
+                state.found.extend(found);
+                state.old = state.old.take().or(old);
+            }
+        }));
+    }
+    for broker in crate::mqtt::BROKERS {
+        let (state, id, pinned) = (state.clone(), id.clone(), pinned.clone());
+        quick.push(tokio::spawn(async move {
+            if let Ok(value) = crate::mqtt::read(broker, &id).await {
+                let mut state = state.lock().unwrap();
+                state.reached = true;
+                if let Some(Ok(record)) = value.map(|text| read_record(&text, &id, pinned.as_deref())) {
+                    state.found.push(record);
+                }
+            }
+        }));
+    }
+    let backup = {
+        let (state, client, id) = (state.clone(), client.clone(), id.clone());
+        tokio::spawn(async move {
+            let url = format!("https://keyvalue.immanuel.co/api/KeyVal/GetValue/s460x9wm/{id}");
+            if let Ok(text) = fetch_text(&client, &url, 16 * 1024).await {
+                let text = serde_json::from_str::<String>(&text).unwrap_or(text);
+                let record = decode_compact(&text, &id).or_else(|| {
+                    let text = text.replace('-', "/");
+                    let padded = format!("{text}{}", "=".repeat((4 - text.len() % 4) % 4));
+                    B64.decode(padded).ok().and_then(|bytes| String::from_utf8(bytes).ok())
+                });
+                let mut state = state.lock().unwrap();
+                state.reached = true;
+                if let Some(record) = record {
+                    match read_record(&record, &id, pinned.as_deref()) {
+                        Ok(record) => state.found.push(record),
+                        Err(_) => {
+                            if state.old.is_none() {
+                                state.old = legacy_endpoint(&record);
+                            }
+                        }
+                    }
+                }
+            }
+        })
+    };
+    let _ = tokio::time::timeout(Duration::from_secs(6), futures_util::future::join_all(quick)).await;
+    let answered = {
+        let state = state.lock().unwrap();
+        !candidates(&state.found, store::now()).is_empty() || state.old.is_some()
+    };
+    if answered {
+        backup.abort();
+    } else {
+        let _ = backup.await;
+    }
+    std::mem::take(&mut *state.lock().unwrap())
+}
+pub async fn resolve(shared: &Arc<Shared>, target: &str, connection: &str) -> Result<(String, String, Option<String>)> {
     let (id,address)=if let Some((id,address))=target.split_once('@'){(clean_id(id),address)}else{("remote_host".into(),target)};
     if address.contains(['.',':'])||address=="localhost"{return Ok((id,ws_url(address)?,None))}
     let id=clean_id(target);
@@ -220,39 +303,20 @@ pub async fn resolve(shared: &Shared, target: &str) -> Result<(String, String, O
     let (mut reached,mut seen)=(false,0);
     for attempt in 0..2{
         if attempt>0{tokio::time::sleep(Duration::from_millis(1500)).await;}
-        let primary=format!("https://ntfy.sh/opendesk_node_{id}/json?poll=1&since=12h");
-        let secondary=format!("https://keyvalue.immanuel.co/api/KeyVal/GetValue/s460x9wm/{id}");
-        let backup={let client=client.clone();tokio::spawn(async move{fetch_text(&client,&secondary,16*1024).await})};
-        let (mut found,mut old)=(Vec::new(),None);
-        if let Ok(text)=fetch_text(&client,&primary,1024*1024).await{
-            reached=true;
-            (found,old)=read_feed(&text,&id,pinned.as_deref(),store::now());
-            if let Some(best)=pick(&client,&found).await{return Ok((id,ws_url(&best.url)?,Some(best.key)))}
+        let result=lookup(&client,&id,pinned.as_deref()).await;
+        reached|=result.reached;
+        if let Some(newest)=candidates(&result.found,store::now()).into_iter().next(){
+            // The fastest route first. A host up to 3.2 cannot answer here and is reached by its tunnel.
+            shared.connection(connection,|v|v["message"]=json!("Connecting directly to the desktop…"));
+            if let Ok(url)=crate::p2p::dial(shared,&newest.key,connection).await{return Ok((id,url,Some(newest.key)))}
+            shared.connection(connection,|v|v["message"]=json!("Trying another route to the desktop…"));
         }
-        if let Ok(Ok(text))=backup.await{
-            reached=true;
-            let text=serde_json::from_str::<String>(&text).unwrap_or(text);
-            let record=decode_compact(&text,&id).or_else(||{
-                let text=text.replace('-',"/");
-                let padded=format!("{text}{}","=".repeat((4-text.len()%4)%4));
-                B64.decode(padded).ok().and_then(|bytes|String::from_utf8(bytes).ok())
-            });
-            if let Some(record)=record{
-                match read_record(&record,&id,pinned.as_deref()){
-                    Ok(record)=>{
-                        let new=!found.iter().any(|f|f.url==record.url);
-                        found.push(record);
-                        if new&&let Some(best)=pick(&client,&found).await{return Ok((id,ws_url(&best.url)?,Some(best.key)))}
-                    }
-                    Err(_)=>if old.is_none(){old=legacy_endpoint(&record);}
-                }
-            }
-        }
-        seen=found.iter().map(|f|f.expires.saturating_sub(FRESH_FOR)).max().unwrap_or(0).max(seen);
+        if let Some(best)=pick(&client,&result.found).await{return Ok((id,ws_url(&best.url)?,Some(best.key)))}
+        seen=result.found.iter().map(|f|f.expires.saturating_sub(FRESH_FOR)).max().unwrap_or(0).max(seen);
         // This is an unverified address hint, not identity trust. Modern peers
         // still prove their key; legacy peers require explicit compatibility consent,
         // are refused for a saved device and never receive a password.
-        if let Some(url)=old{return Ok((id,url,None))}
+        if let Some(url)=result.old{return Ok((id,url,None))}
     }
     if !reached{bail!("Could not reach the OpenDesk directory from this network. Check your internet connection and try again, or use a share link.")}
     if seen>0{
@@ -260,6 +324,39 @@ pub async fn resolve(shared: &Shared, target: &str) -> Result<(String, String, O
         bail!("Desktop {id} was last online about {minutes} min ago and does not answer now. On that PC, OpenDesk must be open, the PC awake and connected to the internet, with Internet access on.")
     }
     bail!("Desktop {id} has not been online in the last 12 hours. Check the ID. On that PC, open OpenDesk with Internet access on and wait a minute.")
+}
+/// Keeps this device findable by ID on the directories without a tight daily limit. It runs
+/// even when the tunnel is down, because the device key alone is enough to reach this PC.
+pub async fn announce(shared: Arc<Shared>) {
+    crate::p2p::wait_online(&shared).await;
+    let (mut last_url, mut sent, mut sent_primary) = (None::<String>, 0, 0);
+    while !shared.stop.load(Ordering::Acquire) {
+        let url = shared.view.lock().unwrap()["shareUrl"].as_str().unwrap_or("").to_owned();
+        let public = shared.store.lock().unwrap().config["native_settings"]["publicAccess"].as_bool().unwrap_or(true);
+        let now = store::now();
+        if public && (last_url.as_deref() != Some(&url) || now.saturating_sub(sent) >= 300) {
+            last_url = Some(url.clone());
+            sent = now;
+            let (id, record, compact) = {
+                let store = shared.store.lock().unwrap();
+                (store.id(), store.directory_record(&url).to_string(), store.compact_record(&url))
+            };
+            for broker in crate::mqtt::BROKERS {
+                let (id, record) = (id.clone(), record.clone());
+                tokio::spawn(async move { let _ = crate::mqtt::publish(broker, &id, &record).await; });
+            }
+            if let Some(compact) = compact {
+                let id = id.clone();
+                tokio::spawn(async move { let _ = post(format!("https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/s460x9wm/{id}/{compact}"), None).await; });
+            }
+            // The tunnel loop reports to the primary directory while a tunnel exists.
+            if url.is_empty() && now.saturating_sub(sent_primary) >= 600 {
+                sent_primary = now;
+                tokio::spawn(async move { let _ = post(format!("https://ntfy.sh/opendesk_node_{id}"), Some(record)).await; });
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    }
 }
 fn binary() -> Option<PathBuf> {
     let current = std::env::current_exe().ok()?;
@@ -323,7 +420,7 @@ pub async fn tunnel(shared: Arc<Shared>, port: u16) {
                 let mut lines = BufReader::new(process.stderr.take().unwrap()).lines();
                 let mut interval = tokio::time::interval(Duration::from_secs(1));
                 let mut url = String::new();
-                let (mut published, mut stored, mut born) = (0, 0, 0);
+                let (mut published, mut born) = (0, 0);
                 let mut ready=false;
                 let mut answered=std::time::Instant::now();
                 let mut probe:Option<tokio::task::JoinHandle<bool>>=None;
@@ -334,7 +431,7 @@ pub async fn tunnel(shared: Arc<Shared>, port: u16) {
                     match line{
                     Ok(Some(line))=>{
                     if let Some(index)=line.find("https://"){
-                    let candidate=line[index..].split(|c:char|c.is_whitespace()||c=='|'||c=='"').next().unwrap_or("");if let Ok(parsed)=Url::parse(candidate)&& parsed.host_str().is_some_and(|h|h.ends_with(".trycloudflare.com"))&&parsed.path()=="/"&&candidate!=url{url=candidate.into();delay=1;ready=false;published=0;stored=0;born=store::now();answered=std::time::Instant::now();if let Some(task)=probe.take(){task.abort();}checked=std::time::Instant::now()-Duration::from_secs(30);shared.update(|v|{v["shareUrl"]=json!("");v["tunnelMessage"]=json!("Preparing the internet link; LAN connections are available.");});}}},_=>break}},
+                    let candidate=line[index..].split(|c:char|c.is_whitespace()||c=='|'||c=='"').next().unwrap_or("");if let Ok(parsed)=Url::parse(candidate)&& parsed.host_str().is_some_and(|h|h.ends_with(".trycloudflare.com"))&&parsed.path()=="/"&&candidate!=url{url=candidate.into();delay=1;ready=false;published=0;born=store::now();answered=std::time::Instant::now();if let Some(task)=probe.take(){task.abort();}checked=std::time::Instant::now()-Duration::from_secs(30);shared.update(|v|{v["shareUrl"]=json!("");v["tunnelMessage"]=json!("Preparing the internet link; LAN connections are available.");});}}},_=>break}},
                                             _=interval.tick()=>{
                                                 if shared.stop.load(Ordering::Acquire)||!shared.store.lock().unwrap().config["native_settings"]["publicAccess"].as_bool().unwrap_or(true){let _=process.kill().await;break}
                                                 if probe.as_ref().is_some_and(|task|task.is_finished()){
@@ -353,12 +450,6 @@ pub async fn tunnel(shared: Arc<Shared>, port: u16) {
                     let (id,record)={let store=shared.store.lock().unwrap();(store.id(),store.directory_record(&url).to_string())};
                     tokio::spawn(async move{let _=post(format!("https://ntfy.sh/opendesk_node_{id}"),Some(record)).await;});
                     }
-                                                if ready&&store::now().saturating_sub(stored)>=300{
-                    stored=store::now();
-                    let (id,record)={let store=shared.store.lock().unwrap();(store.id(),store.compact_record(&url))};
-                    if let Some(record)=record{tokio::spawn(async move{let _=post(format!("https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/s460x9wm/{id}/{record}"),None).await;});}
-                    }
-
                                             }
                                         }
                 }
@@ -456,6 +547,12 @@ mod tests {
         dotted.push_str(".example.com/");
         assert!(decode_compact(&dotted, ID).is_none());
         assert!(decode_compact("OD1short", ID).is_none());
+        // With no tunnel, the signed record still names the device.
+        let bare = record_body(ID, "", expires);
+        let signature = key.sign(bare.as_bytes()).to_bytes();
+        let text = encode_compact(&key.verifying_key().to_bytes(), &signature, expires as u32, "");
+        let found = read_record(&decode_compact(&text, ID).unwrap(), ID, None).unwrap();
+        assert!(found.url.is_empty() && !found.key.is_empty());
         assert!(decode_compact("something else", ID).is_none());
     }
     #[test]

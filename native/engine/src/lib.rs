@@ -11,11 +11,14 @@ pub mod ffi;
 pub mod files;
 #[cfg(test)]
 mod integration_tests;
+pub mod h264;
 pub mod jpeg;
 pub mod legacy;
 pub mod media;
+pub mod mqtt;
 pub mod net;
 pub mod network;
+pub mod p2p;
 pub mod platform;
 pub mod protocol;
 pub mod session;

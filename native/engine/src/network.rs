@@ -132,7 +132,7 @@ impl Runtime {
             && self.shared.store.lock().unwrap().config["native_settings"]["micEnabled"]
                 .as_bool()
                 .unwrap_or(false);
-        self.send(peer,"connect_resp",json!({"status":"ok","target_id":host_id,"session_id":id,"permissions":permissions,"protocol":2}));
+        self.send(peer,"connect_resp",json!({"status":"ok","target_id":host_id,"session_id":id,"permissions":permissions,"protocol":2,"codecs":if cfg!(feature="full"){vec!["opus"]}else{Vec::new()}}));
         self.shared.update(|v| {
             v["incoming"] = Value::Null;
             v["hostSession"] =
@@ -775,6 +775,8 @@ pub async fn run(shared: Arc<Shared>, mut commands: mpsc::Receiver<Value>) -> Re
     });
     crate::updater::check_on_start(shared.clone());
     let tunnel = if std::env::var_os("OPENDESK_DEV_NO_TUNNEL").is_none() {
+        tokio::spawn(crate::p2p::serve(shared.clone(), port));
+        tokio::spawn(crate::directory::announce(shared.clone()));
         Some(tokio::spawn(crate::directory::tunnel(shared.clone(), port)))
     } else {
         None

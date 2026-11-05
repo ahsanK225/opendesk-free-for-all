@@ -27,6 +27,7 @@ pub struct Shared {
     pub stop: AtomicBool,
     pub update_busy: AtomicBool,
     pub update_cancel: AtomicBool,
+    pub peer: tokio::sync::OnceCell<iroh::Endpoint>,
 }
 impl Shared {
     pub fn update(&self, change: impl FnOnce(&mut Value)) {
@@ -103,7 +104,7 @@ impl App {
             frames: Mutex::new(HashMap::new()),
             stop: AtomicBool::new(false),
             update_busy: AtomicBool::new(false),
-            update_cancel: AtomicBool::new(false),
+            update_cancel: AtomicBool::new(false),peer:tokio::sync::OnceCell::new(),
         });
         let (commands, receiver) = mpsc::channel(256);
         let worker = shared.clone();

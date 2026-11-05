@@ -175,7 +175,7 @@ impl Store {
     }
     /// The same signed record, short enough for the backup directory's value limit.
     pub fn compact_record(&self, url: &str) -> Option<String> {
-        let name = url.strip_prefix("https://")?.strip_suffix(".trycloudflare.com")?;
+        let name = if url.is_empty() { "" } else { url.strip_prefix("https://")?.strip_suffix(".trycloudflare.com")? };
         let expires = now() + crate::directory::FRESH_FOR;
         let signature = self.identity.sign(crate::directory::record_body(&self.id(), url, expires).as_bytes());
         Some(crate::directory::encode_compact(&self.identity.verifying_key().to_bytes(), &signature.to_bytes(), expires as u32, name))
