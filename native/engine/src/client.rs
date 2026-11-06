@@ -17,6 +17,11 @@ use std::{
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
+/// The connect request names this viewer for the host's indicator. Older hosts ignore it.
+fn hello(shared: &Shared, target_id: &str) -> Value {
+    let id = store::format_id(&shared.store.lock().unwrap().id());
+    json!({"target_id":target_id,"from":{"id":id,"name":std::env::var("COMPUTERNAME").unwrap_or_default()}})
+}
 pub fn profile(name: &str) -> Value {
     match name {
         "performance" => json!({"fps":60,"max_width":1280,"quality":55,"codecs":codecs()}),
@@ -159,7 +164,7 @@ pub async fn run(
                                 let public=verify_identity(p,&nonce)?;
                                 if directory_key.as_ref().is_some_and(|key|*key!=public){bail!("Directory key does not match the connected device")}
                                 if pinned.as_ref().is_some_and(|key|*key!=public){bail!("Saved device identity changed. Compare the fingerprint on the host before clearing its trust record.")}
-                                if pinned.is_some(){verified=true;send(&tx,"connect",json!({"target_id":target_id})).await?;}
+                                if pinned.is_some(){verified=true;send(&tx,"connect",hello(&shared,&target_id)).await?;}
                                 else{
 offered_key=public;
 use sha2::{
@@ -183,9 +188,7 @@ v["message"]=json!("Compare the device fingerprint to continue.");
 let challenge=p.clone();
 let secret=password.clone();
 let proof=tokio::task::spawn_blocking(move||password_proof(&secret,&challenge)).await??;
-send(&tx,"connect",json!({
-"target_id":target_id,"proof":proof}
-)).await?;
+send(&tx,"connect",{let mut request=hello(&shared,&target_id);request["proof"]=json!(proof);request}).await?;
 }
 
                             },
@@ -247,15 +250,15 @@ shared.connection(&key,|v|v["rtt"]=json!(rtt));
                         if command["allow"]!=true{disconnected=true;break}
                         legacy_limits=serde_json::from_value(command["permissions"].clone()).unwrap_or_default();legacy_limits.file_transfer=false;
                         verified=true;shared.connection(&key,|v|{v["needsLegacy"]=json!(false);v["message"]=json!("Requesting permission from the older desktop…");});
-                        send(&tx,"connect",json!({"target_id":target_id})).await?;
+                        send(&tx,"connect",hello(&shared,&target_id)).await?;
                     },
                     "trust" if !offered_key.is_empty()&&!verified=>{
                         if command["allow"]!=true{disconnected=true;break}
                         {let mut store=shared.store.lock().unwrap();store.config["trusted_devices"][&device]=json!(offered_key);store.save()?;}
-                        verified=true;shared.connection(&key,|v|v["needsTrust"]=json!(false));send(&tx,"connect",json!({"target_id":target_id})).await?;
+                        verified=true;shared.connection(&key,|v|v["needsTrust"]=json!(false));send(&tx,"connect",hello(&shared,&target_id)).await?;
                     },
-                    "password" if verified&&!legacy=>{password=command["password"].as_str().unwrap_or("").to_owned();shared.connection(&key,|v|v["needsPassword"]=json!(false));send(&tx,"connect",json!({"target_id":target_id})).await?;},
-                    "video_profile" if !session.is_empty()=>{let name=command["profile"].as_str().unwrap_or("balanced");send(&tx,"video_config",profile(name)).await?;shared.connection(&key,|v|v["profile"]=json!(name));},
+                    "password" if verified&&!legacy=>{password=command["password"].as_str().unwrap_or("").to_owned();shared.connection(&key,|v|v["needsPassword"]=json!(false));send(&tx,"connect",hello(&shared,&target_id)).await?;},
+                    "video_profile" if !session.is_empty()=>{let name=command["profile"].as_str().unwrap_or("balanced");let width=command["maxWidth"].as_u64().filter(|w|(640..=2560).contains(w));let mut config=profile(name);if let Some(width)=width{config["max_width"]=json!(width);}send(&tx,"video_config",config).await?;shared.connection(&key,|v|{v["profile"]=json!(name);v["maxWidth"]=json!(width.unwrap_or(0));});},
                     "input" if !session.is_empty()=>{
                         let mut p=command["payload"].clone();
 let typ=p["type"].as_str().unwrap_or("").to_owned();

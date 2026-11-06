@@ -38,6 +38,179 @@ fn end_with_app(process: &tokio::process::Child) {
         let _ = unsafe { AssignProcessToJobObject(HANDLE(*job as *mut _), HANDLE(handle as *mut _)) };
     }
 }
+/// A host up to 3.4 publishes no presence, only a record every 5 minutes, so it counts as
+/// recently seen for this long after its last record.
+const RECENT_FOR: u64 = 420;
+const KEEPALIVE: u16 = 30;
+#[derive(Default, Clone, Copy)]
+struct Seen {
+    presence: Option<bool>,
+    record: u64,
+}
+type Links = Arc<std::sync::Mutex<Vec<std::collections::HashMap<String, Seen>>>>;
+/// Signed online or offline state of a desktop, from 3.5 on.
+pub fn read_presence(text: &str, id: &str, pinned: Option<&str>) -> Option<bool> {
+    let packet: Value = serde_json::from_str(text).ok()?;
+    let key = packet["key"].as_str()?;
+    if pinned.is_some_and(|p| p != key) {
+        return None;
+    }
+    let bytes: [u8; 32] = B64.decode(key).ok()?.try_into().ok()?;
+    let body = packet["body"].as_str().filter(|body| body.len() <= 512)?;
+    let signature = Signature::from_slice(&B64.decode(packet["signature"].as_str()?).ok()?).ok()?;
+    VerifyingKey::from_bytes(&bytes).ok()?.verify(body.as_bytes(), &signature).ok()?;
+    let record: Value = serde_json::from_str(body).ok()?;
+    if record["id"] != id {
+        return None;
+    }
+    match record["state"].as_str()? {
+        "online" => Some(true),
+        "offline" => Some(false),
+        _ => None,
+    }
+}
+/// A desktop is online while any broker's latest word says so. Each broker publishes the
+/// will of a link that drops, so the last broker to lose the desktop turns it offline.
+fn presence_view(links: &[std::collections::HashMap<String, Seen>], ids: &[String], now: u64) -> Value {
+    let mut view = serde_json::Map::new();
+    for id in ids {
+        let seen: Vec<&Seen> = links.iter().filter_map(|link| link.get(id)).collect();
+        let record = seen.iter().map(|s| s.record).max().unwrap_or(0);
+        let state = if seen.iter().any(|s| s.presence == Some(true)) {
+            "online"
+        } else if seen.iter().any(|s| s.presence.is_some()) {
+            "offline"
+        } else if record == 0 {
+            continue;
+        } else if now.saturating_sub(record) <= RECENT_FOR {
+            "recent"
+        } else {
+            "offline"
+        };
+        view.insert(id.clone(), json!({"state":state,"seen":record}));
+    }
+    Value::Object(view)
+}
+/// This device's ID and the saved desktops to watch.
+fn watched(shared: &Shared) -> (String, Vec<String>) {
+    let store = shared.store.lock().unwrap();
+    let own = store.id();
+    let ids = store.config["recent_sessions"]
+        .as_array()
+        .map(|list| {
+            list.iter()
+                .filter_map(|device| device["id"].as_str())
+                .map(clean_id)
+                .filter(|id| id.len() == 9 && id.bytes().all(|b| b.is_ascii_digit()) && *id != own)
+                .collect()
+        })
+        .unwrap_or_default();
+    (own, ids)
+}
+/// Live presence on the brokers: this device's own state, and that of the saved desktops.
+pub async fn presence(shared: Arc<Shared>) {
+    if std::env::var_os("OPENDESK_DEV_NO_TUNNEL").is_some() {
+        return;
+    }
+    let links: Links = Arc::new(std::sync::Mutex::new(vec![Default::default(); crate::mqtt::BROKERS.len()]));
+    for (index, broker) in crate::mqtt::BROKERS.into_iter().enumerate() {
+        tokio::spawn(presence_link(shared.clone(), broker, index, links.clone()));
+    }
+    let mut last = Value::Null;
+    while !shared.stop.load(Ordering::Acquire) {
+        let (_, ids) = watched(&shared);
+        let view = presence_view(&links.lock().unwrap(), &ids, store::now());
+        if view != last {
+            last = view.clone();
+            shared.update(|v| v["presence"] = view);
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+}
+async fn presence_link(shared: Arc<Shared>, broker: &'static str, index: usize, links: Links) {
+    let mut wait = 5;
+    while !shared.stop.load(Ordering::Acquire) {
+        let started = std::time::Instant::now();
+        let _ = presence_session(&shared, broker, index, &links).await;
+        links.lock().unwrap()[index].clear();
+        if started.elapsed() > Duration::from_secs(120) {
+            wait = 5;
+        }
+        tokio::time::sleep(Duration::from_secs(wait)).await;
+        wait = (wait * 2).min(120);
+    }
+}
+async fn presence_session(shared: &Arc<Shared>, broker: &str, index: usize, links: &Links) -> Result<()> {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+    let (own, _) = watched(shared);
+    let own_topic = crate::mqtt::presence_topic(&own);
+    let will = shared.store.lock().unwrap().presence_record(false, store::now()).to_string();
+    let mut socket = crate::mqtt::live(broker, &own_topic, &will, KEEPALIVE).await?;
+    let (mut announced, mut subscribed, mut packet) = (None::<bool>, std::collections::HashSet::<String>::new(), 1u16);
+    let (mut ping, mut heard) = (std::time::Instant::now(), std::time::Instant::now());
+    loop {
+        if shared.stop.load(Ordering::Acquire) {
+            let record = shared.store.lock().unwrap().presence_record(false, store::now()).to_string();
+            let _ = socket.send(Message::Binary(crate::mqtt::retained(&own_topic, &record).into())).await;
+            let _ = socket.send(Message::Binary(vec![0xe0, 0].into())).await;
+            return Ok(());
+        }
+        // Without Internet access this PC cannot be reached by ID, so it shows as offline.
+        let public = shared.store.lock().unwrap().config["native_settings"]["publicAccess"].as_bool().unwrap_or(true);
+        if announced != Some(public) {
+            let record = shared.store.lock().unwrap().presence_record(public, store::now()).to_string();
+            socket.send(Message::Binary(crate::mqtt::retained(&own_topic, &record).into())).await?;
+            announced = Some(public);
+        }
+        let fresh: Vec<String> = watched(shared).1.into_iter().filter(|id| !subscribed.contains(id)).collect();
+        if !fresh.is_empty() {
+            let topics: Vec<String> = fresh.iter().flat_map(|id| [crate::mqtt::presence_topic(id), crate::mqtt::topic(id)]).collect();
+            socket.send(Message::Binary(crate::mqtt::subscribe_many(packet, &topics).into())).await?;
+            packet = packet.wrapping_add(1).max(1);
+            subscribed.extend(fresh);
+        }
+        if ping.elapsed() >= Duration::from_secs(25) {
+            socket.send(Message::Binary(vec![0xc0, 0].into())).await?;
+            ping = std::time::Instant::now();
+        }
+        if heard.elapsed() > Duration::from_secs(80) {
+            bail!("Broker stopped answering")
+        }
+        match tokio::time::timeout(Duration::from_secs(1), socket.next()).await {
+            Err(_) => {}
+            Ok(Some(Ok(Message::Binary(data)))) => {
+                heard = std::time::Instant::now();
+                for (first, body) in crate::mqtt::split(&data) {
+                    let Some((topic, text)) = crate::mqtt::incoming(first, body) else { continue };
+                    let Some((kind, id)) = topic.strip_prefix("opendesk/v1/").and_then(|t| t.split_once('/')) else { continue };
+                    if !subscribed.contains(id) {
+                        continue;
+                    }
+                    let pinned = shared.store.lock().unwrap().config["trusted_devices"][id].as_str().map(str::to_owned);
+                    let mut links = links.lock().unwrap();
+                    let seen = links[index].entry(id.to_owned()).or_default();
+                    match kind {
+                        "presence" => {
+                            if let Some(online) = read_presence(&text, id, pinned.as_deref()) {
+                                seen.presence = Some(online);
+                            }
+                        }
+                        "device" => {
+                            if let Ok(found) = read_record(&text, id, pinned.as_deref()) {
+                                seen.record = seen.record.max(found.expires.saturating_sub(FRESH_FOR).min(store::now()));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Ok(Some(Ok(Message::Close(_)))) | Ok(None) => bail!("Broker closed the connection"),
+            Ok(Some(Err(error))) => return Err(error.into()),
+            Ok(Some(Ok(_))) => heard = std::time::Instant::now(),
+        }
+    }
+}
 const BINARY_SHA: &str = "f096265ec2fcbe9bb6e2d64268db167ced3fcbb83d894bdb9e2fcdb26f2ea7e2";
 /// Viewers up to 3.0 only accept a record while `expires` is in the future.
 pub const FRESH_FOR: u64 = 120;
@@ -605,5 +778,42 @@ mod tests {
     fn publishing_stays_inside_the_daily_limit_for_a_tunnel_that_stays_up() {
         let day = (0..86400u64).fold((0u64, 0u64), |(count, last), age| if age == 0 || age - last >= publish_interval(age) { (count + 1, age) } else { (count, last) }).0;
         assert!(day < 250, "{day}");
+    }
+    fn presence(id: &str, state: &str) -> String {
+        use ed25519_dalek::Signer;
+        let body = format!(r#"{{"id":"{id}","since":1,"state":"{state}"}}"#);
+        json!({"key":B64.encode(signing().verifying_key().to_bytes()),"signature":B64.encode(signing().sign(body.as_bytes()).to_bytes()),"body":body}).to_string()
+    }
+    #[test]
+    fn presence_is_trusted_only_when_signed_for_that_desktop() {
+        let key = B64.encode(signing().verifying_key().to_bytes());
+        assert_eq!(read_presence(&presence(ID, "online"), ID, None), Some(true));
+        assert_eq!(read_presence(&presence(ID, "offline"), ID, Some(&key)), Some(false));
+        assert_eq!(read_presence(&presence("987654321", "online"), ID, None), None);
+        assert_eq!(read_presence(&presence(ID, "online"), ID, Some("another-key")), None);
+        assert_eq!(read_presence(&presence(ID, "away"), ID, None), None);
+        assert_eq!(read_presence(&presence(ID, "online").replace("online", "offline"), ID, None), None);
+        assert_eq!(read_presence("", ID, None), None);
+    }
+    #[test]
+    fn a_desktop_is_online_while_any_broker_says_so() {
+        use std::collections::HashMap;
+        let now = 10_000;
+        let ids: Vec<String> = ["111111111", "222222222", "333333333", "444444444", "555555555"].map(String::from).to_vec();
+        let mut first = HashMap::new();
+        let mut second = HashMap::new();
+        first.insert(ids[0].clone(), Seen { presence: Some(true), record: 0 });
+        second.insert(ids[0].clone(), Seen { presence: Some(false), record: 0 });
+        first.insert(ids[1].clone(), Seen { presence: Some(false), record: now - 30 });
+        // Hosts up to 3.4 only leave their 5-minute record.
+        first.insert(ids[2].clone(), Seen { presence: None, record: now - 200 });
+        second.insert(ids[3].clone(), Seen { presence: None, record: now - 900 });
+        let view = presence_view(&[first, second], &ids, now);
+        assert_eq!(view[&ids[0]]["state"], "online");
+        assert_eq!(view[&ids[1]]["state"], "offline");
+        assert_eq!(view[&ids[2]]["state"], "recent");
+        assert_eq!(view[&ids[3]]["state"], "offline");
+        assert_eq!(view[&ids[3]]["seen"], now - 900);
+        assert!(view.get(&ids[4]).is_none());
     }
 }

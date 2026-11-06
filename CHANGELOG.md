@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.5 stable — 2026-11-06
+
+- **White window fixed.** The 3.4 change against screen blinking turned off flip-model presentation, and on an Intel HD Graphics PC with an older driver the window then stayed white while the app ran. 3.5 restores flip-model presentation. The screen blinking reported on that PC is not fixed.
+- **Zoom and size.** Each session has Fit, zoom in and out, and actual size, with Ctrl + mouse wheel zooming around the pointer. Scroll bars and the mouse wheel move a zoomed picture when you are only viewing. The size list sets the width of the picture the other PC sends, through a setting every version already understands.
+- **Session notice.** While a session is approved, a small panel stays on top at the right edge of the screen. It says whether the other side is viewing or controlling, names the viewer, lists what was allowed and has an End session button. It can be dragged and does not animate.
+- **Who is connecting.** Viewers from 3.5 on send their PC name and ID, shown in the approval window and the notice. This is what the viewer reports, not proof of identity. Older viewers are shown as "An OpenDesk viewer".
+- **Online status.** Saved desktops show Online, Offline or when they were last seen, and online ones are listed first. A 3.5 host keeps a signed, retained state on two public MQTT brokers over a link that stays open, with a will message: the broker marks the host offline as soon as the app closes, and within about 45 seconds when the PC or its network drops. Hosts from 3.3 and 3.4 show "Seen N min ago" from their 5-minute directory record, and older hosts show no status. A PC with Internet access off shows as offline.
+
 ## 3.4 stable — 2026-11-05
 
 - **Closing the app ends everything.** The remote pointer window kept the app alive after the main window closed, so a session continued in the background. Closing now quits, ends the session, and stops the tunnel helper through a Windows job, even if the app is killed.

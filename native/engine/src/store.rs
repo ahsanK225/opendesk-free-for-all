@@ -173,6 +173,11 @@ impl Store {
         let body = crate::directory::record_body(&self.id(), url, now() + crate::directory::FRESH_FOR);
         json!({"key":self.key(),"signature":B64.encode(self.identity.sign(body.as_bytes()).to_bytes()),"body":body})
     }
+    /// Signed online or offline state, kept retained on the brokers for live presence.
+    pub fn presence_record(&self, online: bool, since: u64) -> Value {
+        let body = format!(r#"{{"id":"{}","since":{since},"state":"{}"}}"#, self.id(), if online { "online" } else { "offline" });
+        json!({"key":self.key(),"signature":B64.encode(self.identity.sign(body.as_bytes()).to_bytes()),"body":body})
+    }
     /// The same signed record, short enough for the backup directory's value limit.
     pub fn compact_record(&self, url: &str) -> Option<String> {
         let name = if url.is_empty() { "" } else { url.strip_prefix("https://")?.strip_suffix(".trycloudflare.com")? };

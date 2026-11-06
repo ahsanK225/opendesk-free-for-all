@@ -51,6 +51,16 @@ struct Host {
     challenges: HashMap<String, Challenge>,
     failures: VecDeque<Instant>,
     password: Option<Value>,
+    /// What the connecting viewer says about itself, shown to the person at this PC.
+    viewer: Value,
+}
+/// The name and ID a viewer from 3.5 on sends. It is not proof of identity.
+fn viewer_info(payload: &Value) -> Value {
+    let clean = |value: &Value, limit: usize| -> String {
+        value.as_str().unwrap_or("").chars().filter(|c| !c.is_control()).take(limit).collect::<String>().trim().to_owned()
+    };
+    let (id, name) = (clean(&payload["from"]["id"], 16), clean(&payload["from"]["name"], 64));
+    if id.is_empty() && name.is_empty() { Value::Null } else { json!({"id":id,"name":name}) }
 }
 pub struct Runtime {
     pub shared: Arc<Shared>,
@@ -126,6 +136,7 @@ impl Runtime {
             crate::media::HostWorker::start(self.shared.clone(), id.clone(), permissions, tx)?;
         host.active = Some((peer.into(), worker));
         host.pending = None;
+        let from = host.viewer.clone();
         drop(host);
         let host_id = self.shared.store.lock().unwrap().id();
         let mic_enabled = permissions.audio
@@ -136,7 +147,7 @@ impl Runtime {
         self.shared.update(|v| {
             v["incoming"] = Value::Null;
             v["hostSession"] =
-                json!({"peer":peer,"sessionId":id,"permissions":permissions,"micEnabled":mic_enabled});
+                json!({"peer":peer,"from":from,"since":store::now(),"sessionId":id,"permissions":permissions,"micEnabled":mic_enabled});
         });
         Ok(())
     }
@@ -177,6 +188,8 @@ impl Runtime {
                     self.error(peer, "This desktop is busy.");
                     return;
                 }
+                host.viewer = viewer_info(&payload);
+                let from = host.viewer.clone();
                 while host
                     .failures
                     .front()
@@ -259,7 +272,7 @@ impl Runtime {
                 });
                 drop(host);
                 self.shared
-                    .update(|v| v["incoming"] = json!({"requestId":request,"peer":peer,"legacy":self.legacy_peers.lock().unwrap().contains(peer)}));
+                    .update(|v| v["incoming"] = json!({"requestId":request,"peer":peer,"from":from,"legacy":self.legacy_peers.lock().unwrap().contains(peer)}));
                 self.send(
                     peer,
                     "connect_resp",
@@ -752,6 +765,7 @@ pub async fn run(shared: Arc<Shared>, mut commands: mpsc::Receiver<Value>) -> Re
             challenges: HashMap::new(),
             failures: VecDeque::new(),
             password,
+            viewer: Value::Null,
         }),
         clients: Mutex::new(HashMap::new()),
         connections: Arc::new(Semaphore::new(16)),
@@ -802,6 +816,7 @@ pub async fn run(shared: Arc<Shared>, mut commands: mpsc::Receiver<Value>) -> Re
     let tunnel = if std::env::var_os("OPENDESK_DEV_NO_TUNNEL").is_none() {
         tokio::spawn(crate::p2p::serve(shared.clone(), port));
         tokio::spawn(crate::directory::announce(shared.clone()));
+        tokio::spawn(crate::directory::presence(shared.clone()));
         Some(tokio::spawn(crate::directory::tunnel(shared.clone(), port)))
     } else {
         None

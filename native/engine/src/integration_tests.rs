@@ -115,6 +115,9 @@ fn native_endpoints_approve_stream_transfer_and_revoke() {
     wait("connected state", || {
         snapshot(&client)["connections"][0]["state"] == "connected"
     });
+    // The host shows who is connected; the viewer names itself.
+    assert_eq!(snapshot(&host)["hostSession"]["from"]["id"], snapshot(&client)["deviceId"]);
+    assert!(snapshot(&host)["hostSession"]["since"].as_u64().unwrap() > 0);
     wait("decoded desktop frame", || {
         client.shared.frames.lock().unwrap().contains_key(&key)
     });
@@ -644,6 +647,38 @@ fn downgrade_after_a_verified_identity_is_refused() {
     assert_ne!(snapshot(&app)["connections"][0]["needsLegacy"], true);
     assert_eq!(peer.sent("connect").len(), 1);
     peer.assert_secret_not_sent();
+}
+
+/// Uses the public MQTT brokers, so it needs internet access.
+#[test]
+#[ignore = "uses public services"]
+fn a_saved_desktop_goes_online_and_offline_live() {
+    fn slow_wait(label: &str, seconds: u64, mut ready: impl FnMut() -> bool) -> f64 {
+        let start = Instant::now();
+        while !ready() {
+            assert!(start.elapsed().as_secs() < seconds, "Timed out: {label}");
+            thread::sleep(Duration::from_millis(100));
+        }
+        start.elapsed().as_secs_f64()
+    }
+    assert!(std::env::var_os("OPENDESK_DEV_NO_TUNNEL").is_none());
+    let case = Case::new();
+    let (host_dir, viewer_dir, shared_dir) = (case.directory("host"), case.directory("viewer"), case.directory("shared"));
+    // No tunnel helper sits next to the test binary, so only the brokers are used.
+    fs::write(host_dir.join("config.json"), serde_json::to_vec(&json!({"native_settings":{"publicAccess":true,"lanAccess":false,"micEnabled":false,"speakerEnabled":false,"sharedRoot":shared_dir}})).unwrap()).unwrap();
+    let host = App::create(host_dir).unwrap();
+    let id = snapshot(&host)["deviceId"].as_str().unwrap().replace(' ', "");
+    fs::write(viewer_dir.join("config.json"), serde_json::to_vec(&json!({"native_settings":{"publicAccess":false,"lanAccess":false,"sharedRoot":shared_dir},"recent_sessions":[{"id":id,"alias":"Host","favorite":false}]})).unwrap()).unwrap();
+    let viewer = App::create(viewer_dir).unwrap();
+    let state = |viewer: &App| snapshot(viewer)["presence"][&id]["state"].as_str().unwrap_or("").to_owned();
+    println!("online after {:.1} s", slow_wait("online", 60, || state(&viewer) == "online"));
+    // Turning Internet access off makes this PC unreachable by ID, so it shows as offline.
+    host.command(json!({"type":"setting","name":"publicAccess","value":false}));
+    println!("offline with Internet access off after {:.1} s", slow_wait("offline when private", 30, || state(&viewer) == "offline"));
+    host.command(json!({"type":"setting","name":"publicAccess","value":true}));
+    slow_wait("online again", 30, || state(&viewer) == "online");
+    drop(host);
+    println!("offline after closing the app: {:.1} s", slow_wait("offline after close", 90, || state(&viewer) == "offline"));
 }
 
 /// Uses the real tunnel and directories, so it needs internet access and the tunnel enabled.

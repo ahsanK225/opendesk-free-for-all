@@ -1,15 +1,15 @@
 {
-  "version": "3.4",
+  "version": "3.5",
   "channel": "stable",
-  "release_date": "2026-11-05",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.4/OpenDesk_v3.4_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.4/OpenDesk_Setup_v3.4_Installer.exe",
-  "sha256": "db87374794116d8c865b6e291461006627783a402a6f23969836d0292728555f",
-  "installer_sha256": "28bc0719f88ae6311dc25996a15faaad4f32314bc8e438066059339fdcbf5287",
+  "release_date": "2026-11-06",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.5/OpenDesk_v3.5_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.5/OpenDesk_Setup_v3.5_Installer.exe",
+  "sha256": "61ad04c0d1ab5348079bfc62603a9607f26d47abd4ca0bedbd0fa88dd4db52fb",
+  "installer_sha256": "8834e547c77b0e23c028389421d699982b317e7566fc1859b7ae8af52582b08f",
   "changelog": [
-    "Closing OpenDesk now ends every session and stops all its processes",
-    "A password no longer skips approval unless Unattended access is on",
-    "Add, edit, search and delete saved desktops",
-    "A fix for the screen blinking on older display drivers"
+    "Zoom the remote screen, fit it to the window, and choose its size",
+    "A notice on your screen while someone is connected, naming who",
+    "Saved desktops show who is online",
+    "The viewer tells the other PC its name and ID"
   ]
 }

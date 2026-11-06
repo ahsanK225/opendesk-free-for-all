@@ -45,3 +45,6 @@ Started 2026-11-04. The acceptance list above is preserved as the release gate. 
 | T-025 | Full-screen remote view | ui-ux | Open | The session keeps the sidebar and toolbar on screen |
 | T-026 | Send Ctrl+Alt+Del and other system keys | implementation, security | Open | Needs the Windows service in T-022 |
 | T-027 | Tray icon and optional run in background | ui-ux | Open | Closing quits, so a PC must keep OpenDesk open to stay reachable |
+| T-028 | Verified viewer identity | security | Open | The viewer name and ID in the session notice are reported, not proven |
+| T-029 | Presence that cannot be replayed | security | Open | An old signed "online" state could be republished by someone else; it can only make a PC look online |
+| T-030 | Screen blinking on an older Intel HD driver | ui-ux | Open, needs that PC | Turning off flip-model presentation made the window white instead, so 3.5 restored it; the cause is still unknown |
