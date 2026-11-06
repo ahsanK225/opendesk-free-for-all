@@ -228,12 +228,21 @@
       "hasPublishedRelease": true,
       "assetCount": 6,
       "action": "Published stable release under this tag"
+    },
+    {
+      "oldTag": null,
+      "newTag": "v3.5",
+      "newDisplayVersion": "3.5",
+      "sourceCommit": "dfb58f3",
+      "hasPublishedRelease": true,
+      "assetCount": 6,
+      "action": "Published stable release under this tag"
     }
   ],
   "nextStableRelease": {
-    "tag": "v3.5",
-    "displayVersion": "3.5",
-    "cargoVersion": "3.5.0",
+    "tag": "v3.6",
+    "displayVersion": "3.6",
+    "cargoVersion": "3.6.0",
     "channel": "stable",
     "latest": true
   },

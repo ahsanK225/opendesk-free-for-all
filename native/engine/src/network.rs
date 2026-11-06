@@ -411,7 +411,7 @@ impl Runtime {
                         matches!(value.as_str(), Some("balanced" | "performance" | "sharp"))
                     }
                     "theme" => matches!(value.as_str(), Some("dark" | "light")),
-                    "micEnabled" | "speakerEnabled" | "publicAccess" | "lanAccess" | "unattendedEnabled" => value.is_boolean(),
+                    "micEnabled" | "speakerEnabled" | "publicAccess" | "lanAccess" | "unattendedEnabled" | "sessionGlow" => value.is_boolean(),
                     "speakerVolume" => value.as_f64().is_some_and(|n| (0.0..=1.0).contains(&n)),
                     "micGain" => value.as_f64().is_some_and(|n| (0.0..=3.0).contains(&n)),
                     "sharedRoot" => value.as_str().is_some_and(|p| {

@@ -224,6 +224,7 @@ ApplicationWindow {
                                 Text{text:"Connection & privacy";font.pixelSize:17;font.weight:Font.DemiBold;color:Theme.text}
                                 RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Access password";color:Theme.text;font.pixelSize:13}Text{text:root.model.hasPassword?"A password is set. It is only used when unattended access is on.":"No password is set.";color:Theme.muted;font.pixelSize:11}}Item{Layout.fillWidth:true}ActionButton{text:root.model.hasPassword?"Change password":"Set password";onClicked:localPassword.open()}}
                                 RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Unattended access";color:Theme.text;font.pixelSize:13}Text{text:!root.model.hasPassword?"Set a password first. Every incoming connection needs your approval.":(root.model.settings||{}).unattendedEnabled?"Anyone with the password connects without your approval, with full access.":"Every incoming connection needs your approval, even with the password.";color:Theme.muted;font.pixelSize:11;wrapMode:Text.WordWrap;Layout.maximumWidth:570}}Item{Layout.fillWidth:true}Toggle{enabled:Boolean(root.model.hasPassword);modelChecked:Boolean(root.model.hasPassword&&(root.model.settings||{}).unattendedEnabled);Accessible.name:"Allow unattended access with the password";onEdited:(enabled)=>root.send("setting",{name:"unattendedEnabled",value:enabled})}}
+                                RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Screen edge glow";color:Theme.text;font.pixelSize:13}Text{text:"Show a soft green glow around your screen while someone is connected. The other PC does not see it.";color:Theme.muted;font.pixelSize:11;wrapMode:Text.WordWrap;Layout.maximumWidth:570}}Item{Layout.fillWidth:true}Toggle{modelChecked:(root.model.settings||{}).sessionGlow!==false;Accessible.name:"Show a glow around the screen during a session";onEdited:(enabled)=>root.send("setting",{name:"sessionGlow",value:enabled})}}
                                 RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Internet access";color:Theme.text;font.pixelSize:13}Text{text:"Publish an expiring, signed directory record through the secure tunnel.";color:Theme.muted;font.pixelSize:11;wrapMode:Text.WordWrap;Layout.maximumWidth:570}}Item{Layout.fillWidth:true}Toggle{modelChecked:Boolean((root.model.settings||{}).publicAccess);Accessible.name:"Enable internet access";onEdited:(enabled)=>root.send("setting",{name:"publicAccess",value:enabled})}}
                                 RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Local network access";color:Theme.text;font.pixelSize:13}Text{text:"Let devices on this network reach this desktop. Approval or a password is still required. This traffic is not encrypted, so use it only on networks you trust.";color:Theme.muted;font.pixelSize:11;wrapMode:Text.WordWrap;Layout.maximumWidth:570}}Item{Layout.fillWidth:true}Toggle{modelChecked:Boolean((root.model.settings||{}).lanAccess);Accessible.name:"Enable local network access";onEdited:(enabled)=>root.send("setting",{name:"lanAccess",value:enabled})}}
                                 Rectangle{Layout.fillWidth:true;height:1;color:Theme.border}
@@ -252,11 +253,12 @@ ApplicationWindow {
                 ColumnLayout {
                     spacing:0
                     Rectangle{Layout.fillWidth:true;implicitHeight:62;color:Theme.panel
-                        RowLayout{anchors.fill:parent;anchors.margins:12;spacing:10
+                        RowLayout{anchors.fill:parent;anchors.margins:12;spacing:8
                             ColumnLayout{spacing:2;Layout.maximumWidth:300;Text{text:root.current.name||root.current.target||"Remote session";color:Theme.text;font.pixelSize:13;font.weight:Font.DemiBold}Text{text:(root.current.audio||{}).error||(root.current.state==="connected"&&root.current.permissions&&!root.current.permissions.audio&&!root.lite?"Voice was not allowed for this session":root.current.message||root.current.state||"");color:(root.current.audio||{}).error?Theme.warning:Theme.muted;font.pixelSize:10;elide:Text.ElideRight;Layout.fillWidth:true}}
                             Item{Layout.fillWidth:true}
                             Rectangle{visible:root.current.state==="connected"&&!!root.current.route;implicitWidth:routeLabel.implicitWidth+16;implicitHeight:22;radius:Theme.radiusSmall;color:Theme.elevated;border.width:1;border.color:root.current.route==="Direct"?Theme.success:Theme.border;Accessible.name:"Connection route "+(root.current.route||"");Text{id:routeLabel;anchors.centerIn:parent;text:root.current.route||"";font.pixelSize:11;font.weight:Font.DemiBold;color:root.current.route==="Direct"?Theme.success:Theme.muted}}
-                            Text{text:root.current.state==="connected"?((root.current.fps||0)>0?Math.round(root.current.fps)+" FPS":"Idle")+"   ·   "+Math.round(root.current.rtt||0)+" ms":"";font.family:"Consolas";font.pixelSize:11;color:Theme.muted}
+                            Text{text:root.current.state==="connected"?((root.current.fps||0)>0?Math.round(root.current.fps)+" FPS":"Idle")+" · "+Math.round(root.current.rtt||0)+" ms":"";font.family:"Consolas";font.pixelSize:11;color:Theme.muted}
+                            RowLayout{id:viewTools;visible:root.current.state==="connected";spacing:2;ActionButton{glyph:"\ue71f";quiet:true;Accessible.name:"Zoom out";ToolTip.visible:hovered;ToolTip.text:"Zoom out  (Ctrl + mouse wheel)";onClicked:remoteFrame.zoomOut()}ComboBox{model:["Fit to window","Original size"];Layout.preferredWidth:104;popup.width:150;currentIndex:remoteFrame.zoom===1?1:0;displayText:remoteFrame.zoom<=0?"Fit":remoteFrame.zoom===1?"Original":Math.round(remoteFrame.zoomLevel*100)+"%";onActivated:remoteFrame.zoom=currentIndex;Accessible.name:"Remote screen size";ToolTip.visible:hovered;ToolTip.text:"Fit the remote screen to this window, or show it pixel for pixel"}ActionButton{glyph:"\ue8a3";quiet:true;Accessible.name:"Zoom in";ToolTip.visible:hovered;ToolTip.text:"Zoom in  (Ctrl + mouse wheel)";onClicked:remoteFrame.zoomIn()}}
                             ComboBox{model:["Balanced","Performance","Sharp"];Layout.preferredWidth:130;currentIndex:root.current.profile==="performance"?1:root.current.profile==="sharp"?2:0;onActivated:root.send("video_profile",{key:root.activeKey,profile:currentText.toLowerCase(),maxWidth:root.current.maxWidth||0});Accessible.name:"Session video quality"}
                             ActionButton{visible:!root.lite;text:root.micText(root.current);glyph:root.current.micEnabled?"\ue720":"\uec54";Accessible.name:"Toggle session microphone";ToolTip.visible:hovered;ToolTip.text:root.audioHelp(root.current);enabled:Boolean(root.current.permissions&&root.current.permissions.audio);onClicked:root.send("toggle_mic",{key:root.activeKey})}
                             LevelMeter{visible:!root.lite&&Boolean(root.current.micEnabled);level:(root.current.audio||{}).micLevel||0;Accessible.name:"Microphone level"}
@@ -267,20 +269,14 @@ ApplicationWindow {
                         }
                     }
                     Item{Layout.fillWidth:true;Layout.fillHeight:true
-                        RemoteFrame{id:remoteFrame;anchors.fill:parent;anchors.rightMargin:vbar.visible?vbar.width:0;anchors.bottomMargin:hbar.visible?hbar.height:0;engine:backend;sessionKey:root.activeKey;controlEnabled:root.current.state==="connected"&&Boolean(root.current.permissions&&root.current.permissions.input);visible:root.current.state==="connected";clip:true
+                        RemoteFrame{id:remoteFrame;onWidthChanged:pictureSize.restart();onZoomChanged:pictureSize.restart();onVisibleChanged:pictureSize.restart();anchors.fill:parent;anchors.rightMargin:vbar.visible?vbar.width:0;anchors.bottomMargin:hbar.visible?hbar.height:0;engine:backend;sessionKey:root.activeKey;controlEnabled:root.current.state==="connected"&&Boolean(root.current.permissions&&root.current.permissions.input);visible:root.current.state==="connected";clip:true
                             RemoteCursor{x:remoteFrame.pointerPosition.x;y:remoteFrame.pointerPosition.y;label:"You";visible:remoteFrame.controlEnabled}
                         }
+                        // A fitted picture needs no more pixels than the window shows; a zoomed one needs them all.
+                        Timer{id:pictureSize;interval:700;onTriggered:{if(!remoteFrame.visible||!root.activeKey)return;const wanted=remoteFrame.zoom>0?2560:Math.min(2560,Math.max(640,Math.ceil(remoteFrame.width*Screen.devicePixelRatio/64)*64));if(wanted!==root.current.maxWidth)root.send("video_profile",{key:root.activeKey,profile:root.current.profile||"balanced",maxWidth:wanted});}}
+                        Connections{target:root;function onActiveKeyChanged(){pictureSize.restart()}}
                         ScrollBar{id:hbar;orientation:Qt.Horizontal;policy:ScrollBar.AlwaysOn;anchors.left:parent.left;anchors.right:remoteFrame.right;anchors.bottom:parent.bottom;visible:remoteFrame.visible&&remoteFrame.viewWidth<0.999;size:remoteFrame.viewWidth;onPositionChanged:if(pressed)remoteFrame.viewX=position;Binding on position{value:remoteFrame.viewX;when:!hbar.pressed}}
                         ScrollBar{id:vbar;orientation:Qt.Vertical;policy:ScrollBar.AlwaysOn;anchors.top:parent.top;anchors.bottom:remoteFrame.bottom;anchors.right:parent.right;visible:remoteFrame.visible&&remoteFrame.viewHeight<0.999;size:remoteFrame.viewHeight;onPositionChanged:if(pressed)remoteFrame.viewY=position;Binding on position{value:remoteFrame.viewY;when:!vbar.pressed}}
-                        Rectangle{visible:remoteFrame.visible;anchors.right:remoteFrame.right;anchors.bottom:remoteFrame.bottom;anchors.margins:14;implicitWidth:viewTools.implicitWidth+12;implicitHeight:viewTools.implicitHeight+8;radius:Theme.radiusLarge;color:Theme.panel;opacity:0.94;border.color:Theme.border
-                            RowLayout{id:viewTools;anchors.centerIn:parent;spacing:2
-                                ComboBox{model:["Auto size","1280 px","1600 px","1920 px","Full size"];Layout.preferredWidth:112;currentIndex:Math.max(0,[0,1280,1600,1920,2560].indexOf(root.current.maxWidth||0));onActivated:root.send("video_profile",{key:root.activeKey,profile:root.current.profile||"balanced",maxWidth:[0,1280,1600,1920,2560][currentIndex]});Accessible.name:"Remote screen size";ToolTip.visible:hovered;ToolTip.text:"Width of the picture the other PC sends"}
-                                ActionButton{glyph:"\ue71f";quiet:true;Accessible.name:"Zoom out";ToolTip.visible:hovered;ToolTip.text:"Zoom out  (Ctrl + mouse wheel)";onClicked:remoteFrame.zoomOut()}
-                                ActionButton{text:remoteFrame.zoom>0?Math.round(remoteFrame.zoomLevel*100)+"%":"Fit";quiet:true;implicitWidth:58;Accessible.name:"Fit to window";ToolTip.visible:hovered;ToolTip.text:"Fit to window";onClicked:remoteFrame.zoom=0}
-                                ActionButton{glyph:"\ue8a3";quiet:true;Accessible.name:"Zoom in";ToolTip.visible:hovered;ToolTip.text:"Zoom in  (Ctrl + mouse wheel)";onClicked:remoteFrame.zoomIn()}
-                                ActionButton{text:"1:1";quiet:true;Accessible.name:"Actual size";ToolTip.visible:hovered;ToolTip.text:"One remote pixel per screen pixel";onClicked:remoteFrame.zoom=1}
-                            }
-                        }
                         ColumnLayout{anchors.centerIn:parent;spacing:18;visible:root.current.state!=="connected";width:Math.min(500,parent.width-80)
                             BusyIndicator{running:root.current.state!=="error"&&root.current.state!=="disconnected";visible:running;Layout.alignment:Qt.AlignHCenter}
                             Text{text:root.current.state==="error"?"Connection needs attention":root.current.state==="disconnected"?"Session ended":"Connecting to your desktop";color:Theme.text;font.pixelSize:23;font.weight:Font.DemiBold;Layout.alignment:Qt.AlignHCenter}
@@ -291,7 +287,7 @@ ApplicationWindow {
                 }
             }
             Rectangle{Layout.fillWidth:true;implicitHeight:root.hostSession?48:0;visible:Boolean(root.hostSession);color:Theme.selected
-                RowLayout{anchors.fill:parent;anchors.leftMargin:24;anchors.rightMargin:24;Text{text:"Your desktop is being shared with "+root.viewerName(root.hostSession)+(root.sharingFiles?"  ·  Files: "+((root.model.settings||{}).sharedRoot||""):"");color:Theme.text;font.pixelSize:12;elide:Text.ElideMiddle;Layout.fillWidth:true}ActionButton{visible:root.sharingFiles;text:"Open folder";quiet:true;onClicked:backend.openSharedFolder()}ActionButton{visible:!root.lite;text:root.micText(root.hostSession||{});ToolTip.visible:hovered;ToolTip.text:root.audioHelp(root.hostSession||{});glyph:(root.hostSession||{}).micEnabled?"\ue720":"\uec54";quiet:true;enabled:Boolean(((root.hostSession||{}).permissions||{}).audio);onClicked:root.send("toggle_host_mic")}ActionButton{text:"End sharing";quiet:true;onClicked:root.send("end_sharing")}}
+                RowLayout{anchors.fill:parent;anchors.leftMargin:24;anchors.rightMargin:24;Text{text:(root.hostControl?"Your desktop is being controlled by ":"Your desktop is being viewed by ")+root.viewerName(root.hostSession)+"  ·  "+root.elapsed((root.hostSession||{}).since)+(root.sharingFiles?"  ·  Files: "+((root.model.settings||{}).sharedRoot||""):"");color:Theme.text;font.pixelSize:12;elide:Text.ElideMiddle;Layout.fillWidth:true}ActionButton{visible:root.sharingFiles;text:"Open folder";quiet:true;onClicked:backend.openSharedFolder()}ActionButton{visible:!root.lite;text:root.micText(root.hostSession||{});ToolTip.visible:hovered;ToolTip.text:root.audioHelp(root.hostSession||{});glyph:(root.hostSession||{}).micEnabled?"\ue720":"\uec54";quiet:true;enabled:Boolean(((root.hostSession||{}).permissions||{}).audio);onClicked:root.send("toggle_host_mic")}ActionButton{text:"End sharing";quiet:true;onClicked:root.send("end_sharing")}}
             }
         }
     }
@@ -376,25 +372,9 @@ ApplicationWindow {
         onAccepted:root.send("approve",{requestId:root.model.incoming.requestId,allow:true,permissions:{input:allowInput.checked,audio:allowAudio.checked,clipboard:allowClipboard.checked,file_transfer:allowFiles.checked}})
         onRejected:root.send("approve",{requestId:(root.model.incoming||{}).requestId||"",allow:false})
     }
-    // Stays on screen for as long as a session is approved, so nobody is watched unknowingly.
-    Window {
-        id:sessionIndicator
-        transientParent:null
-        visible:Boolean(root.hostSession)
-        width:300;height:indicatorBody.implicitHeight+28;color:"transparent"
-        flags:Qt.Tool|Qt.FramelessWindowHint|Qt.WindowStaysOnTopHint|Qt.WindowDoesNotAcceptFocus
-        x:primaryDesktop.x+primaryDesktop.width-width-16
-        y:primaryDesktop.y+Math.round(primaryDesktop.height*0.3)
-        Rectangle{anchors.fill:parent;radius:Theme.radiusLarge;color:Theme.panel;border.width:1;border.color:Theme.success
-            DragHandler{target:null;onActiveChanged:if(active)sessionIndicator.startSystemMove()}
-            ColumnLayout{id:indicatorBody;anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.margins:14;spacing:6
-                RowLayout{spacing:8;Layout.fillWidth:true;Rectangle{width:10;height:10;radius:5;color:Theme.success}Text{text:root.hostControl?"Someone is controlling your screen":"Someone is viewing your screen";color:Theme.text;font.pixelSize:13;font.weight:Font.DemiBold;elide:Text.ElideRight;Layout.fillWidth:true}}
-                Text{text:root.viewerName(root.hostSession);color:Theme.text;font.pixelSize:12;elide:Text.ElideRight;Layout.fillWidth:true}
-                Text{readonly property var p:(root.hostSession||{}).permissions||{};text:["View"].concat(p.input?["keyboard and mouse"]:[],p.audio?["voice"]:[],p.clipboard?["clipboard"]:[],p.file_transfer?["files"]:[]).join("  ·  ")+"\nConnected for "+root.elapsed((root.hostSession||{}).since);color:Theme.muted;font.pixelSize:11;wrapMode:Text.WordWrap;Layout.fillWidth:true}
-                RowLayout{Layout.topMargin:4;Layout.fillWidth:true;spacing:8;ActionButton{text:"Show OpenDesk";quiet:true;onClicked:{root.showNormal();root.raise();root.requestActivate();}}Item{Layout.fillWidth:true}ActionButton{text:"End session";primary:true;Accessible.name:"End the session";onClicked:root.send("end_sharing")}}
-            }
-        }
-    }
+    // A soft glow on the screen edges for as long as a session is approved, so nobody is watched unknowingly.
+    Binding{target:edgeGlow;property:"color";value:Theme.success}
+    Binding{target:edgeGlow;property:"active";value:Boolean(root.hostSession)&&(root.model.settings||{}).sessionGlow!==false}
     Window {
         id:remotePointerWindow
         transientParent:null

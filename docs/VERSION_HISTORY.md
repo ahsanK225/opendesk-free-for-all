@@ -1,6 +1,6 @@
 # OpenDesk version history
 
-Releases advance by 0.1: **1.0 → 1.1 → … → 1.9 → 2.0 → … → 3.5**. The next release is 3.6. This table is intentionally oldest-first; GitHub displays its built-in release list newest-first.
+Releases advance by 0.1: **1.0 → 1.1 → … → 1.9 → 2.0 → … → 3.6**. The next release is 3.7. This table is intentionally oldest-first; GitHub displays its built-in release list newest-first.
 
 The original source tags and commit history remain available. Historical executable bytes retain their original build identities; the table records their new release number and original tag. Source-only rows have no historical executable to download.
 
@@ -31,7 +31,12 @@ The original source tags and commit history remain available. Historical executa
 | **3.2** | Rust engine, Qt/QML desktop | [Installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.2) |
 | **3.3** | Rust engine, Qt/QML desktop | [Installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.3) |
 | **3.4** | Rust engine, Qt/QML desktop | [Installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.4) |
-| **3.5 — current stable** | Rust engine, Qt/QML desktop | [Installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.5) |
+| **3.5** | Rust engine, Qt/QML desktop | [Installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.5) |
+| **3.6 — current stable** | Rust engine, Qt/QML desktop | [Installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.6) |
+
+## 3.6 stable release
+
+- A screen edge glow replaces the session panel, and the size menu chooses Fit to window or Original size.
 
 ## 3.5 stable release
 

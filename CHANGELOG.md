@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.6 stable — 2026-11-06
+
+- **Screen edge glow instead of the session panel.** The panel at the right edge of the screen got in the way. While a session is approved, a soft green glow now runs along the edges of the main screen. It is made of a few plain windows in bands that fade inwards, never redraws, lets clicks through and is left out of screen capture, so the viewer does not see it. **Settings → Connection & privacy → Screen edge glow** turns it off. The bar at the bottom of the OpenDesk window still names the viewer, shows how long they have been connected and ends the session.
+- **Screen size works.** The size list only changed the width of the picture the other PC sends. With the picture fitted to the window, or a remote screen narrower than the chosen width, nothing visible changed. The list now chooses **Fit to window** or **Original size**, and shows the zoom level otherwise. A fitted picture is requested at the width of the window, which sharpens it on large windows and saves bandwidth on small ones. A zoomed or original-size picture is requested at full resolution. The zoom and size tools moved from over the picture into the session toolbar, so they no longer cover the remote screen, and the separate Fit and 1:1 buttons are gone because the list does the same.
+
 ## 3.5 stable — 2026-11-06
 
 - **White window fixed.** The 3.4 change against screen blinking turned off flip-model presentation, and on an Intel HD Graphics PC with an older driver the window then stayed white while the app ran. 3.5 restores flip-model presentation. The screen blinking reported on that PC is not fixed.

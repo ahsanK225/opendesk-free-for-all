@@ -2,6 +2,7 @@
 #include "version.h"
 #include "frame_item.h"
 #include "jpeg_codec.h"
+#include "edge_glow.h"
 extern "C" char* od_diagnostics(bool capture);
 #include <QApplication>
 #include <QCommandLineParser>
@@ -65,7 +66,8 @@ int main(int argc,char** argv){
         NativeInstance instance(parser.value(QStringLiteral("config-dir")));if(!instance.primary)return 0;
         EngineBridge bridge(parser.value(QStringLiteral("config-dir")));
         qmlRegisterType<FrameItem>("OpenDesk.Media",1,0,"RemoteFrame");
-        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty(QStringLiteral("backend"),&bridge);
+        EdgeGlow glow;
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty(QStringLiteral("backend"),&bridge);engine.rootContext()->setContextProperty(QStringLiteral("edgeGlow"),&glow);
         const auto desktop=QGuiApplication::primaryScreen()->geometry();
         engine.rootContext()->setContextProperty(QStringLiteral("primaryDesktop"),QVariantMap{{QStringLiteral("x"),desktop.x()},{QStringLiteral("y"),desktop.y()},{QStringLiteral("width"),desktop.width()},{QStringLiteral("height"),desktop.height()}});
         QObject::connect(&engine,&QQmlApplicationEngine::objectCreationFailed,&application,[]{QCoreApplication::exit(1);},Qt::QueuedConnection);

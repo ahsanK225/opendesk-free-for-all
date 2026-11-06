@@ -69,7 +69,7 @@ pub struct App {
 }
 fn normalize_settings(settings:&mut Value)->bool{
     if !settings.is_object(){*settings=serde_json::json!({});}
-    let defaults=serde_json::json!({"profile":"balanced","theme":"dark","micGain":1.0,"speakerVolume":0.8,"micEnabled":false,"speakerEnabled":true,"publicAccess":true,"lanAccess":false,"unattendedEnabled":false});
+    let defaults=serde_json::json!({"profile":"balanced","theme":"dark","micGain":1.0,"speakerVolume":0.8,"micEnabled":false,"speakerEnabled":true,"publicAccess":true,"lanAccess":false,"unattendedEnabled":false,"sessionGlow":true});
     let mut changed=false;
     for (key,fallback) in defaults.as_object().unwrap(){
         let value=match key.as_str(){
