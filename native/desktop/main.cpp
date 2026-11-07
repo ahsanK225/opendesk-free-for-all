@@ -2,7 +2,7 @@
 #include "version.h"
 #include "frame_item.h"
 #include "jpeg_codec.h"
-#include "edge_glow.h"
+#include "session_dot.h"
 extern "C" char* od_diagnostics(bool capture);
 #include <QApplication>
 #include <QCommandLineParser>
@@ -12,6 +12,11 @@ extern "C" char* od_diagnostics(bool capture);
 #include <QCryptographicHash>
 #include <QIcon>
 #include <QJsonDocument>
+#include <QOffscreenSurface>
+#include <QOpenGLContext>
+#include <QSGRendererInterface>
+#define NOMINMAX
+#include <dxgi.h>
 #include <QMessageBox>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -42,6 +47,31 @@ public:
     }
     ~NativeInstance(){if(activate)CloseHandle(activate);if(shutdown)CloseHandle(shutdown);if(mutex)CloseHandle(mutex);}
 };
+namespace {
+// Display drivers made for Windows 8.1 and older (WDDM 1.x, versions below 20.x) can make the whole
+// screen blink while a flip-model Direct3D window redraws. Returns the adapter name when that is the case.
+QString oldDisplayDriver(){
+    IDXGIFactory1* factory=nullptr;if(FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1),reinterpret_cast<void**>(&factory))))return {};
+    QString name;IDXGIAdapter1* adapter=nullptr;
+    if(SUCCEEDED(factory->EnumAdapters1(0,&adapter))){
+        DXGI_ADAPTER_DESC1 desc{};LARGE_INTEGER version{};
+        if(SUCCEEDED(adapter->GetDesc1(&desc))&&!(desc.Flags&DXGI_ADAPTER_FLAG_SOFTWARE)&&desc.VendorId!=0x1414&&SUCCEEDED(adapter->CheckInterfaceSupport(__uuidof(IDXGIDevice),&version))&&HIWORD(version.HighPart)<20)name=QString::fromWCharArray(desc.Description);
+        adapter->Release();
+    }
+    factory->Release();return name;
+}
+bool openGlWorks(){QOffscreenSurface surface;surface.create();QOpenGLContext context;return context.create()&&context.format().majorVersion()>=2&&context.makeCurrent(&surface)&&(context.doneCurrent(),true);}
+// Picks how Qt Quick draws, before the first window exists, and says what it picked.
+QString chooseGraphics(const QString& choice){
+    if(qEnvironmentVariableIsSet("QSG_RHI_BACKEND")||qEnvironmentVariableIsSet("QT_QUICK_BACKEND"))return QStringLiteral("set by environment variable");
+    if(choice==QStringLiteral("software")){QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);return QStringLiteral("Software");}
+    if(choice==QStringLiteral("opengl")){if(openGlWorks()){QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);return QStringLiteral("OpenGL");}return QStringLiteral("Direct3D 11, because OpenGL is not available");}
+    if(choice==QStringLiteral("direct3d"))return QStringLiteral("Direct3D 11");
+    const auto adapter=oldDisplayDriver();
+    if(!adapter.isEmpty()&&openGlWorks()){QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);return QStringLiteral("OpenGL, chosen automatically for the older display driver of ")+adapter;}
+    return QStringLiteral("Direct3D 11, chosen automatically");
+}
+}
 int main(int argc,char** argv){
     QApplication application(argc,argv);QLocale::setDefault(QLocale(QLocale::English,QLocale::UnitedStates));application.setLayoutDirection(Qt::LeftToRight);application.setApplicationName(QStringLiteral("OpenDesk"));application.setApplicationVersion(QStringLiteral(OPENDESK_VERSION));application.setWindowIcon(QIcon(QStringLiteral(":/brand/portal-o.svg")));
     QQuickStyle::setStyle(QStringLiteral("Basic"));QCommandLineParser parser;parser.addHelpOption();parser.addVersionOption();
@@ -65,9 +95,10 @@ int main(int argc,char** argv){
         if(parser.isSet(QStringLiteral("benchmark-output"))){char* report=od_diagnostics(true);if(!report)return 2;QByteArray bytes(report);od_string_free(report);QFile output(parser.value(QStringLiteral("benchmark-output")));if(!output.open(QIODevice::WriteOnly))return 2;return output.write(bytes)==bytes.size()&&!bytes.contains("\"error\"")?0:2;}
         NativeInstance instance(parser.value(QStringLiteral("config-dir")));if(!instance.primary)return 0;
         EngineBridge bridge(parser.value(QStringLiteral("config-dir")));
+        const QString graphicsInfo=chooseGraphics(bridge.state().value(QStringLiteral("settings")).toMap().value(QStringLiteral("graphics")).toString());
         qmlRegisterType<FrameItem>("OpenDesk.Media",1,0,"RemoteFrame");
-        EdgeGlow glow;
-        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty(QStringLiteral("backend"),&bridge);engine.rootContext()->setContextProperty(QStringLiteral("edgeGlow"),&glow);
+        SessionDot dot;
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty(QStringLiteral("backend"),&bridge);engine.rootContext()->setContextProperty(QStringLiteral("sessionDot"),&dot);engine.rootContext()->setContextProperty(QStringLiteral("graphicsInfo"),graphicsInfo);
         const auto desktop=QGuiApplication::primaryScreen()->geometry();
         engine.rootContext()->setContextProperty(QStringLiteral("primaryDesktop"),QVariantMap{{QStringLiteral("x"),desktop.x()},{QStringLiteral("y"),desktop.y()},{QStringLiteral("width"),desktop.width()},{QStringLiteral("height"),desktop.height()}});
         QObject::connect(&engine,&QQmlApplicationEngine::objectCreationFailed,&application,[]{QCoreApplication::exit(1);},Qt::QueuedConnection);
@@ -77,7 +108,9 @@ int main(int argc,char** argv){
         const auto available=window->screen()->availableGeometry();
         window->resize(qMin(1280,qMax(760,available.width()-24)),qMin(820,qMax(520,available.height()-48)));
         window->setPosition(available.center()-QPoint(window->width()/2,window->height()/2));
-        if(parser.isSet(QStringLiteral("smoke-test"))&&parser.isSet(QStringLiteral("smoke-page"))){const auto page=parser.value(QStringLiteral("smoke-page"));if(!QStringList{QStringLiteral("home"),QStringLiteral("settings"),QStringLiteral("saved"),QStringLiteral("files"),QStringLiteral("audio"),QStringLiteral("update"),QStringLiteral("transfer"),QStringLiteral("pointer"),QStringLiteral("session"),QStringLiteral("sharing")}.contains(page))return 2;if(page==QStringLiteral("pointer"))window->setProperty("smokePointer",true);if(page==QStringLiteral("session")){window->setProperty("smokeSession",QVariantMap{{QStringLiteral("key"),QStringLiteral("smoke")},{QStringLiteral("state"),QStringLiteral("connected")},{QStringLiteral("name"),QStringLiteral("Office PC")},{QStringLiteral("route"),QStringLiteral("Direct")},{QStringLiteral("fps"),30},{QStringLiteral("rtt"),42},{QStringLiteral("profile"),QStringLiteral("balanced")},{QStringLiteral("maxWidth"),1920},{QStringLiteral("message"),QStringLiteral("Connected")},{QStringLiteral("permissions"),QVariantMap{{QStringLiteral("input"),true},{QStringLiteral("audio"),true},{QStringLiteral("file_transfer"),true}}}});window->setProperty("activeKey",QStringLiteral("smoke"));}if(page==QStringLiteral("sharing"))window->setProperty("smokeHost",QVariantMap{{QStringLiteral("peer"),QStringLiteral("100200300")},{QStringLiteral("since"),QDateTime::currentSecsSinceEpoch()-420},{QStringLiteral("from"),QVariantMap{{QStringLiteral("id"),QStringLiteral("111 222 333")},{QStringLiteral("name"),QStringLiteral("OFFICE-PC")}}},{QStringLiteral("permissions"),QVariantMap{{QStringLiteral("input"),true},{QStringLiteral("audio"),true},{QStringLiteral("file_transfer"),true}}}});window->setProperty("page",page==QStringLiteral("audio")?QStringLiteral("settings"):page==QStringLiteral("update")||page==QStringLiteral("pointer")||page==QStringLiteral("session")||page==QStringLiteral("sharing")?QStringLiteral("home"):page==QStringLiteral("transfer")?QStringLiteral("files"):page);if(page==QStringLiteral("update"))window->setProperty("smokeUpdate",QVariantMap{{QStringLiteral("state"),QStringLiteral("downloading")},{QStringLiteral("version"),QStringLiteral("9.9")},{QStringLiteral("done"),26214400},{QStringLiteral("total"),52428800},{QStringLiteral("speed"),2097152},{QStringLiteral("message"),QStringLiteral("Downloading the update…")}});if(page==QStringLiteral("transfer"))window->setProperty("smokeTransfer",QVariantMap{{QStringLiteral("state"),QStringLiteral("running")},{QStringLiteral("direction"),QStringLiteral("upload")},{QStringLiteral("name"),QStringLiteral("example.zip")},{QStringLiteral("done"),13107200},{QStringLiteral("total"),52428800},{QStringLiteral("speed"),3145728}});if(page==QStringLiteral("audio"))QTimer::singleShot(800,window,[window]{QMetaObject::invokeMethod(window,"focusAudio");});}
+        if(parser.isSet(QStringLiteral("smoke-test"))&&parser.isSet(QStringLiteral("smoke-page"))){const auto page=parser.value(QStringLiteral("smoke-page"));if(!QStringList{QStringLiteral("home"),QStringLiteral("settings"),QStringLiteral("saved"),QStringLiteral("files"),QStringLiteral("audio"),QStringLiteral("update"),QStringLiteral("transfer"),QStringLiteral("pointer"),QStringLiteral("session"),QStringLiteral("sharing"),QStringLiteral("thumbnails"),QStringLiteral("fullscreen")}.contains(page))return 2;if(page==QStringLiteral("pointer"))window->setProperty("smokePointer",true);if(page==QStringLiteral("fullscreen"))window->setProperty("fullView",true);if(page==QStringLiteral("session")||page==QStringLiteral("fullscreen")){window->setProperty("smokeSession",QVariantMap{{QStringLiteral("key"),QStringLiteral("smoke")},{QStringLiteral("state"),QStringLiteral("connected")},{QStringLiteral("name"),QStringLiteral("Office PC")},{QStringLiteral("route"),QStringLiteral("Direct")},{QStringLiteral("fps"),30},{QStringLiteral("rtt"),42},{QStringLiteral("profile"),QStringLiteral("balanced")},{QStringLiteral("maxWidth"),1920},{QStringLiteral("message"),QStringLiteral("Connected")},{QStringLiteral("permissions"),QVariantMap{{QStringLiteral("input"),true},{QStringLiteral("audio"),true},{QStringLiteral("file_transfer"),true}}}});window->setProperty("activeKey",QStringLiteral("smoke"));}if(page==QStringLiteral("sharing"))window->setProperty("smokeHost",QVariantMap{{QStringLiteral("peer"),QStringLiteral("100200300")},{QStringLiteral("since"),QDateTime::currentSecsSinceEpoch()-420},{QStringLiteral("from"),QVariantMap{{QStringLiteral("id"),QStringLiteral("111 222 333")},{QStringLiteral("name"),QStringLiteral("OFFICE-PC")}}},{QStringLiteral("permissions"),QVariantMap{{QStringLiteral("input"),true},{QStringLiteral("audio"),true},{QStringLiteral("file_transfer"),true}}}});window->setProperty("page",page==QStringLiteral("audio")?QStringLiteral("settings"):page==QStringLiteral("update")||page==QStringLiteral("pointer")||page==QStringLiteral("session")||page==QStringLiteral("fullscreen")||page==QStringLiteral("sharing")?QStringLiteral("home"):page==QStringLiteral("transfer")||page==QStringLiteral("thumbnails")?QStringLiteral("files"):page);if(page==QStringLiteral("update"))window->setProperty("smokeUpdate",QVariantMap{{QStringLiteral("state"),QStringLiteral("downloading")},{QStringLiteral("version"),QStringLiteral("9.9")},{QStringLiteral("done"),26214400},{QStringLiteral("total"),52428800},{QStringLiteral("speed"),2097152},{QStringLiteral("message"),QStringLiteral("Downloading the update…")}});// A remote folder with a few entries and one picture preview, in list (transfer) or grid (thumbnails) view.
+if(page==QStringLiteral("transfer")||page==QStringLiteral("thumbnails")){window->setProperty("smokeSession",QJsonDocument::fromJson(R"({"key":"smoke","state":"connected","name":"Office PC","permissions":{"file_transfer":true},"fileFeatures":["folders","thumbnails"],"files":{"path":"C:\\Users\\Office\\Shared","parent":"C:\\Users\\Office","entries":[{"name":"Holiday","is_dir":true,"size":0,"modified":1793900000},{"name":"Invoices","is_dir":true,"size":0,"modified":1793800000},{"name":"Logo.png","is_dir":false,"size":48211,"modified":1793700000},{"name":"Quarterly report.pdf","is_dir":false,"size":2411520,"modified":1793600000},{"name":"Setup.exe","is_dir":false,"size":39331752,"modified":1793500000},{"name":"song.mp3","is_dir":false,"size":5242880,"modified":1793400000}]},"previews":{"Logo.png":"qrc:/brand/portal-o.svg"}})").toVariant());window->setProperty("picked",QVariantMap{{QStringLiteral("Quarterly report.pdf"),true}});if(page==QStringLiteral("thumbnails"))window->setProperty("fileView",QStringLiteral("grid"));}
+if(page==QStringLiteral("transfer"))window->setProperty("smokeTransfer",QVariantMap{{QStringLiteral("state"),QStringLiteral("running")},{QStringLiteral("direction"),QStringLiteral("upload")},{QStringLiteral("name"),QStringLiteral("example.zip")},{QStringLiteral("done"),13107200},{QStringLiteral("total"),52428800},{QStringLiteral("speed"),3145728}});if(page==QStringLiteral("audio"))QTimer::singleShot(800,window,[window]{QMetaObject::invokeMethod(window,"focusAudio");});}
         od_set_window_handle(size_t(window->winId()));
         // The remote pointer window would otherwise keep the app alive after the main window closes.
         QObject::connect(window,&QWindow::visibleChanged,&application,[](bool visible){if(!visible)QCoreApplication::exit(0);});

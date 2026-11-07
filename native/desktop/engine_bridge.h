@@ -27,9 +27,14 @@ public:
     Q_INVOKABLE void copyText(const QString& value);
     Q_INVOKABLE void openUrl(const QString& value);
     Q_INVOKABLE void uploadFile(const QString& key,const QString& directory);
+    Q_INVOKABLE void uploadFolder(const QString& key,const QString& directory);
+    // Files and folders dropped from Explorer, as file URLs.
+    Q_INVOKABLE void uploadPaths(const QString& key,const QString& directory,const QVariantList& urls);
     Q_INVOKABLE void chooseSharedFolder();
     Q_INVOKABLE void openSharedFolder();
     Q_INVOKABLE void downloadFile(const QString& key,const QString& path,const QString& filename);
+    // Remote entries as {path,name,is_dir}: one file asks where to save it, anything more asks for a folder.
+    Q_INVOKABLE void downloadItems(const QString& key,const QVariantList& items);
 signals:
     void stateChanged();
 private:

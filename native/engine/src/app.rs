@@ -52,6 +52,7 @@ impl Shared {
         self.update(|v| {
             v["recents"] = store.config["recent_sessions"].clone();
             v["settings"] = store.config["native_settings"].clone();
+            v["allowedViewers"] = store.config["allowed_viewers"].clone();
             v["hasPassword"] = json!(
                 !store.config["unattended_password"]
                     .as_str()
@@ -69,7 +70,7 @@ pub struct App {
 }
 fn normalize_settings(settings:&mut Value)->bool{
     if !settings.is_object(){*settings=serde_json::json!({});}
-    let defaults=serde_json::json!({"profile":"balanced","theme":"dark","micGain":1.0,"speakerVolume":0.8,"micEnabled":false,"speakerEnabled":true,"publicAccess":true,"lanAccess":false,"unattendedEnabled":false,"sessionGlow":true});
+    let defaults=serde_json::json!({"profile":"balanced","theme":"dark","graphics":"auto","micGain":1.0,"speakerVolume":0.8,"micEnabled":false,"speakerEnabled":true,"publicAccess":true,"lanAccess":false,"unattendedEnabled":false,"sessionDot":true});
     let mut changed=false;
     for (key,fallback) in defaults.as_object().unwrap(){
         let value=match key.as_str(){
@@ -77,6 +78,7 @@ fn normalize_settings(settings:&mut Value)->bool{
             "speakerVolume"=>settings[key].as_f64().filter(|n|n.is_finite()).map(|n|serde_json::json!(n.clamp(0.0,1.0))),
             "profile"=>settings[key].as_str().filter(|s|matches!(*s,"balanced"|"performance"|"sharp")).map(|s|serde_json::json!(s)),
             "theme"=>settings[key].as_str().filter(|s|matches!(*s,"dark"|"light")).map(|s|serde_json::json!(s)),
+            "graphics"=>settings[key].as_str().filter(|s|matches!(*s,"auto"|"direct3d"|"opengl"|"software")).map(|s|serde_json::json!(s)),
             _=>settings[key].as_bool().map(|v|serde_json::json!(v))
         }.unwrap_or_else(||fallback.clone());
         if settings[key]!=value{settings[key]=value;changed=true;}
@@ -148,6 +150,7 @@ impl App {
 }
 #[cfg(test)]mod settings_tests{
     use super::*;
+    #[test]fn the_drawing_choice_survives_a_restart_and_bad_values_fall_back(){let mut value=json!({"graphics":"opengl"});normalize_settings(&mut value);assert_eq!(value["graphics"],"opengl");let mut value=json!({"graphics":"vulkan"});normalize_settings(&mut value);assert_eq!(value["graphics"],"auto");}
     #[test]fn migrated_audio_settings_match_the_display_and_preserve_explicit_mute(){let mut value=json!({"speakerEnabled":false,"micEnabled":false,"micGain":0.0,"custom":"kept"});assert!(normalize_settings(&mut value));assert_eq!(value["speakerVolume"],0.8);assert_eq!(value["micGain"],0.0);assert_eq!(value["speakerEnabled"],false);assert_eq!(value["publicAccess"],true);assert_eq!(value["custom"],"kept");assert!(!normalize_settings(&mut value));}
 }
 impl Drop for App {

@@ -18,9 +18,14 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
 /// The connect request names this viewer for the host's indicator. Older hosts ignore it.
-fn hello(shared: &Shared, target_id: &str) -> Value {
+/// The connect request; `proof` is this device's signature over the host challenge, or null.
+fn hello(shared: &Shared, target_id: &str, proof: &Value) -> Value {
     let id = store::format_id(&shared.store.lock().unwrap().id());
-    json!({"target_id":target_id,"from":{"id":id,"name":std::env::var("COMPUTERNAME").unwrap_or_default()}})
+    let mut request = json!({"target_id":target_id,"from":{"id":id,"name":std::env::var("COMPUTERNAME").unwrap_or_default()}});
+    if !proof.is_null() {
+        request["viewer"] = proof.clone();
+    }
+    request
 }
 pub fn profile(name: &str) -> Value {
     match name {
@@ -136,7 +141,7 @@ pub async fn run(
         send(&tx,"register",json!({"role":"client","protocol":2,"supported_protocols":[2,1]})).await?;
         let nonce=store::token();let device=if target_id=="remote_host"{url.clone()}else{target_id.clone()};
         let pinned=shared.store.lock().unwrap().config["trusted_devices"][&device].as_str().map(str::to_owned);
-        let mut registered=false;let mut verified=false;let mut legacy=false;let mut legacy_limits=Permissions::default();let mut offered_key=String::new();let mut session=String::new();let mut permissions=Permissions::default();
+        let mut registered=false;let mut verified=false;let mut legacy=false;let mut legacy_limits=Permissions::default();let mut offered_key=String::new();let mut viewer_proof=Value::Null;let mut session=String::new();let mut permissions=Permissions::default();
         let mut voice:Option<crate::audio::Voice>=None;let mut decoder:Option<crate::media::DecodeWorker>=None;
         let mut clipboard=crate::platform::Clipboard::new();let mut files=crate::files::ClientFiles::new(shared.clone(),key.clone());
         let started=Instant::now();let mut heartbeat=tokio::time::interval(Duration::from_secs(1));let mut disconnected=false;
@@ -161,10 +166,10 @@ pub async fn run(
                                 else{bail!("The remote desktop uses an unsupported protocol. Supported protocols: 1 and 2.")}
                             },
                             "identity" if !legacy=>{
-                                let public=verify_identity(p,&nonce)?;
+                                let public=verify_identity(p,&nonce)?;if let Some(challenge)=p["viewer_challenge"].as_str().filter(|c|(16..=128).contains(&c.len())){viewer_proof=shared.store.lock().unwrap().viewer_proof(challenge,&public);}
                                 if directory_key.as_ref().is_some_and(|key|*key!=public){bail!("Directory key does not match the connected device")}
                                 if pinned.as_ref().is_some_and(|key|*key!=public){bail!("Saved device identity changed. Compare the fingerprint on the host before clearing its trust record.")}
-                                if pinned.is_some(){verified=true;send(&tx,"connect",hello(&shared,&target_id)).await?;}
+                                if pinned.is_some(){verified=true;send(&tx,"connect",hello(&shared,&target_id,&viewer_proof)).await?;}
                                 else{
 offered_key=public;
 use sha2::{
@@ -188,7 +193,7 @@ v["message"]=json!("Compare the device fingerprint to continue.");
 let challenge=p.clone();
 let secret=password.clone();
 let proof=tokio::task::spawn_blocking(move||password_proof(&secret,&challenge)).await??;
-send(&tx,"connect",{let mut request=hello(&shared,&target_id);request["proof"]=json!(proof);request}).await?;
+send(&tx,"connect",{let mut request=hello(&shared,&target_id,&viewer_proof);request["proof"]=json!(proof);request}).await?;
 }
 
                             },
@@ -198,6 +203,7 @@ send(&tx,"connect",{let mut request=hello(&shared,&target_id);request["proof"]=j
                                     session=if legacy{p["session_id"].as_str().filter(|s|(16..=128).contains(&s.len())).map(str::to_owned).unwrap_or_else(store::token)}else{p["session_id"].as_str().context("Missing session token")?.into()};if session.len()<16||session.len()>128{bail!("Invalid session token")}
                                     permissions=if legacy{crate::legacy::permissions(&p["permissions"],legacy_limits)}else{serde_json::from_value(p["permissions"].clone()).context("Invalid session permissions")?};
                                     permissions=permissions.for_edition();
+                                    if permissions.file_transfer{let _=files.command(&json!({"type":"file_features","features":p["files"]}),&tx).await;}
                                     let profile_name=shared.store.lock().unwrap().config["native_settings"]["profile"].as_str().unwrap_or("balanced").to_owned();
                                     send(&tx,"video_config",profile(&profile_name)).await?;
                                     decoder=Some(crate::media::DecodeWorker::start(shared.clone(),key.clone(),session.clone(),tx.clone())?);
@@ -250,14 +256,14 @@ shared.connection(&key,|v|v["rtt"]=json!(rtt));
                         if command["allow"]!=true{disconnected=true;break}
                         legacy_limits=serde_json::from_value(command["permissions"].clone()).unwrap_or_default();legacy_limits.file_transfer=false;
                         verified=true;shared.connection(&key,|v|{v["needsLegacy"]=json!(false);v["message"]=json!("Requesting permission from the older desktop…");});
-                        send(&tx,"connect",hello(&shared,&target_id)).await?;
+                        send(&tx,"connect",hello(&shared,&target_id,&viewer_proof)).await?;
                     },
                     "trust" if !offered_key.is_empty()&&!verified=>{
                         if command["allow"]!=true{disconnected=true;break}
                         {let mut store=shared.store.lock().unwrap();store.config["trusted_devices"][&device]=json!(offered_key);store.save()?;}
-                        verified=true;shared.connection(&key,|v|v["needsTrust"]=json!(false));send(&tx,"connect",hello(&shared,&target_id)).await?;
+                        verified=true;shared.connection(&key,|v|v["needsTrust"]=json!(false));send(&tx,"connect",hello(&shared,&target_id,&viewer_proof)).await?;
                     },
-                    "password" if verified&&!legacy=>{password=command["password"].as_str().unwrap_or("").to_owned();shared.connection(&key,|v|v["needsPassword"]=json!(false));send(&tx,"connect",hello(&shared,&target_id)).await?;},
+                    "password" if verified&&!legacy=>{password=command["password"].as_str().unwrap_or("").to_owned();shared.connection(&key,|v|v["needsPassword"]=json!(false));send(&tx,"connect",hello(&shared,&target_id,&viewer_proof)).await?;},
                     "video_profile" if !session.is_empty()=>{let name=command["profile"].as_str().unwrap_or("balanced");let width=command["maxWidth"].as_u64().filter(|w|(640..=2560).contains(w));let mut config=profile(name);if let Some(width)=width{config["max_width"]=json!(width);}send(&tx,"video_config",config).await?;shared.connection(&key,|v|{v["profile"]=json!(name);v["maxWidth"]=json!(width.unwrap_or(0));});},
                     "input" if !session.is_empty()=>{
                         let mut p=command["payload"].clone();

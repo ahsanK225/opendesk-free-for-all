@@ -1,14 +1,20 @@
 {
-  "version": "3.6",
+  "version": "3.7",
   "channel": "stable",
-  "release_date": "2026-11-06",
-  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.6/OpenDesk_v3.6_Portable.exe",
-  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.6/OpenDesk_Setup_v3.6_Installer.exe",
-  "sha256": "5bcbfc837ff718fcff036d6fab55f6c3d33e77900a1dc4aeafa5ca95c8fb5fe9",
-  "installer_sha256": "22a77a4695c8b07765045e9a1bdafb6bde86e41a148a5d7dea681787d871750b",
+  "release_date": "2026-11-07",
+  "download_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.7/OpenDesk_v3.7_Portable.exe",
+  "installer_url": "https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.7/OpenDesk_Setup_v3.7_Installer.exe",
+  "sha256": "7973347517aed3008becf678242c9e34e3253631479f396e14429daecc61d137",
+  "installer_sha256": "f20cf1572b105dd9d10c51b18cfa3b4898d83a62f896f86763882147c248cd68",
   "changelog": [
-    "A soft glow on the screen edges while someone is connected, instead of the panel, with a switch in Settings",
-    "Fit to window and Original size now change what you see",
-    "A fitted picture is sent at the size of your window"
+    "Full screen for a running session; Esc or the top edge leaves it",
+    "Always allow chosen devices without asking, per device and with their own permissions",
+    "A Screen drawing setting that picks OpenGL on older display drivers, against blinking",
+    "Error and status notices close by themselves after a few seconds",
+    "An Update button in the sidebar whenever a new version is ready",
+    "Zoom stays where you put it instead of changing by itself",
+    "A session survives Run as administrator prompts",
+    "A small red dot you can drag anywhere replaces the screen edge glow",
+    "Send several files or whole folders, download folders, and see pictures as thumbnails"
   ]
 }

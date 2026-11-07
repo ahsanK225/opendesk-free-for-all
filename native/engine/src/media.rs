@@ -383,6 +383,8 @@ packet(if typ=="file_list_req"{
 "file_list_resp"}
 else if typ=="file_download_req"{
 "file_chunk"}
+else if typ=="file_thumb_req"{
+"file_thumb_resp"}
 else{
 &typ}
 ,reply)}
@@ -412,6 +414,7 @@ break}
     let (mut sent_frames, mut full_frames, mut sent_bytes) = (0u64, 0u64, 0u64);
     let mut last_refresh = Instant::now();
     let mut configured = false;
+    let mut capture_paused = false;
     let (mut h264, mut use_h264, mut settle) = (H264Stream::default(), false, 0u32);
     while !stop.load(Ordering::Acquire) && !shared.stop.load(Ordering::Acquire) {
         let budget = Instant::now();
@@ -534,7 +537,22 @@ break}
             next = Instant::now() + Duration::from_secs_f64(1.0 / pace.fps);
             let captured = match test_motion(&mut motion_step) {
                 Some(raw) => Some(raw),
-                None => capture.grab()?,
+                // A UAC prompt moves Windows to the secure desktop, which no user program can read.
+                // Keep the session and the last picture until the normal desktop returns.
+                None => match capture.grab() {
+                    Ok(raw) => {
+                        if std::mem::take(&mut capture_paused) {
+                            window.refresh();
+                        }
+                        raw
+                    }
+                    Err(error) => {
+                        if !std::mem::replace(&mut capture_paused, true) {
+                            shared.error(format!("Screen capture paused: {error:#}"));
+                        }
+                        None
+                    }
+                },
             };
             let changed = captured.is_some();
             if let Some(raw) = captured {

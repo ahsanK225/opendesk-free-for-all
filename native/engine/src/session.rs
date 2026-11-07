@@ -133,7 +133,8 @@ impl HostSession {
             | "shortcut" => active.permissions.input,
             "audio_chunk" | "audio_control" => active.permissions.audio,
             "clipboard_text" => active.permissions.clipboard,
-            "file_list_req" | "file_download_req" | "file_upload_start" | "file_chunk" => {
+            "file_list_req" | "file_download_req" | "file_upload_start" | "file_chunk" | "file_mkdir"
+            | "file_thumb_req" => {
                 active.permissions.file_transfer
             }
             "video_ack" | "video_refresh" | "video_config" | "input_reset" | "session_end" => true,
@@ -218,6 +219,8 @@ mod tests {
             "audio_chunk",
             "clipboard_text",
             "file_chunk",
+            "file_mkdir",
+            "file_thumb_req",
             "register",
             "session_accept",
         ] {

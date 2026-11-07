@@ -154,6 +154,46 @@ fn native_endpoints_approve_stream_transfer_and_revoke() {
     wait("atomic download", || downloaded.is_file());
     println!("download {} bytes in {:?}", bytes.len(), timer.elapsed());
     assert_eq!(fs::read(&downloaded).unwrap(), bytes);
+    // A folder with a subfolder and a picture goes up as one batch, the picture gets a preview,
+    // and the folder comes back down with the same contents.
+    let tree = case.root.join("Album");
+    fs::create_dir_all(tree.join("Trip")).unwrap();
+    fs::write(tree.join("notes.txt"), b"first").unwrap();
+    fs::write(tree.join("Trip").join("day1.bin"), &bytes[..70_000]).unwrap();
+    let mut bmp = b"BM".to_vec();
+    for value in [70u32, 0, 54, 40, 2, 2] {
+        bmp.extend(value.to_le_bytes());
+    }
+    bmp.extend(1u16.to_le_bytes());
+    bmp.extend(24u16.to_le_bytes());
+    for value in [0u32, 16, 2835, 2835, 0, 0] {
+        bmp.extend(value.to_le_bytes());
+    }
+    bmp.extend([0, 0, 255, 0, 0, 255, 0, 0, 0, 0, 255, 0, 0, 255, 0, 0]);
+    fs::write(tree.join("red.bmp"), &bmp).unwrap();
+    let timer = Instant::now();
+    client.command(json!({"type":"upload","key":key,"sources":[tree],"directory":shared_dir}));
+    wait("folder upload", || {
+        snapshot(&client)["connections"][0]["transferInfo"]["message"] == "3 files transferred and verified"
+    });
+    println!("folder upload in {:?}", timer.elapsed());
+    let album = shared_dir.join("Album");
+    assert_eq!(fs::read(album.join("Trip").join("day1.bin")).unwrap(), &bytes[..70_000]);
+    assert_eq!(fs::read(album.join("notes.txt")).unwrap(), b"first");
+    client.command(json!({"type":"list_files","key":key,"path":album}));
+    wait("picture preview", || {
+        snapshot(&client)["connections"][0]["previews"]["red.bmp"]
+            .as_str()
+            .is_some_and(|url| url.starts_with("file:///"))
+    });
+    let back = case.directory("back");
+    client.command(json!({"type":"download","key":key,"directory":back,"items":[{"path":album,"name":"Album","is_dir":true}]}));
+    let copy = back.join("Album");
+    wait("folder download", || {
+        ["notes.txt", "red.bmp", "Trip/day1.bin"].iter().all(|name| copy.join(name).is_file())
+    });
+    assert_eq!(fs::read(copy.join("Trip").join("day1.bin")).unwrap(), &bytes[..70_000]);
+    assert_eq!(fs::read(copy.join("red.bmp")).unwrap(), bmp);
     // Exercise both voice directions while forcing video updates for longer
     // than the reported 10–20 second failure window. No OS input is injected;
     // microphones are muted and speaker volume is disabled in this fixture.
@@ -234,6 +274,69 @@ fn a_password_needs_approval_until_unattended_access_is_on() {
         snapshot(&second)["connections"][0]["state"] == "connected"
     });
     assert!(snapshot(&host)["incoming"].is_null());
+}
+
+#[test]
+fn an_always_allowed_device_connects_without_approval_and_others_still_ask() {
+    let case = Case::new();
+    let host_dir = case.directory("host");
+    let shared_dir = case.directory("shared");
+    config(&host_dir, &shared_dir);
+    let host = App::create(host_dir).unwrap();
+    wait("host listener", || {
+        !snapshot(&host)["localUrl"].as_str().unwrap_or("").is_empty()
+    });
+    let url = snapshot(&host)["localUrl"].as_str().unwrap().to_owned();
+    let start = |name: &str| {
+        let directory = case.directory(name);
+        config(&directory, &shared_dir);
+        let client = App::create(directory).unwrap();
+        client.command(json!({"type":"connect","target":url}));
+        wait("device verification", || {
+            snapshot(&client)["connections"][0]["needsTrust"] == true
+        });
+        let key = snapshot(&client)["connections"][0]["key"].as_str().unwrap().to_owned();
+        client.command(json!({"type":"trust","key":key,"allow":true}));
+        client
+    };
+    let close = |client: &App| {
+        let key = snapshot(client)["connections"][0]["key"].as_str().unwrap().to_owned();
+        client.command(json!({"type":"close_session","key":key}));
+        wait("session closed", || snapshot(&host)["hostSession"].is_null());
+    };
+    // The first time asks, and the person at the host ticks "Always allow".
+    let known = start("known");
+    wait("approval request", || snapshot(&host)["incoming"].is_object());
+    assert_eq!(snapshot(&host)["incoming"]["from"]["verified"], true);
+    let request = snapshot(&host)["incoming"]["requestId"].as_str().unwrap().to_owned();
+    host.command(json!({"type":"approve","requestId":request,"allow":true,"remember":true,"permissions":{"input":true,"audio":false,"clipboard":false,"file_transfer":false}}));
+    wait("connected", || snapshot(&known)["connections"][0]["state"] == "connected");
+    assert_eq!(snapshot(&host)["allowedViewers"].as_array().map(Vec::len), Some(1));
+    close(&known);
+    // The same device comes back without a request, with the permissions chosen then.
+    known.command(json!({"type":"connect","target":url}));
+    wait("allowed connection", || snapshot(&known)["connections"][0]["state"] == "connected");
+    assert!(snapshot(&host)["incoming"].is_null());
+    assert_eq!(snapshot(&host)["hostSession"]["permissions"]["input"], true);
+    assert_eq!(snapshot(&host)["hostSession"]["permissions"]["clipboard"], false);
+    close(&known);
+    // Another device is still asked about.
+    let stranger = start("stranger");
+    wait("stranger asks", || snapshot(&host)["incoming"].is_object());
+    assert_ne!(snapshot(&stranger)["connections"][0]["state"], "connected");
+    let request = snapshot(&host)["incoming"]["requestId"].as_str().unwrap().to_owned();
+    host.command(json!({"type":"approve","requestId":request,"allow":false}));
+    wait("rejected", || snapshot(&host)["incoming"].is_null());
+    // Removing the device makes it ask again.
+    let key = snapshot(&host)["allowedViewers"][0]["key"].as_str().unwrap().to_owned();
+    host.command(json!({"type":"forget_viewer","key":key}));
+    wait("forgotten", || snapshot(&host)["allowedViewers"].as_array().is_some_and(Vec::is_empty));
+    let old = snapshot(&known)["connections"][0]["key"].as_str().map(str::to_owned);
+    if let Some(old) = old {
+        known.command(json!({"type":"close_session","key":old}));
+    }
+    known.command(json!({"type":"connect","target":url}));
+    wait("asks again", || snapshot(&host)["incoming"].is_object());
 }
 
 #[test]

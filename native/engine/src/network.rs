@@ -53,6 +53,19 @@ struct Host {
     password: Option<Value>,
     /// What the connecting viewer says about itself, shown to the person at this PC.
     viewer: Value,
+    /// Challenges sent with `identity`, by peer, for viewers to sign with their device key.
+    viewer_challenges: HashMap<String, (String, Instant)>,
+    /// The device key the pending or active viewer proved, if it proved one.
+    viewer_key: Option<String>,
+}
+/// Viewers allowed to connect without approval are stored by device key, at most this many.
+const MAX_ALLOWED_VIEWERS: usize = 50;
+/// The stored permissions of a viewer this desktop allows without asking.
+fn allowed_viewer(list: &Value, key: &str) -> Option<Permissions> {
+    list.as_array()?
+        .iter()
+        .find(|entry| entry["key"] == key)
+        .and_then(|entry| serde_json::from_value(entry["permissions"].clone()).ok())
 }
 /// The name and ID a viewer from 3.5 on sends. It is not proof of identity.
 fn viewer_info(payload: &Value) -> Value {
@@ -99,6 +112,7 @@ impl Runtime {
         let mut host = self.host.lock().unwrap();
         host.authorization.revoke();
         host.challenges.clear();
+        host.viewer_key = None;
         if let Some(pending) = host.pending.take() {
             self.error(&pending.peer, reason);
         }
@@ -143,7 +157,7 @@ impl Runtime {
             && self.shared.store.lock().unwrap().config["native_settings"]["micEnabled"]
                 .as_bool()
                 .unwrap_or(false);
-        self.send(peer,"connect_resp",json!({"status":"ok","target_id":host_id,"session_id":id,"permissions":permissions,"protocol":2,"codecs":if cfg!(feature="full"){vec!["opus"]}else{Vec::new()}}));
+        self.send(peer,"connect_resp",json!({"status":"ok","target_id":host_id,"session_id":id,"permissions":permissions,"protocol":2,"codecs":if cfg!(feature="full"){vec!["opus"]}else{Vec::new()},"files":["folders","thumbnails"]}));
         self.shared.update(|v| {
             v["incoming"] = Value::Null;
             v["hostSession"] =
@@ -158,7 +172,16 @@ impl Runtime {
                     .as_str()
                     .filter(|n| (16..=128).contains(&n.len()))
                 {
-                    let result = self.shared.store.lock().unwrap().identity_packet(nonce);
+                    let mut result = self.shared.store.lock().unwrap().identity_packet(nonce);
+                    let challenge = token();
+                    {
+                        let mut host = self.host.lock().unwrap();
+                        host.viewer_challenges.retain(|_, (_, at)| at.elapsed() < Duration::from_secs(120));
+                        if host.viewer_challenges.len() < 64 {
+                            host.viewer_challenges.insert(peer.into(), (challenge.clone(), Instant::now()));
+                            result["viewer_challenge"] = json!(challenge);
+                        }
+                    }
                     self.send(peer, "identity", result);
                 }
             }
@@ -180,16 +203,43 @@ impl Runtime {
                     self.error(peer, "Host ID not found.");
                     return;
                 }
-                let unattended = self.shared.store.lock().unwrap().config["native_settings"]["unattendedEnabled"]
-                    .as_bool()
-                    .unwrap_or(false);
+                let (unattended, own_key, allowed) = {
+                    let store = self.shared.store.lock().unwrap();
+                    (
+                        store.config["native_settings"]["unattendedEnabled"].as_bool().unwrap_or(false),
+                        store.key(),
+                        store.config["allowed_viewers"].clone(),
+                    )
+                };
+                let legacy = self.legacy_peers.lock().unwrap().contains(peer);
                 let mut host = self.host.lock().unwrap();
                 if host.active.is_some() || host.pending.is_some() {
                     self.error(peer, "This desktop is busy.");
                     return;
                 }
+                // A one-time challenge, so a proof can neither be replayed nor reused for another host.
+                host.viewer_key = host
+                    .viewer_challenges
+                    .remove(peer)
+                    .filter(|(_, at)| !legacy && at.elapsed() < Duration::from_secs(120))
+                    .and_then(|(challenge, _)| store::verify_viewer(&payload["viewer"], &challenge, &own_key).ok());
                 host.viewer = viewer_info(&payload);
+                if let Some(key) = host.viewer_key.clone() {
+                    host.viewer["verified"] = json!(true);
+                    host.viewer["fingerprint"] = json!(hex::encode(&<sha2::Sha256 as sha2::Digest>::digest(key.as_bytes())[..6]));
+                }
                 let from = host.viewer.clone();
+                if let Some(permissions) = host.viewer_key.as_deref().and_then(|key| allowed_viewer(&allowed, key)) {
+                    let request = token();
+                    let result = host.authorization.request(request.clone(), peer.into(), self.started.elapsed().as_millis() as u64);
+                    drop(host);
+                    if result.is_err() {
+                        self.error(peer, "This desktop is busy.");
+                    } else if let Err(error) = self.pair(peer, permissions, &request) {
+                        self.error(peer, error);
+                    }
+                    return;
+                }
                 while host
                     .failures
                     .front()
@@ -350,6 +400,28 @@ impl Runtime {
                     if self.legacy_peers.lock().unwrap().contains(&peer) {
                         permissions.file_transfer = false;
                     }
+                    // "Always allow" needs a device key the viewer proved for this request.
+                    let (key, from) = {
+                        let host = self.host.lock().unwrap();
+                        (host.viewer_key.clone(), host.viewer.clone())
+                    };
+                    if command["remember"].as_bool() == Some(true) && let Some(key) = key {
+                        let result = {
+                            let mut store = self.shared.store.lock().unwrap();
+                            if !store.config["allowed_viewers"].is_array() {
+                                store.config["allowed_viewers"] = json!([]);
+                            }
+                            let list = store.config["allowed_viewers"].as_array_mut().unwrap();
+                            list.retain(|entry| entry["key"] != key.as_str());
+                            list.insert(0, json!({"key":key,"id":from["id"],"name":from["name"],"fingerprint":from["fingerprint"],"permissions":permissions.for_edition(),"added":store::now()}));
+                            list.truncate(MAX_ALLOWED_VIEWERS);
+                            store.save()
+                        };
+                        if let Err(error) = result {
+                            self.shared.error(error);
+                        }
+                        self.shared.sync_config();
+                    }
                     if let Err(error) = self.pair(&peer, permissions, request) {
                         self.error(&peer, error);
                     }
@@ -411,7 +483,8 @@ impl Runtime {
                         matches!(value.as_str(), Some("balanced" | "performance" | "sharp"))
                     }
                     "theme" => matches!(value.as_str(), Some("dark" | "light")),
-                    "micEnabled" | "speakerEnabled" | "publicAccess" | "lanAccess" | "unattendedEnabled" | "sessionGlow" => value.is_boolean(),
+                    "graphics" => matches!(value.as_str(), Some("auto" | "direct3d" | "opengl" | "software")),
+                    "micEnabled" | "speakerEnabled" | "publicAccess" | "lanAccess" | "unattendedEnabled" | "sessionDot" => value.is_boolean(),
                     "speakerVolume" => value.as_f64().is_some_and(|n| (0.0..=1.0).contains(&n)),
                     "micGain" => value.as_f64().is_some_and(|n| (0.0..=3.0).contains(&n)),
                     "sharedRoot" => value.as_str().is_some_and(|p| {
@@ -463,6 +536,21 @@ impl Runtime {
                         item["favorite"] = json!(!item["favorite"].as_bool().unwrap_or(false));
                     }
                     store.save()
+                };
+                if let Err(error) = result {
+                    self.shared.error(error);
+                }
+                self.shared.sync_config();
+            }
+            "forget_viewer" => {
+                let key = command["key"].as_str().unwrap_or("");
+                let result = {
+                    let mut store = self.shared.store.lock().unwrap();
+                    let before = store.config["allowed_viewers"].as_array().map_or(0, Vec::len);
+                    if let Some(list) = store.config["allowed_viewers"].as_array_mut() {
+                        list.retain(|entry| entry["key"] != key);
+                    }
+                    if store.config["allowed_viewers"].as_array().map_or(0, Vec::len) != before { store.save() } else { Ok(()) }
                 };
                 if let Err(error) = result {
                     self.shared.error(error);
@@ -766,6 +854,8 @@ pub async fn run(shared: Arc<Shared>, mut commands: mpsc::Receiver<Value>) -> Re
             failures: VecDeque::new(),
             password,
             viewer: Value::Null,
+            viewer_challenges: HashMap::new(),
+            viewer_key: None,
         }),
         clients: Mutex::new(HashMap::new()),
         connections: Arc::new(Semaphore::new(16)),

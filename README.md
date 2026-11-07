@@ -2,9 +2,9 @@
 
 A Windows remote desktop application with a **Rust engine, Qt 6/QML interface and C++ rendering bridge**. Share the primary display, control an approved desktop, talk during a session and exchange files in a folder selected by the host.
 
-**Stable Windows release v3.6:** [Windows installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.6/OpenDesk_Setup_v3.6_Installer.exe) · [Portable executable](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.6/OpenDesk_v3.6_Portable.exe) · [Release notes/checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.6) · [OpenDesk Lite installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.6/OpenDeskLite_Setup_v3.6_Installer.exe)
+**Stable Windows release v3.7:** [Windows installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.7/OpenDesk_Setup_v3.7_Installer.exe) · [Portable executable](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.7/OpenDesk_v3.7_Portable.exe) · [Release notes/checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.7) · [OpenDesk Lite installer](https://github.com/ahsanK225/opendesk-free-for-all/releases/download/v3.7/OpenDeskLite_Setup_v3.7_Installer.exe)
 
-OpenDesk 3.6 is the current stable release. Both repositories publish it as **Latest**, and the live update manifest points to the same build. The [portfolio fork](https://github.com/hamxa8769/opendesk-free-for-all/releases/tag/v3.6) mirrors the current installer and portable executable. [Complete ascending version history: 1.0 through 3.6](docs/VERSION_HISTORY.md).
+OpenDesk 3.7 is the current stable release. Both repositories publish it as **Latest**, and the live update manifest points to the same build. The [portfolio fork](https://github.com/hamxa8769/opendesk-free-for-all/releases/tag/v3.7) mirrors the current installer and portable executable. [Complete ascending version history: 1.0 through 3.7](docs/VERSION_HISTORY.md).
 
 Local network access is off by default, and its traffic is not encrypted. When you turn on **Settings → Local network access**, use it only on networks you trust. OpenDesk does not send a password to an older desktop that cannot prove its identity, so an older desktop with a password must be updated, or its password turned off, before you can connect to it.
 
@@ -16,7 +16,7 @@ Local network access is off by default, and its traffic is not encrypted. When y
 - Native WASAPI voice through CPAL: explicit sample rates, continuous resampling, 20 ms mono PCM packets, independent outgoing audio capacity and bounded playback buffering. Session mute/gain/volume, default-device retry and device readiness/errors are available.
 - Incoming approval restores a minimized window and remains above other apps until acceptance, rejection or expiry. Input, voice, clipboard and files have separate permissions.
 - Verified/pinned device fingerprints, DPAPI-protected local identity/passwords, one-use password challenges and immediate access revocation with held-input release.
-- Saved desktops, favorites, session tabs, native file dialogs and folder-scoped transfers with ordered chunks, SHA-256 verification and atomic replacement.
+- Saved desktops, favorites, session tabs, native file dialogs and folder-scoped transfers with ordered chunks, SHA-256 verification and atomic replacement. Send several files or whole folders, drop them from Explorer, download folders, and browse the shared folder as a list or as thumbnails with picture previews.
 - Native installer shutdown helper, verified-process force-close fallback, persistent portable cache, repair and verified updates. No Python or PyInstaller runtime.
 
 ## System requirements
@@ -61,7 +61,7 @@ Set an access password of at least eight characters in Settings if unattended ac
 
 The built-in local server serves a protocol-v2 browser viewer at the host's share URL. Browser microphone capture needs HTTPS or localhost, browser permission and a user gesture to resume playback. Native voice follows Windows privacy settings instead.
 
-Choose the host's **Shared folder** before granting file access. Transfers operate inside that folder and verify order, size and hash before replacing a destination. Changing the folder ends sharing so a new session can explicitly authorize the new location.
+Choose the host's **Shared folder** before granting file access. Transfers operate inside that folder and verify order, size and hash before replacing a destination. Sending folders and picture previews need the host to run 3.7 or newer. Changing the folder ends sharing so a new session can explicitly authorize the new location.
 
 ## Voice communication setup
 
@@ -130,7 +130,7 @@ Install the current stable release through its installer or replace the portable
 
 ## Version history and changelog
 
-Release numbers advance without gaps: **1.0, 1.1, …, 1.9, 2.0, …, 3.6**. The next release is **3.7**.
+Release numbers advance without gaps: **1.0, 1.1, …, 1.9, 2.0, …, 3.7**. The next release is **3.8**.
 
 | Version | Release notes and downloads |
 | --- | --- |
@@ -160,7 +160,8 @@ Release numbers advance without gaps: **1.0, 1.1, …, 1.9, 2.0, …, 3.6**. The
 | **3.3** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.3) |
 | **3.4** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.4) |
 | **3.5** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.5) |
-| **3.6 — current stable** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.6) |
+| **3.6** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.6) |
+| **3.7 — current stable** | [Windows installer, portable, manifest and checksums](https://github.com/ahsanK225/opendesk-free-for-all/releases/tag/v3.7) |
 
 Original source tags and historical binaries are preserved. See [complete history and original build mapping](docs/VERSION_HISTORY.md) and [CHANGELOG.md](CHANGELOG.md).
 

@@ -275,7 +275,7 @@ impl Capture {
             self.duplication = Duplication::new().ok();
             self.captured = false;
         }
-        if self.duplication.is_none() && self.retry.elapsed() > std::time::Duration::from_secs(5) {
+        if self.duplication.is_none() && self.retry.elapsed() > std::time::Duration::from_secs(1) {
             self.retry = std::time::Instant::now();
             self.duplication = Duplication::new().ok();
         }

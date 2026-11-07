@@ -46,7 +46,35 @@ ApplicationWindow {
     readonly property string updateState:updateInfo.state||"idle"
     property string dismissedUpdate:""
     onUpdateStateChanged:{if(["downloading","verifying","installing","failed"].indexOf(updateState)>=0||(updateState==="available"&&updateInfo.version!==dismissedUpdate))updateDialog.open();else if(updateState==="idle"||updateState==="waiting")updateDialog.close();}
-    onPageChanged:{if(page!=="files")return;if(!activeKey.length)for(let i=0;i<sessions.length;i++)if(sessions[i].state==="connected"){activeKey=sessions[i].key;break;}if(current.state==="connected"&&current.permissions&&current.permissions.file_transfer&&!current.files)send("list_files",{key:activeKey,path:"."});}
+    onPageChanged:{if(page!=="files")return;if(!activeKey.length)for(let i=0;i<sessions.length;i++)if(sessions[i].state==="connected"){activeKey=sessions[i].key;break;}}
+    // The running session fills the whole screen; Esc or the bar at the top edge leaves.
+    property bool fullView:false
+    property int windowBefore:Window.Windowed
+    function enterFullView(){if(fullView||current.state!=="connected")return;windowBefore=visibility===Window.Maximized?Window.Maximized:Window.Windowed;fullView=true;showFullScreen();remoteFrame.forceActiveFocus();}
+    function leaveFullView(){if(!fullView)return;fullView=false;if(windowBefore===Window.Maximized)showMaximized();else showNormal();}
+    readonly property bool fullViewPossible:page==="home"&&activeKey!==""&&current.state==="connected"
+    onFullViewPossibleChanged:if(!fullViewPossible)leaveFullView()
+    readonly property bool canSendFiles:current.state==="connected"&&Boolean(current.permissions&&current.permissions.file_transfer)
+    readonly property string remoteFolder:(current.files||{}).path||"."
+    readonly property var fileEntries:(current.files||{}).entries||[]
+    property string fileView:"list"
+    // Selected entries of the folder on screen, by name.
+    property var picked:({})
+    readonly property int pickedCount:Object.keys(picked).length
+    onRemoteFolderChanged:picked={}
+    // Lists the shared folder as soon as the page and the session are both ready.
+    readonly property bool filesWanted:page==="files"&&canSendFiles&&!current.files
+    onFilesWantedChanged:if(filesWanted)send("list_files",{key:activeKey,path:"."})
+    function fileFeature(name){return (current.fileFeatures||[]).indexOf(name)>=0;}
+    function remoteJoin(name){return remoteFolder.replace(/[\\/]+$/,"")+"\\"+name;}
+    function openFolder(path){send("list_files",{key:activeKey,path:path});}
+    function pick(entry,add){const next=add?Object.assign({},picked):({});if(add&&picked[entry.name])delete next[entry.name];else next[entry.name]=true;picked=next;}
+    function pickAll(all){const next={};if(all)for(const entry of fileEntries)next[entry.name]=true;picked=next;}
+    function downloadEntries(list){backend.downloadItems(activeKey,list.map(e=>({path:remoteJoin(e.name),name:e.name,is_dir:Boolean(e.is_dir)})));}
+    function activate(entry){if(entry.is_dir)openFolder(remoteJoin(entry.name));else downloadEntries([entry]);}
+    function downloadPicked(){downloadEntries(fileEntries.filter(e=>picked[e.name]));}
+    function previewOf(entry){return entry.is_dir?"":((current.previews||{})[entry.name]||"");}
+    function fileGlyph(entry){if(entry.is_dir)return "\ue8b7";const n=String(entry.name).toLowerCase();const ext=n.slice(n.lastIndexOf(".")+1);if(["jpg","jpeg","png","bmp","gif","tif","tiff","webp","heic","ico","svg"].indexOf(ext)>=0)return "\ueb9f";if(["mp4","mkv","avi","mov","wmv","webm"].indexOf(ext)>=0)return "\ue714";if(["mp3","wav","flac","m4a","aac","ogg"].indexOf(ext)>=0)return "\ue8d6";if(["zip","rar","7z","tar","gz"].indexOf(ext)>=0)return "\ue7b8";if(["exe","msi","bat","cmd","ps1"].indexOf(ext)>=0)return "\ue756";if(["pdf","doc","docx","txt","rtf","xls","xlsx","ppt","pptx","csv","md"].indexOf(ext)>=0)return "\ue8a5";return "\ue7c3";}
     readonly property bool sharingFiles:Boolean(hostSession&&hostSession.permissions&&hostSession.permissions.file_transfer)
     readonly property var transferInfo:smokeTransfer||current.transferInfo||({})
     readonly property bool transferRunning:transferInfo.state==="running"||transferInfo.state==="preparing"
@@ -60,12 +88,13 @@ ApplicationWindow {
     function focusAudio(){page="settings";Qt.callLater(function(){settingsScroll.contentItem.contentY=Math.max(0,audioPanel.y-12);});}
     function micText(s){let a=s.audio||{};if(s.permissions&&!s.permissions.audio)return "Voice off";return a.micRequested&&!a.micReady?"Mic retrying":a.micSilent&&s.micEnabled?"Mic silent":s.micEnabled?"Mic on":"Mic off";}
     function audioHelp(s){let a=s.audio||{};if(a.error)return a.error;if(a.micSilent&&s.micEnabled)return "Your microphone is on, but Windows is delivering no sound. Check the default input device and its level.";return "Voice packets sent: "+(a.txPackets||0)+" / received: "+(a.rxPackets||0);}
-    function transferText(t){if(t.state==="failed"||t.state==="cancelled")return t.message||"";if(t.state==="done")return root.formatSize(t.total)+" transferred and verified";if(t.state==="preparing")return "Checking the file before sending…";let line=root.formatSize(t.done)+(t.total?" of "+root.formatSize(t.total):"")+"  ·  "+root.formatSize(t.speed||0)+"/s";if(t.total&&t.speed>0){const left=Math.ceil((t.total-t.done)/t.speed);line+="  ·  "+(left>=60?Math.ceil(left/60)+" min":left+" s")+" left";}return line;}
+    function transferText(t){if(t.state==="failed"||t.state==="cancelled")return t.message||"";if(t.state==="done")return t.message||root.formatSize(t.total)+" transferred and verified";if(t.state==="preparing")return "Checking the file before sending…";let line=(t.items>1?"File "+t.item+" of "+t.items+"  ·  ":"")+root.formatSize(t.done)+(t.total?" of "+root.formatSize(t.total):"")+"  ·  "+root.formatSize(t.speed||0)+"/s";if(t.total&&t.speed>0){const left=Math.ceil((t.total-t.done)/t.speed);line+="  ·  "+(left>=60?Math.ceil(left/60)+" min":left+" s")+" left";}return line;}
     Connections {target:backend;function onStateChanged(){if(root.model.exitRequested){root.close();return;}let key=root.model.activeTab||"home";if(key!==root.serverActive){root.serverActive=key;root.activeKey=key==="home"?"":key;root.page="home";}}}
 
     RowLayout {
         anchors.fill:parent;spacing:0
         Rectangle {
+            visible:!root.fullView
             Layout.preferredWidth:root.width<1080?76:214;Layout.fillHeight:true;color:Theme.sidebar
             Behavior on Layout.preferredWidth{NumberAnimation{duration:120}}
             Rectangle{anchors.right:parent.right;width:1;height:parent.height;color:Theme.border}
@@ -92,6 +121,8 @@ ApplicationWindow {
                     }
                 }
                 Item{Layout.fillHeight:true}
+                // A new version stays one click away after the update window is closed with Later.
+                ActionButton{id:sidebarUpdate;readonly property bool working:["downloading","verifying","installing"].indexOf(root.updateState)>=0;visible:!root.lite&&(root.updateState==="available"||working);Layout.fillWidth:true;primary:true;glyph:working?"\ue895":"\ue896";text:root.width<1080?"":working?(root.updateState==="downloading"&&root.updateInfo.total>0?"Updating "+Math.round(100*Math.min(1,root.updateInfo.done/root.updateInfo.total))+"%":"Updating…"):"Update to "+(root.updateInfo.version||"");Accessible.name:"Update OpenDesk";ToolTip.visible:hovered;ToolTip.text:working?"Show update progress":"OpenDesk "+(root.updateInfo.version||"")+" is ready. Click to download and install.";onClicked:{if(working||root.sessions.concat(root.hostSession?[1]:[]).length>0)updateDialog.open();else root.send("install_update");}}
                 Rectangle {Layout.fillWidth:true;implicitHeight:root.width>=1080?84:48;color:Theme.panel;radius:Theme.radiusSmall;border.color:Theme.border
                     ColumnLayout{anchors.fill:parent;anchors.margins:12;spacing:7
                         RowLayout{spacing:8;Rectangle{width:7;height:7;radius:4;color:root.model.statusTone==="ready"?Theme.success:root.model.statusTone==="error"?Theme.accent:Theme.warning}Text{visible:root.width>=1080;text:root.model.status||"Starting…";color:Theme.muted;font.pixelSize:11;elide:Text.ElideRight;Layout.fillWidth:true}}
@@ -103,6 +134,7 @@ ApplicationWindow {
         ColumnLayout {
             Layout.fillWidth:true;Layout.fillHeight:true;spacing:0
             Rectangle {
+                visible:!root.fullView
                 Layout.fillWidth:true;implicitHeight:58;color:Theme.sidebar
                 Rectangle{anchors.bottom:parent.bottom;width:parent.width;height:1;color:Theme.border}
                 RowLayout {
@@ -182,7 +214,7 @@ ApplicationWindow {
                 }
                 ColumnLayout {
                     spacing:18
-                    RowLayout{Layout.margins:28;Layout.bottomMargin:0;Layout.fillWidth:true;ColumnLayout{spacing:5;Text{text:"File transfer";font.pixelSize:26;font.weight:Font.DemiBold;color:Theme.text}Text{text:root.current.state!=="connected"?"Connect to a desktop to browse the folder it shares.":root.current.permissions&&root.current.permissions.file_transfer?"Browse the folder shared by the remote desktop.":"The remote desktop did not allow file transfer for this session.";font.pixelSize:12;color:Theme.muted}}Item{Layout.fillWidth:true}ActionButton{text:"Send file";glyph:"\ue898";primary:true;enabled:Boolean(root.current.permissions&&root.current.permissions.file_transfer);onClicked:backend.uploadFile(root.activeKey,(root.current.files||{}).path||".")}}
+                    RowLayout{Layout.margins:28;Layout.bottomMargin:0;Layout.fillWidth:true;ColumnLayout{spacing:5;Text{text:"File transfer";font.pixelSize:26;font.weight:Font.DemiBold;color:Theme.text}Text{text:root.current.state!=="connected"?"Connect to a desktop to browse the folder it shares.":root.current.permissions&&root.current.permissions.file_transfer?"Browse the folder shared by the remote desktop.":"The remote desktop did not allow file transfer for this session.";font.pixelSize:12;color:Theme.muted}}Item{Layout.fillWidth:true}ActionButton{text:"Send folder";glyph:"\ue8f4";enabled:root.canSendFiles&&root.fileFeature("folders");ToolTip.visible:hovered&&!root.fileFeature("folders")&&root.canSendFiles;ToolTip.text:"The remote desktop needs OpenDesk 3.7 or newer to receive folders";onClicked:backend.uploadFolder(root.activeKey,root.remoteFolder)}ActionButton{text:"Send files";glyph:"\ue898";primary:true;enabled:root.canSendFiles;onClicked:backend.uploadFile(root.activeKey,root.remoteFolder)}}
                     Panel{visible:!root.lite;padding:16;Layout.fillWidth:true;Layout.leftMargin:28;Layout.rightMargin:28;Layout.topMargin:14;Layout.bottomMargin:14
                         RowLayout{anchors.fill:parent;spacing:12;Glyph{text:"\ue8b7";color:Theme.warning}
                             ColumnLayout{spacing:3;Layout.fillWidth:true
@@ -195,15 +227,55 @@ ApplicationWindow {
                     }
                     Panel{Layout.fillWidth:true;Layout.fillHeight:true;Layout.margins:28;Layout.topMargin:0
                         ColumnLayout{anchors.fill:parent;spacing:14
-                            RowLayout{Layout.fillWidth:true;ActionButton{glyph:"\ue74a";Accessible.name:"Parent directory";enabled:Boolean((root.current.files||{}).parent);onClicked:root.send("list_files",{key:root.activeKey,path:root.current.files.parent})}Field{id:remotePath;Layout.fillWidth:true;text:(root.current.files||{}).path||".";Accessible.name:"Remote folder";onAccepted:root.send("list_files",{key:root.activeKey,path:text})}ActionButton{glyph:"\ue72c";Accessible.name:"Refresh folder";enabled:root.current.state==="connected";onClicked:root.send("list_files",{key:root.activeKey,path:remotePath.text})}}
-                            Text{visible:fileList.count===0;text:root.current.state!=="connected"?"No remote desktop is connected.":!(root.current.permissions&&root.current.permissions.file_transfer)?"Ask the remote desktop to tick file access when approving you.":root.current.files?"This folder is empty.":"Loading the shared folder…";color:Theme.muted;font.pixelSize:13;horizontalAlignment:Text.AlignHCenter;Layout.fillWidth:true;Layout.topMargin:24}
-                            ListView{id:fileList;Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:3;model:(root.current.files||{}).entries||[]
-                                delegate:ItemDelegate{required property var modelData;width:ListView.view.width;height:48;hoverEnabled:true
-                                    background:Rectangle{radius:7;color:parent.hovered?Theme.elevated:"transparent"}
-                                    contentItem:RowLayout{spacing:12;Glyph{text:modelData.is_dir?"\ue8b7":"\ue7c3";color:modelData.is_dir?Theme.warning:Theme.muted}Text{text:modelData.name;color:Theme.text;font.pixelSize:13;Layout.fillWidth:true;elide:Text.ElideMiddle}Text{text:modelData.is_dir?"Folder":root.formatSize(modelData.size);color:Theme.faint;font.pixelSize:11}Glyph{text:modelData.is_dir?"\ue76c":"\ue896"}}
-                                    onClicked:{let path=remotePath.text+"/"+modelData.name;if(modelData.is_dir)root.send("list_files",{key:root.activeKey,path:path});else backend.downloadFile(root.activeKey,path,modelData.name);}
+                            RowLayout{Layout.fillWidth:true;spacing:6
+                                ActionButton{glyph:"\ue74a";Accessible.name:"Parent folder";ToolTip.visible:hovered;ToolTip.text:"Up one folder";enabled:Boolean((root.current.files||{}).parent);onClicked:root.openFolder(root.current.files.parent)}
+                                Field{id:remotePath;Layout.fillWidth:true;text:root.remoteFolder;Accessible.name:"Remote folder";onAccepted:root.openFolder(text)}
+                                ActionButton{glyph:"\ue72c";Accessible.name:"Refresh folder";ToolTip.visible:hovered;ToolTip.text:"Refresh";enabled:root.canSendFiles;onClicked:root.openFolder(root.remoteFolder)}
+                                Text{visible:root.pickedCount>0;text:root.pickedCount+" selected";color:Theme.muted;font.pixelSize:12;Layout.leftMargin:6}
+                                ActionButton{text:root.pickedCount>1?"Download "+root.pickedCount:"Download";glyph:"\ue896";primary:root.pickedCount>0;enabled:root.pickedCount>0;onClicked:root.downloadPicked()}
+                                ActionButton{glyph:"\ue8b3";quiet:true;Accessible.name:root.pickedCount===root.fileEntries.length&&root.pickedCount>0?"Clear selection":"Select all";ToolTip.visible:hovered;ToolTip.text:Accessible.name;enabled:root.fileEntries.length>0;onClicked:root.pickAll(root.pickedCount!==root.fileEntries.length)}
+                                ActionButton{glyph:"\ue8fd";quiet:root.fileView!=="list";Accessible.name:"List view";ToolTip.visible:hovered;ToolTip.text:"List";onClicked:root.fileView="list"}
+                                ActionButton{glyph:"\ue8a9";quiet:root.fileView!=="grid";Accessible.name:"Thumbnail view";ToolTip.visible:hovered;ToolTip.text:"Thumbnails";onClicked:root.fileView="grid"}
+                            }
+                            Item{Layout.fillWidth:true;Layout.fillHeight:true
+                                Text{visible:root.fileEntries.length===0;anchors.horizontalCenter:parent.horizontalCenter;y:24;width:parent.width;text:root.current.state!=="connected"?"No remote desktop is connected.":!(root.current.permissions&&root.current.permissions.file_transfer)?"Ask the remote desktop to tick file access when approving you.":root.current.files?"This folder is empty. Drop files here to send them.":"Loading the shared folder…";color:Theme.muted;font.pixelSize:13;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.WordWrap}
+                                ListView{id:fileList;visible:root.fileView==="list";anchors.fill:parent;clip:true;spacing:2;model:root.fileEntries;boundsBehavior:Flickable.StopAtBounds
+                                    delegate:Rectangle{id:fileRow;required property var modelData;width:ListView.view.width;height:44;radius:7;Accessible.role:Accessible.ListItem;Accessible.name:modelData.name
+                                        readonly property bool picked:Boolean(root.picked[modelData.name])
+                                        readonly property bool hovered:rowMouse.containsMouse
+                                        color:picked?Theme.selected:hovered?Theme.elevated:"transparent"
+                                        MouseArea{id:rowMouse;anchors.fill:parent;hoverEnabled:true;onClicked:(mouse)=>root.pick(fileRow.modelData,(mouse.modifiers&Qt.ControlModifier)!==0);onDoubleClicked:root.activate(fileRow.modelData)}
+                                        RowLayout{anchors.fill:parent;anchors.leftMargin:12;anchors.rightMargin:6;spacing:12
+                                            Item{implicitWidth:28;implicitHeight:28;Image{anchors.fill:parent;visible:status===Image.Ready;source:root.previewOf(fileRow.modelData);fillMode:Image.PreserveAspectCrop;asynchronous:true;sourceSize.width:56}Glyph{anchors.centerIn:parent;visible:!parent.children[0].visible;text:root.fileGlyph(fileRow.modelData);color:fileRow.modelData.is_dir?Theme.warning:Theme.muted}}
+                                            Text{text:fileRow.modelData.name;color:Theme.text;font.pixelSize:13;Layout.fillWidth:true;elide:Text.ElideMiddle}
+                                            Text{text:fileRow.modelData.modified?new Date(fileRow.modelData.modified*1000).toLocaleDateString(Qt.locale(),Locale.ShortFormat):"";color:Theme.faint;font.pixelSize:11;visible:fileList.width>520;Layout.preferredWidth:84}
+                                            Text{text:fileRow.modelData.is_dir?"Folder":root.formatSize(fileRow.modelData.size);color:Theme.faint;font.pixelSize:11;Layout.preferredWidth:70;horizontalAlignment:Text.AlignRight}
+                                            ActionButton{glyph:fileRow.modelData.is_dir?"\ue76c":"\ue896";quiet:true;implicitWidth:32;implicitHeight:32;opacity:fileRow.hovered||fileRow.picked?1:0.35;Accessible.name:fileRow.modelData.is_dir?"Open folder":"Download";ToolTip.visible:hovered;ToolTip.text:Accessible.name;onClicked:root.activate(fileRow.modelData)}
+                                        }
+                                    }
+                                    ScrollBar.vertical:ScrollBar{}
                                 }
-                                ScrollBar.vertical:ScrollBar{}
+                                GridView{id:fileGrid;visible:root.fileView==="grid";anchors.fill:parent;clip:true;model:root.fileEntries;cellWidth:Math.max(120,Math.floor(width/Math.max(1,Math.floor(width/132))));cellHeight:150;boundsBehavior:Flickable.StopAtBounds
+                                    delegate:Rectangle{id:fileTile;required property var modelData;width:fileGrid.cellWidth-8;height:fileGrid.cellHeight-8;radius:Theme.radiusSmall;Accessible.role:Accessible.ListItem;Accessible.name:modelData.name
+                                        readonly property bool picked:Boolean(root.picked[modelData.name])
+                                        color:picked?Theme.selected:tileMouse.containsMouse?Theme.elevated:"transparent";border.color:picked?Theme.accent:"transparent"
+                                        MouseArea{id:tileMouse;anchors.fill:parent;hoverEnabled:true;onClicked:(mouse)=>root.pick(fileTile.modelData,(mouse.modifiers&Qt.ControlModifier)!==0);onDoubleClicked:root.activate(fileTile.modelData)}
+                                        ToolTip.visible:tileMouse.containsMouse;ToolTip.delay:600;ToolTip.text:modelData.name
+                                        ColumnLayout{anchors.fill:parent;anchors.margins:8;spacing:6
+                                            Rectangle{Layout.fillWidth:true;Layout.preferredHeight:90;radius:6;color:Theme.panel;clip:true
+                                                Image{id:tileImage;anchors.fill:parent;anchors.margins:2;source:root.previewOf(fileTile.modelData);fillMode:Image.PreserveAspectFit;asynchronous:true;sourceSize.width:200;visible:status===Image.Ready}
+                                                Glyph{anchors.centerIn:parent;visible:!tileImage.visible;text:root.fileGlyph(fileTile.modelData);font.pixelSize:40;color:fileTile.modelData.is_dir?Theme.warning:Theme.muted}
+                                            }
+                                            Text{text:fileTile.modelData.name;color:Theme.text;font.pixelSize:12;Layout.fillWidth:true;horizontalAlignment:Text.AlignHCenter;elide:Text.ElideMiddle;maximumLineCount:1}
+                                            Text{text:fileTile.modelData.is_dir?"Folder":root.formatSize(fileTile.modelData.size);color:Theme.faint;font.pixelSize:10;Layout.fillWidth:true;horizontalAlignment:Text.AlignHCenter}
+                                        }
+                                    }
+                                    ScrollBar.vertical:ScrollBar{}
+                                }
+                                DropArea{id:fileDrop;anchors.fill:parent;enabled:root.canSendFiles;onDropped:(drop)=>{if(drop.hasUrls){backend.uploadPaths(root.activeKey,root.remoteFolder,drop.urls);drop.accept();}}}
+                                Rectangle{anchors.fill:parent;visible:fileDrop.containsDrag;radius:Theme.radiusSmall;color:Theme.selected;opacity:0.92;border.color:Theme.accent;border.width:2
+                                    ColumnLayout{anchors.centerIn:parent;spacing:8;Glyph{text:"\ue898";font.pixelSize:34;color:Theme.accentText;Layout.alignment:Qt.AlignHCenter}Text{text:"Drop to send to "+(root.current.name||root.current.target||"the remote desktop");color:Theme.text;font.pixelSize:14;Layout.alignment:Qt.AlignHCenter}}
+                                }
                             }
                             ColumnLayout{visible:Boolean(root.transferInfo.state);spacing:6;Layout.fillWidth:true
                                 RowLayout{Layout.fillWidth:true;spacing:8;Glyph{text:root.transferInfo.direction==="upload"?"\ue898":"\ue896";color:root.transferInfo.state==="failed"?Theme.warning:root.transferInfo.state==="done"?Theme.success:Theme.muted}Text{text:(root.transferInfo.direction==="upload"?"Sending ":"Receiving ")+(root.transferInfo.name||"");color:Theme.text;font.pixelSize:13;elide:Text.ElideMiddle;Layout.fillWidth:true}ActionButton{visible:root.transferRunning;text:"Cancel";quiet:true;onClicked:root.send("cancel_transfer",{key:root.activeKey})}}
@@ -220,11 +292,21 @@ ApplicationWindow {
                             ColumnLayout{anchors.fill:parent;spacing:18
                                 Text{text:"Appearance";font.pixelSize:17;font.weight:Font.DemiBold;color:Theme.text}
                                 RowLayout{Layout.fillWidth:true;Text{text:"Theme";color:Theme.text;font.pixelSize:13;Layout.fillWidth:true}ComboBox{model:["Dark","Light"];currentIndex:(root.model.settings||{}).theme==="light"?1:0;onActivated:root.send("setting",{name:"theme",value:currentIndex===1?"light":"dark"});Accessible.name:"Application theme";Layout.preferredWidth:180}}
+                                RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Layout.fillWidth:true;Text{text:"Screen drawing";color:Theme.text;font.pixelSize:13}Text{text:"Now: "+graphicsInfo+". If the screen blinks or flickers while OpenDesk is in front, choose OpenGL or Software. Takes effect the next time OpenDesk starts.";color:Theme.muted;font.pixelSize:11;wrapMode:Text.WordWrap;Layout.fillWidth:true}}ComboBox{model:["Automatic","Direct3D","OpenGL","Software"];readonly property var values:["auto","direct3d","opengl","software"];currentIndex:Math.max(0,values.indexOf((root.model.settings||{}).graphics||"auto"));onActivated:root.send("setting",{name:"graphics",value:values[currentIndex]});Accessible.name:"Screen drawing";Layout.preferredWidth:180}}
                                 Rectangle{Layout.fillWidth:true;height:1;color:Theme.border}
                                 Text{text:"Connection & privacy";font.pixelSize:17;font.weight:Font.DemiBold;color:Theme.text}
                                 RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Access password";color:Theme.text;font.pixelSize:13}Text{text:root.model.hasPassword?"A password is set. It is only used when unattended access is on.":"No password is set.";color:Theme.muted;font.pixelSize:11}}Item{Layout.fillWidth:true}ActionButton{text:root.model.hasPassword?"Change password":"Set password";onClicked:localPassword.open()}}
                                 RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Unattended access";color:Theme.text;font.pixelSize:13}Text{text:!root.model.hasPassword?"Set a password first. Every incoming connection needs your approval.":(root.model.settings||{}).unattendedEnabled?"Anyone with the password connects without your approval, with full access.":"Every incoming connection needs your approval, even with the password.";color:Theme.muted;font.pixelSize:11;wrapMode:Text.WordWrap;Layout.maximumWidth:570}}Item{Layout.fillWidth:true}Toggle{enabled:Boolean(root.model.hasPassword);modelChecked:Boolean(root.model.hasPassword&&(root.model.settings||{}).unattendedEnabled);Accessible.name:"Allow unattended access with the password";onEdited:(enabled)=>root.send("setting",{name:"unattendedEnabled",value:enabled})}}
-                                RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Screen edge glow";color:Theme.text;font.pixelSize:13}Text{text:"Show a soft green glow around your screen while someone is connected. The other PC does not see it.";color:Theme.muted;font.pixelSize:11;wrapMode:Text.WordWrap;Layout.maximumWidth:570}}Item{Layout.fillWidth:true}Toggle{modelChecked:(root.model.settings||{}).sessionGlow!==false;Accessible.name:"Show a glow around the screen during a session";onEdited:(enabled)=>root.send("setting",{name:"sessionGlow",value:enabled})}}
+                                ColumnLayout{Layout.fillWidth:true;spacing:6
+                                    Text{text:"Devices allowed without asking";color:Theme.text;font.pixelSize:13}
+                                    Text{text:(root.model.allowedViewers||[]).length?"These devices connect without your approval, with the permissions you chose. Each one proves its device key.":"None. Tick \"Always allow this device\" when you approve a connection to add one.";color:Theme.muted;font.pixelSize:11;wrapMode:Text.WordWrap;Layout.maximumWidth:570}
+                                    Repeater{model:root.model.allowedViewers||[];delegate:RowLayout{required property var modelData;Layout.fillWidth:true;spacing:10
+                                        Glyph{text:"\ue7f8";font.pixelSize:15}
+                                        ColumnLayout{spacing:1;Layout.fillWidth:true;Text{text:(modelData.name||"OpenDesk device")+(modelData.id?"  ·  ID "+modelData.id:"");color:Theme.text;font.pixelSize:12;elide:Text.ElideRight;Layout.fillWidth:true}Text{text:"Key "+(modelData.fingerprint||"")+"  ·  "+["input","audio","clipboard","file_transfer"].filter(k=>(modelData.permissions||{})[k]).map(k=>({input:"keyboard and mouse",audio:"voice",clipboard:"clipboard",file_transfer:"files"})[k]).join(", ");color:Theme.faint;font.pixelSize:11;elide:Text.ElideRight;Layout.fillWidth:true}}
+                                        ActionButton{text:"Remove";quiet:true;onClicked:root.send("forget_viewer",{key:modelData.key})}
+                                    }}
+                                }
+                                RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Session dot";color:Theme.text;font.pixelSize:13}Text{text:"Show a small red dot on your screen while someone is connected, like a camera light. Drag it anywhere; double-click it to open OpenDesk. The other PC does not see it.";color:Theme.muted;font.pixelSize:11;wrapMode:Text.WordWrap;Layout.maximumWidth:570}}Item{Layout.fillWidth:true}Toggle{modelChecked:(root.model.settings||{}).sessionDot!==false;Accessible.name:"Show a session dot during a session";onEdited:(enabled)=>root.send("setting",{name:"sessionDot",value:enabled})}}
                                 RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Internet access";color:Theme.text;font.pixelSize:13}Text{text:"Publish an expiring, signed directory record through the secure tunnel.";color:Theme.muted;font.pixelSize:11;wrapMode:Text.WordWrap;Layout.maximumWidth:570}}Item{Layout.fillWidth:true}Toggle{modelChecked:Boolean((root.model.settings||{}).publicAccess);Accessible.name:"Enable internet access";onEdited:(enabled)=>root.send("setting",{name:"publicAccess",value:enabled})}}
                                 RowLayout{Layout.fillWidth:true;ColumnLayout{spacing:4;Text{text:"Local network access";color:Theme.text;font.pixelSize:13}Text{text:"Let devices on this network reach this desktop. Approval or a password is still required. This traffic is not encrypted, so use it only on networks you trust.";color:Theme.muted;font.pixelSize:11;wrapMode:Text.WordWrap;Layout.maximumWidth:570}}Item{Layout.fillWidth:true}Toggle{modelChecked:Boolean((root.model.settings||{}).lanAccess);Accessible.name:"Enable local network access";onEdited:(enabled)=>root.send("setting",{name:"lanAccess",value:enabled})}}
                                 Rectangle{Layout.fillWidth:true;height:1;color:Theme.border}
@@ -252,7 +334,7 @@ ApplicationWindow {
                 }
                 ColumnLayout {
                     spacing:0
-                    Rectangle{Layout.fillWidth:true;implicitHeight:62;color:Theme.panel
+                    Rectangle{visible:!root.fullView;Layout.fillWidth:true;implicitHeight:62;color:Theme.panel
                         RowLayout{anchors.fill:parent;anchors.margins:12;spacing:8
                             ColumnLayout{spacing:2;Layout.maximumWidth:300;Text{text:root.current.name||root.current.target||"Remote session";color:Theme.text;font.pixelSize:13;font.weight:Font.DemiBold}Text{text:(root.current.audio||{}).error||(root.current.state==="connected"&&root.current.permissions&&!root.current.permissions.audio&&!root.lite?"Voice was not allowed for this session":root.current.message||root.current.state||"");color:(root.current.audio||{}).error?Theme.warning:Theme.muted;font.pixelSize:10;elide:Text.ElideRight;Layout.fillWidth:true}}
                             Item{Layout.fillWidth:true}
@@ -265,16 +347,26 @@ ApplicationWindow {
                             ActionButton{visible:!root.lite;text:(root.model.settings||{}).speakerEnabled!==false?"Speaker on":"Speaker off";glyph:(root.model.settings||{}).speakerEnabled!==false?"\ue767":"\ue74f";Accessible.name:"Toggle speaker";enabled:Boolean(root.current.permissions&&root.current.permissions.audio);onClicked:root.send("setting",{name:"speakerEnabled",value:(root.model.settings||{}).speakerEnabled===false})}
                             LevelMeter{visible:!root.lite&&Boolean(root.current.permissions&&root.current.permissions.audio);level:(root.current.audio||{}).speakerLevel||0;Accessible.name:"Incoming voice level"}
                             ActionButton{visible:!root.lite;glyph:"\ue8b7";Accessible.name:"Remote files";enabled:Boolean(root.current.permissions&&root.current.permissions.file_transfer);onClicked:{root.page="files";root.send("list_files",{key:root.activeKey,path:"."});}}
-                            ActionButton{text:"Disconnect";glyph:"\ue8bb";enabled:root.current.state!=="disconnected"&&root.current.state!=="error";onClicked:root.send("disconnect",{key:root.activeKey})}
+                            ActionButton{glyph:"\ue740";quiet:true;visible:root.current.state==="connected";Accessible.name:"Full screen";ToolTip.visible:hovered;ToolTip.text:"Full screen  (Esc to leave)";onClicked:root.enterFullView()}
+                            ActionButton{text:root.width<1320?"":"Disconnect";Accessible.name:"Disconnect";ToolTip.visible:hovered&&root.width<1320;ToolTip.text:"Disconnect";glyph:"\ue8bb";enabled:root.current.state!=="disconnected"&&root.current.state!=="error";onClicked:root.send("disconnect",{key:root.activeKey})}
                         }
                     }
                     Item{Layout.fillWidth:true;Layout.fillHeight:true
-                        RemoteFrame{id:remoteFrame;onWidthChanged:pictureSize.restart();onZoomChanged:pictureSize.restart();onVisibleChanged:pictureSize.restart();anchors.fill:parent;anchors.rightMargin:vbar.visible?vbar.width:0;anchors.bottomMargin:hbar.visible?hbar.height:0;engine:backend;sessionKey:root.activeKey;controlEnabled:root.current.state==="connected"&&Boolean(root.current.permissions&&root.current.permissions.input);visible:root.current.state==="connected";clip:true
+                        RemoteFrame{id:remoteFrame;escapeLeaves:root.fullView;onEscapePressed:root.leaveFullView();onWidthChanged:pictureSize.restart();onZoomChanged:pictureSize.restart();onVisibleChanged:pictureSize.restart();anchors.fill:parent;anchors.rightMargin:vbar.visible?vbar.width:0;anchors.bottomMargin:hbar.visible?hbar.height:0;engine:backend;sessionKey:root.activeKey;controlEnabled:root.current.state==="connected"&&Boolean(root.current.permissions&&root.current.permissions.input);visible:root.current.state==="connected";clip:true
                             RemoteCursor{x:remoteFrame.pointerPosition.x;y:remoteFrame.pointerPosition.y;label:"You";visible:remoteFrame.controlEnabled}
                         }
                         // A fitted picture needs no more pixels than the window shows; a zoomed one needs them all.
                         Timer{id:pictureSize;interval:700;onTriggered:{if(!remoteFrame.visible||!root.activeKey)return;const wanted=remoteFrame.zoom>0?2560:Math.min(2560,Math.max(640,Math.ceil(remoteFrame.width*Screen.devicePixelRatio/64)*64));if(wanted!==root.current.maxWidth)root.send("video_profile",{key:root.activeKey,profile:root.current.profile||"balanced",maxWidth:wanted});}}
                         Connections{target:root;function onActiveKeyChanged(){pictureSize.restart()}}
+                        HoverHandler{id:fullHover;enabled:root.fullView;onPointChanged:if(root.fullView&&point.position.y<6){fullBar.shown=true;fullBarHide.restart();}}
+                        Timer{id:fullBarHide;interval:2500;onTriggered:if(!fullBarArea.containsMouse)fullBar.shown=false;else restart()}
+                        Rectangle{id:fullBar;property bool shown:false;visible:root.fullView&&shown;anchors.horizontalCenter:parent.horizontalCenter;y:8;z:5;radius:Theme.radiusSmall;color:Theme.panel;border.color:Theme.border;implicitWidth:fullBarRow.implicitWidth+16;implicitHeight:fullBarRow.implicitHeight+12
+                            MouseArea{id:fullBarArea;anchors.fill:parent;hoverEnabled:true;acceptedButtons:Qt.NoButton}
+                            RowLayout{id:fullBarRow;anchors.centerIn:parent;spacing:8;Text{text:root.current.name||root.current.target||"";color:Theme.text;font.pixelSize:12;Layout.leftMargin:6}ActionButton{text:"Exit full screen";glyph:"\ue73f";onClicked:root.leaveFullView()}ActionButton{text:"Disconnect";glyph:"\ue8bb";quiet:true;onClicked:{root.leaveFullView();root.send("disconnect",{key:root.activeKey});}}}
+                        }
+                        Text{visible:root.fullView&&fullHint.running;anchors.horizontalCenter:parent.horizontalCenter;y:16;z:4;text:"Press Esc or move the mouse to the top edge to leave full screen";color:"white";font.pixelSize:13;style:Text.Outline;styleColor:"black"}
+                        Timer{id:fullHint;interval:3000;running:false}
+                        Connections{target:root;function onFullViewChanged(){if(root.fullView)fullHint.restart();}}
                         ScrollBar{id:hbar;orientation:Qt.Horizontal;policy:ScrollBar.AlwaysOn;anchors.left:parent.left;anchors.right:remoteFrame.right;anchors.bottom:parent.bottom;visible:remoteFrame.visible&&remoteFrame.viewWidth<0.999;size:remoteFrame.viewWidth;onPositionChanged:if(pressed)remoteFrame.viewX=position;Binding on position{value:remoteFrame.viewX;when:!hbar.pressed}}
                         ScrollBar{id:vbar;orientation:Qt.Vertical;policy:ScrollBar.AlwaysOn;anchors.top:parent.top;anchors.bottom:remoteFrame.bottom;anchors.right:parent.right;visible:remoteFrame.visible&&remoteFrame.viewHeight<0.999;size:remoteFrame.viewHeight;onPositionChanged:if(pressed)remoteFrame.viewY=position;Binding on position{value:remoteFrame.viewY;when:!vbar.pressed}}
                         ColumnLayout{anchors.centerIn:parent;spacing:18;visible:root.current.state!=="connected";width:Math.min(500,parent.width-80)
@@ -366,15 +458,15 @@ ApplicationWindow {
     }
     Dialog{id:approval;title:"Incoming connection";modal:true;anchors.centerIn:parent;width:460;standardButtons:Dialog.Ok|Dialog.Cancel
         closePolicy:Popup.NoAutoClose
-        onOpened:{allowInput.checked=true;allowAudio.checked=true;allowClipboard.checked=false;allowFiles.checked=false;standardButton(Dialog.Ok).text="Allow connection";standardButton(Dialog.Cancel).text="Reject";forceActiveFocus();}
+        onOpened:{allowInput.checked=true;allowAudio.checked=true;allowClipboard.checked=false;allowFiles.checked=false;allowAlways.checked=false;standardButton(Dialog.Ok).text="Allow connection";standardButton(Dialog.Cancel).text="Reject";forceActiveFocus();}
         background:Rectangle{color:Theme.panel;radius:Theme.radiusLarge;border.color:Theme.border}
-        contentItem:ColumnLayout{spacing:12;Text{text:root.viewerName(root.model.incoming)+" wants to connect. Choose what to share.";font.pixelSize:14;color:Theme.text;wrapMode:Text.WordWrap;Layout.fillWidth:true}CheckBox{id:allowInput;text:"Keyboard and mouse";checked:true}CheckBox{id:allowAudio;visible:!root.lite;text:"Two-way voice"}CheckBox{id:allowClipboard;text:"Text clipboard"}CheckBox{id:allowFiles;visible:!root.lite;text:(root.model.incoming||{}).legacy?"Files need a newer viewer":"Files in "+((root.model.settings||{}).sharedRoot||"your shared folder");enabled:!(root.model.incoming||{}).legacy}}
-        onAccepted:root.send("approve",{requestId:root.model.incoming.requestId,allow:true,permissions:{input:allowInput.checked,audio:allowAudio.checked,clipboard:allowClipboard.checked,file_transfer:allowFiles.checked}})
+        contentItem:ColumnLayout{spacing:12;Text{text:root.viewerName(root.model.incoming)+" wants to connect. Choose what to share.";font.pixelSize:14;color:Theme.text;wrapMode:Text.WordWrap;Layout.fillWidth:true}CheckBox{id:allowInput;text:"Keyboard and mouse";checked:true}CheckBox{id:allowAudio;visible:!root.lite;text:"Two-way voice"}CheckBox{id:allowClipboard;text:"Text clipboard"}CheckBox{id:allowFiles;visible:!root.lite;text:(root.model.incoming||{}).legacy?"Files need a newer viewer":"Files in "+((root.model.settings||{}).sharedRoot||"your shared folder");enabled:!(root.model.incoming||{}).legacy}CheckBox{id:allowAlways;visible:Boolean(((root.model.incoming||{}).from||{}).verified);text:"Always allow this device without asking, with these permissions"}Text{visible:allowAlways.visible;text:"Device key "+(((root.model.incoming||{}).from||{}).fingerprint||"")+". You can remove it in Settings.";color:Theme.muted;font.pixelSize:11;Layout.leftMargin:32}}
+        onAccepted:root.send("approve",{requestId:root.model.incoming.requestId,allow:true,remember:allowAlways.visible&&allowAlways.checked,permissions:{input:allowInput.checked,audio:allowAudio.checked,clipboard:allowClipboard.checked,file_transfer:allowFiles.checked}})
         onRejected:root.send("approve",{requestId:(root.model.incoming||{}).requestId||"",allow:false})
     }
-    // A soft glow on the screen edges for as long as a session is approved, so nobody is watched unknowingly.
-    Binding{target:edgeGlow;property:"color";value:Theme.success}
-    Binding{target:edgeGlow;property:"active";value:Boolean(root.hostSession)&&(root.model.settings||{}).sessionGlow!==false}
+    // A small dot, like a camera light, for as long as a session is approved, so nobody is watched unknowingly.
+    Binding{target:sessionDot;property:"active";value:Boolean(root.hostSession)&&(root.model.settings||{}).sessionDot!==false}
+    Connections{target:sessionDot;function onOpened(){if(root.visibility===Window.Minimized)root.showNormal();else root.show();root.raise();root.requestActivate();}}
     Window {
         id:remotePointerWindow
         transientParent:null
@@ -388,5 +480,10 @@ ApplicationWindow {
     Rectangle{anchors.horizontalCenter:parent.horizontalCenter;anchors.bottom:parent.bottom;anchors.bottomMargin:22;width:Math.min(660,parent.width-80);height:noticeText.implicitHeight+28;radius:Theme.radiusSmall;color:Theme.elevated;border.color:Theme.border;visible:Boolean(root.model.notice)
         Text{id:noticeText;anchors.fill:parent;anchors.margins:14;text:(root.model.notice||{}).message||"";color:(root.model.notice||{}).tone==="error"?Theme.accentText:Theme.text;wrapMode:Text.WordWrap;font.pixelSize:12}
         TapHandler{onTapped:root.send("dismiss_notice")}
+        // Notices leave by themselves: errors after 8 seconds, other notices after 4, later while the pointer rests on them.
+        HoverHandler{id:noticeHover}
+        readonly property string shown:root.model.notice?JSON.stringify(root.model.notice):""
+        onShownChanged:if(shown.length)noticeTimer.restart();else noticeTimer.stop()
+        Timer{id:noticeTimer;interval:(root.model.notice||{}).tone==="error"?8000:4000;onTriggered:{if(noticeHover.hovered)restart();else root.send("dismiss_notice");}}
     }
 }

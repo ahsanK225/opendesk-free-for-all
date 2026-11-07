@@ -1,6 +1,6 @@
 # OpenDesk native desktop
 
-The native implementation uses a Rust engine, a Qt 6.8.3 / QML desktop, and libjpeg-turbo 3.2.1. It retains the dark/red OpenDesk design and the protocol-v2 browser viewer. The current stable release is 3.6. Public release numbers advance by 0.1; see ../docs/VERSION_HISTORY.md for the full ascending history.
+The native implementation uses a Rust engine, a Qt 6.8.3 / QML desktop, and libjpeg-turbo 3.2.1. It retains the dark/red OpenDesk design and the protocol-v2 browser viewer. The current stable release is 3.7. Public release numbers advance by 0.1; see ../docs/VERSION_HISTORY.md for the full ascending history.
 
 ## Implemented
 
@@ -10,7 +10,7 @@ The native implementation uses a Rust engine, a Qt 6.8.3 / QML desktop, and libj
 - Direct SIMD TurboJPEG encoding/decoding on media workers and Qt scene-graph textures for presentation. FPS counts actual texture presentations; an unchanged screen displays Idle.
 - WASAPI voice through CPAL with explicit rates, continuous resampling, 20 ms mono packets, bounded queues, microphone mute and gain, speaker volume, default-device change detection and failed-device reopening.
 - Keyboard/mouse input with held-input release, Unicode text clipboard, and folder-scoped file transfers with ordered chunks, SHA-256 verification, atomic replacement and partial-file cleanup.
-- Native file/folder dialogs, saved devices/favorites, scrollable connection tabs, fingerprint verification, approval controls, software updates and a screen edge glow while a session is approved.
+- Native file/folder dialogs, saved devices/favorites, scrollable connection tabs, fingerprint verification, approval controls, software updates and a movable session dot while a session is approved.
 - A separate Rust maintenance helper for bounded shutdown, scoped process checks, portable replacement and installed updates. Portable runtime extraction is persistent and transactional rather than per-launch temporary Python extraction.
 
 ## Build on Windows x64

@@ -42,9 +42,11 @@ Started 2026-11-04. The acceptance list above is preserved as the release gate. 
 | T-022 | Windows service and sign-in screen control | architect, security | Open | OpenDesk must be open in a signed-in session, so a locked or restarted PC cannot be reached unattended |
 | T-023 | Code signing | release-audit | Open, needs a certificate | Windows and browsers warn about unsigned files |
 | T-024 | Multiple monitors | implementation | Open | Only the primary monitor is captured |
-| T-025 | Full-screen remote view | ui-ux | Open | The session keeps the sidebar and toolbar on screen |
+| T-025 | Full-screen remote view | ui-ux | Done in 3.7 | Toolbar button, Esc and a top-edge bar leave it; checked only with the smoke session on this PC |
 | T-026 | Send Ctrl+Alt+Del and other system keys | implementation, security | Open | Needs the Windows service in T-022 |
 | T-027 | Tray icon and optional run in background | ui-ux | Open | Closing quits, so a PC must keep OpenDesk open to stay reachable |
 | T-028 | Verified viewer identity | security | Open | The viewer name and ID in the session notice are reported, not proven |
 | T-029 | Presence that cannot be replayed | security | Open | An old signed "online" state could be republished by someone else; it can only make a PC look online |
-| T-030 | Screen blinking on an older Intel HD driver | ui-ux | Open, needs that PC | Turning off flip-model presentation made the window white instead, so 3.5 restored it; the cause is still unknown |
+| T-031 | Android and iOS viewer app | architect | Planned, waiting for approval | Plan in `docs/MOBILE_PLAN.md`; nothing implemented. Phase 0 starts only after approval |
+| T-032 | Control elevated windows | architect, security | Open | 3.7 keeps the session through a UAC prompt, but a non-elevated OpenDesk cannot type into elevated windows or answer the prompt; needs T-022 or an elevated mode |
+| T-030 | Screen blinking on an older Intel HD driver | ui-ux | Fix in 3.7, needs eyes | Automatic drawing picks OpenGL for WDDM 1.x drivers; the blink cannot be seen in captures, so the person at that PC must confirm |

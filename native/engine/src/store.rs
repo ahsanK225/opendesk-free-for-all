@@ -169,6 +169,11 @@ impl Store {
     pub fn identity_packet(&self, nonce: &str) -> Value {
         json!({"nonce":nonce,"public_key":self.key(),"signature":B64.encode(self.identity.sign(format!("OpenDesk-v2:{nonce}").as_bytes()).to_bytes())})
     }
+    /// Proves this device to a host by signing its challenge together with the host key, so the
+    /// answer is worthless to any other host and to any later connection.
+    pub fn viewer_proof(&self, challenge: &str, host_key: &str) -> Value {
+        json!({"public_key":self.key(),"signature":B64.encode(self.identity.sign(format!("OpenDesk-viewer-v1:{challenge}:{host_key}").as_bytes()).to_bytes())})
+    }
     pub fn directory_record(&self, url: &str) -> Value {
         let body = crate::directory::record_body(&self.id(), url, now() + crate::directory::FRESH_FOR);
         json!({"key":self.key(),"signature":B64.encode(self.identity.sign(body.as_bytes()).to_bytes()),"body":body})
@@ -283,6 +288,23 @@ pub fn verify_identity(packet: &Value, nonce: &str) -> Result<String> {
         .verify(format!("OpenDesk-v2:{nonce}").as_bytes(), &signature)?;
     Ok(key.into())
 }
+/// Checks a viewer proof made by `Store::viewer_proof` and returns the viewer's device key.
+pub fn verify_viewer(proof: &Value, challenge: &str, host_key: &str) -> Result<String> {
+    let key = proof["public_key"]
+        .as_str()
+        .context("Viewer key is missing")?;
+    let key_bytes: [u8; 32] = B64
+        .decode(key)?
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("Invalid viewer key"))?;
+    let signature =
+        Signature::from_slice(&B64.decode(proof["signature"].as_str().unwrap_or(""))?)?;
+    VerifyingKey::from_bytes(&key_bytes)?.verify_strict(
+        format!("OpenDesk-viewer-v1:{challenge}:{host_key}").as_bytes(),
+        &signature,
+    )?;
+    Ok(key.into())
+}
 pub fn password_proof(password: &str, challenge: &Value) -> Result<String> {
     let iterations = challenge["iterations"]
         .as_u64()
@@ -350,5 +372,18 @@ mod address_tests {
         assert!(remove_device(&mut list, "222-222-222"));
         assert!(!remove_device(&mut list, "222-222-222"));
         assert!(list.is_empty());
+    }
+    #[test]
+    fn viewer_proofs_are_bound_to_the_challenge_and_the_host() {
+        let viewer = SigningKey::from_bytes(&[7; 32]);
+        let key = B64.encode(viewer.verifying_key().as_bytes());
+        let proof = json!({"public_key":key,"signature":B64.encode(viewer.sign(b"OpenDesk-viewer-v1:abc:HOST").to_bytes())});
+        assert_eq!(verify_viewer(&proof, "abc", "HOST").unwrap(), key);
+        assert!(verify_viewer(&proof, "abd", "HOST").is_err());
+        assert!(verify_viewer(&proof, "abc", "OTHER").is_err());
+        assert!(verify_viewer(&json!({"public_key":key}), "abc", "HOST").is_err());
+        let mut forged = proof.clone();
+        forged["public_key"] = json!(B64.encode(SigningKey::from_bytes(&[8; 32]).verifying_key().as_bytes()));
+        assert!(verify_viewer(&forged, "abc", "HOST").is_err());
     }
 }
